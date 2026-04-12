@@ -70,4 +70,3 @@ jobs:
           name: bundles-${{ matrix.platform }}
           path: |
             src-tauri/target/${{ matrix.target }}/release/bundle/**
-          if-no-files-found: error
