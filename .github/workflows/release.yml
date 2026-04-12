@@ -26,6 +26,12 @@ jobs:
           workspaces: './src-tauri -> target'
       - run: npm ci
       - run: npm run tauri build
+      - name: Upload deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cliphist-linux-amd64
+          path: src-tauri/target/release/bundle/deb/*.deb
+          retention-days: 5
 
   windows:
     runs-on: windows-latest
@@ -40,6 +46,12 @@ jobs:
           workspaces: './src-tauri -> target'
       - run: npm ci
       - run: npm run tauri build
+      - name: Upload nsis artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cliphist-windows-x64
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          retention-days: 5
 
   macos:
     runs-on: macos-latest
@@ -47,7 +59,9 @@ jobs:
       matrix:
         include:
           - target: aarch64-apple-darwin
+            artifact_suffix: macos-arm64
           - target: x86_64-apple-darwin
+            artifact_suffix: macos-x64
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -61,3 +75,25 @@ jobs:
           workspaces: './src-tauri -> target'
       - run: npm ci
       - run: npm run tauri build -- --target ${{ matrix.target }}
+      - name: Upload dmg artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cliphist-${{ matrix.artifact_suffix }}
+          path: src-tauri/target/release/bundle/dmg/*.dmg
+          retention-days: 5
+
+  release:
+    needs: [ubuntu, windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          draft: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
