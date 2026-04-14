@@ -154,6 +154,7 @@ html, body {
 .cat-tab[data-cat="text"].active { background: #2563EB; }
 .cat-tab[data-cat="link"].active { background: #DC2626; }
 .cat-tab[data-cat="short"].active { background: #7C3AED; }
+.cat-tab[data-cat="rich"].active { background: #e11d48; }
 
 .search-box {
   display: flex;
@@ -457,6 +458,20 @@ html, body {
 
 .type-short {
   color: #8764b8;
+}
+
+.type-rich {
+  color: #e11d48;
+}
+
+.rich-preview {
+  font-size: 12px;
+  line-height: 1.4;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  word-break: break-all;
 }
 
 /* Settings Panel */

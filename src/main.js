@@ -22,15 +22,16 @@ const TYPE_ICONS = {
   text: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>`,
   short: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="21" y1="10" x2="3" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="14" x2="3" y2="14"></line><line x1="21" y1="18" x2="3" y2="18"></line></svg>`,
   image: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>`,
+  rich: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M9 13h2l1 3 2-6 1 3h2"></path></svg>`,
 };
 
 function getTypeLabel(type) {
-  const labels = { link: '链接', text: '文本', short: '短文本', image: '图片' };
+  const labels = { link: '链接', text: '文本', short: '短文本', image: '图片', rich: '富文本' };
   return labels[type] || '文本';
 }
 
 function getTypeClass(type) {
-  const classes = { link: 'type-link', text: 'type-text', short: 'type-short', image: 'type-image' };
+  const classes = { link: 'type-link', text: 'type-text', short: 'type-short', image: 'type-image', rich: 'type-rich' };
   return classes[type] || '';
 }
 
@@ -83,7 +84,9 @@ function renderHistory(itemsToRender) {
       </div>
       <div class="item-preview">${item.content_type === 'image' && item.image_data
         ? `<img class="item-image" src="data:image/png;base64,${item.image_data}" alt="clipboard image" />`
-        : escapeHtml(item.preview)}</div>
+        : item.content_type === 'rich' && item.html_content
+          ? `<div class="rich-preview">${stripScripts(item.html_content)}</div>`
+          : escapeHtml(item.preview)}</div>
       <div class="item-meta">
         <span class="item-length">${item.content_type === 'image' ? `${item.image_width}×${item.image_height} px` : `${item.char_count} 字符`}</span>
       </div>
@@ -93,6 +96,14 @@ function renderHistory(itemsToRender) {
 function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
+  return div.innerHTML;
+}
+
+// Strip <script> and <style> tags from HTML to prevent XSS before rendering rich preview
+function stripScripts(html) {
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  div.querySelectorAll('script, style').forEach(el => el.remove());
   return div.innerHTML;
 }
 

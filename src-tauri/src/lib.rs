@@ -56,7 +56,7 @@ fn save_settings(settings: &Settings) {
 pub struct ClipboardItem {
     pub id: usize,
     pub content: String,
-    pub content_type: String, // "text" | "image" | "link" | "short"
+    pub content_type: String, // "text" | "image" | "link" | "short" | "rich"
     pub timestamp: String,
     pub preview: String,
     pub char_count: usize,
@@ -66,6 +66,8 @@ pub struct ClipboardItem {
     pub image_width: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image_height: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub html_content: Option<String>, // original HTML rich text (Windows)
 }
 
 #[derive(Default)]
@@ -193,6 +195,12 @@ fn copy_to_clipboard(
         }
     }
 
+    // If item has rich text HTML, restore it along with plain text
+    if let Some(ref html) = item.html_content {
+        let _ = clipboard.set().html(html, Some(&item.content));
+        return Ok(());
+    }
+
     // Otherwise restore text
     clipboard.set_text(&item.content).map_err(|e| e.to_string())?;
     Ok(())
@@ -248,11 +256,13 @@ fn poll_clipboard(
         if let Ok(text) = clipboard.get_text() {
             let text = text.trim().to_string();
             if !text.is_empty() {
+                // Also try to get HTML rich text (Windows)
+                let html_content = clipboard.get().html().ok();
                 let hash = simple_hash(&text);
                 if hash != last_text_hash {
                     last_text_hash = hash;
                     last_image_hash = 0; // reset image hash
-                    add_text_item(&app_handle, &state, &counter, &text);
+                    add_text_item(&app_handle, &state, &counter, &text, html_content);
                 }
             }
         }
@@ -290,6 +300,7 @@ fn add_text_item(
     state: &Arc<Mutex<Vec<ClipboardItem>>>,
     counter: &Arc<Mutex<usize>>,
     content: &str,
+    html_content: Option<String>,
 ) {
     let id = {
         let mut c = counter.lock();
@@ -297,16 +308,23 @@ fn add_text_item(
         *c
     };
 
+    let content_type = if html_content.is_some() {
+        "rich".to_string()
+    } else {
+        get_content_type(content)
+    };
+
     let item = ClipboardItem {
         id,
         content: content.to_string(),
-        content_type: get_content_type(content),
+        content_type,
         timestamp: Local::now().format("%H:%M:%S").to_string(),
         preview: make_preview(content),
         char_count: content.len(),
         image_data: None,
         image_width: None,
         image_height: None,
+        html_content,
     };
 
     {
@@ -383,6 +401,7 @@ fn add_image_item(
         image_data: Some(b64),
         image_width: Some(img.width as u32),
         image_height: Some(img.height as u32),
+        html_content: None,
     };
 
     {
