@@ -41,7 +41,5 @@
       }
     }
   },
-  "plugins": {
-    "clipboard-manager": {}
-  }
+  "plugins": {}
 }
