@@ -1,25 +1,35 @@
 use arboard::Clipboard;
 use chrono::Local;
+use image::ImageEncoder;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use std::io::Cursor;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use tauri::{
+    menu::{MenuBuilder, MenuItemBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter, Manager,
+    AppHandle, Emitter, Manager,
 };
 
 const MAX_HISTORY: usize = 500;
+const MAX_IMAGE_SIZE: usize = 10 * 1024 * 1024; // 10MB
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClipboardItem {
     pub id: usize,
     pub content: String,
-    pub content_type: String,
+    pub content_type: String, // "text" | "image" | "link" | "short"
     pub timestamp: String,
     pub preview: String,
     pub char_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_data: Option<String>, // base64 encoded image data
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_width: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_height: Option<u32>,
 }
 
 #[derive(Default)]
@@ -114,9 +124,39 @@ fn search_history(state: tauri::State<'_, AppState>, query: String) -> Vec<Clipb
 }
 
 #[tauri::command]
-fn copy_to_clipboard(content: String) -> Result<(), String> {
+fn copy_to_clipboard(
+    state: tauri::State<'_, AppState>,
+    id: usize,
+) -> Result<(), String> {
+    let history = state.history.lock();
+    let item = history.iter().find(|i| i.id == id)
+        .ok_or("Item not found")?;
+
     let mut clipboard = Clipboard::new().map_err(|e| e.to_string())?;
-    clipboard.set_text(&content).map_err(|e| e.to_string())?;
+
+    // If item has image data, restore the image
+    if let Some(ref img_data_b64) = item.image_data {
+        if let Ok(img_bytes) =
+            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, img_data_b64)
+        {
+            let decoder = image::codecs::png::PngDecoder::new(Cursor::new(&img_bytes))
+                .map_err(|e| e.to_string())?;
+            let img: image::DynamicImage =
+                image::DynamicImage::from_decoder(decoder).map_err(|e| e.to_string())?;
+            let rgba = img.to_rgba8();
+            let (w, h) = rgba.dimensions();
+            let img_data = arboard::ImageData {
+                width: w as usize,
+                height: h as usize,
+                bytes: rgba.into_raw().into(),
+            };
+            clipboard.set_image(img_data).map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+    }
+
+    // Otherwise restore text
+    clipboard.set_text(&item.content).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -139,50 +179,239 @@ fn get_item_count(state: tauri::State<'_, AppState>) -> usize {
     state.history.lock().len()
 }
 
-fn poll_clipboard(app_handle: tauri::AppHandle, state: Arc<Mutex<Vec<ClipboardItem>>>, counter: Arc<Mutex<usize>>) {
+fn poll_clipboard(
+    app_handle: AppHandle,
+    state: Arc<Mutex<Vec<ClipboardItem>>>,
+    counter: Arc<Mutex<usize>>,
+) {
     let mut clipboard = match Clipboard::new() {
         Ok(c) => c,
         Err(_) => return,
     };
-    let mut last_content = String::new();
+
+    // Track last content to avoid duplicates
+    let mut last_text_hash: u64 = 0;
+    let mut last_image_hash: u64 = 0;
 
     loop {
         thread::sleep(Duration::from_millis(500));
 
-        if let Ok(content) = clipboard.get_text() {
-            let content = content.trim().to_string();
-            if content.is_empty() || content == last_content {
-                continue;
+        // Try text first
+        if let Ok(text) = clipboard.get_text() {
+            let text = text.trim().to_string();
+            if !text.is_empty() {
+                let hash = simple_hash(&text);
+                if hash != last_text_hash {
+                    last_text_hash = hash;
+                    last_image_hash = 0; // reset image hash
+                    add_text_item(&app_handle, &state, &counter, &text);
+                }
             }
-            last_content = content.clone();
+        }
 
-            let mut history = state.lock();
-            let id = {
-                let mut c = counter.lock();
-                *c += 1;
-                *c
-            };
-
-            let item = ClipboardItem {
-                id,
-                content: content.clone(),
-                content_type: get_content_type(&content),
-                timestamp: Local::now().format("%H:%M:%S").to_string(),
-                preview: make_preview(&content),
-                char_count: content.len(),
-            };
-
-            history.insert(0, item);
-
-            if history.len() > MAX_HISTORY {
-                history.truncate(MAX_HISTORY);
+        // Try image
+        if let Ok(img) = clipboard.get_image() {
+            let img_hash = img_hash(&img);
+            if img_hash != last_image_hash {
+                last_image_hash = img_hash;
+                last_text_hash = 0; // reset text hash
+                add_image_item(&app_handle, &state, &counter, &img);
             }
-
-            save_history(&history);
-
-            let _ = app_handle.emit("clipboard-changed", &history[..std::cmp::min(5, history.len())]);
         }
     }
+}
+
+fn simple_hash(s: &str) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut h = DefaultHasher::new();
+    s.hash(&mut h);
+    h.finish()
+}
+
+fn img_hash(img: &arboard::ImageData) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut h = DefaultHasher::new();
+    (img.bytes.len(), img.width, img.height).hash(&mut h);
+    h.finish()
+}
+
+fn add_text_item(
+    app_handle: &AppHandle,
+    state: &Arc<Mutex<Vec<ClipboardItem>>>,
+    counter: &Arc<Mutex<usize>>,
+    content: &str,
+) {
+    let id = {
+        let mut c = counter.lock();
+        *c += 1;
+        *c
+    };
+
+    let item = ClipboardItem {
+        id,
+        content: content.to_string(),
+        content_type: get_content_type(content),
+        timestamp: Local::now().format("%H:%M:%S").to_string(),
+        preview: make_preview(content),
+        char_count: content.len(),
+        image_data: None,
+        image_width: None,
+        image_height: None,
+    };
+
+    {
+        let mut history = state.lock();
+        history.insert(0, item);
+        if history.len() > MAX_HISTORY {
+            history.truncate(MAX_HISTORY);
+        }
+        save_history(&history);
+        let _ = app_handle.emit(
+            "clipboard-changed",
+            &history[..std::cmp::min(5, history.len())],
+        );
+    }
+}
+
+fn add_image_item(
+    app_handle: &AppHandle,
+    state: &Arc<Mutex<Vec<ClipboardItem>>>,
+    counter: &Arc<Mutex<usize>>,
+    img: &arboard::ImageData,
+) {
+    // Skip very large images
+    if img.bytes.len() > MAX_IMAGE_SIZE {
+        write_log(&format!("Image too large ({} bytes), skipping", img.bytes.len()));
+        return;
+    }
+
+    // Convert to PNG for storage using image crate
+    let rgba_img = image::RgbaImage::from_raw(
+        img.width as u32,
+        img.height as u32,
+        img.bytes.to_vec(),
+    );
+    let rgba_img = match rgba_img {
+        Some(img) => img,
+        None => {
+            write_log("Failed to create image from raw bytes");
+            return;
+        }
+    };
+    let mut png_bytes: Vec<u8> = Vec::new();
+    let encoder = image::codecs::png::PngEncoder::new(&mut png_bytes);
+    if let Err(e) = encoder.write_image(
+        &rgba_img,
+        rgba_img.width(),
+        rgba_img.height(),
+        image::ExtendedColorType::Rgba8,
+    ) {
+        write_log(&format!("Failed to encode image to PNG: {:?}", e));
+        return;
+    }
+
+    let b64 = base64::Engine::encode(
+        &base64::engine::general_purpose::STANDARD,
+        &png_bytes,
+    );
+
+    let id = {
+        let mut c = counter.lock();
+        *c += 1;
+        *c
+    };
+
+    let preview = format!("图片 {}x{}", img.width, img.height);
+
+    let item = ClipboardItem {
+        id,
+        content: preview.clone(),
+        content_type: "image".to_string(),
+        timestamp: Local::now().format("%H:%M:%S").to_string(),
+        preview,
+        char_count: png_bytes.len(),
+        image_data: Some(b64),
+        image_width: Some(img.width as u32),
+        image_height: Some(img.height as u32),
+    };
+
+    {
+        let mut history = state.lock();
+        history.insert(0, item);
+        if history.len() > MAX_HISTORY {
+            history.truncate(MAX_HISTORY);
+        }
+        save_history(&history);
+        let _ = app_handle.emit(
+            "clipboard-changed",
+            &history[..std::cmp::min(5, history.len())],
+        );
+    }
+}
+
+fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    let quit = MenuItemBuilder::with_id("quit", "退出").build(app)?;
+    let show = MenuItemBuilder::with_id("show", "显示窗口").build(app)?;
+    let clear = MenuItemBuilder::with_id("clear", "清空历史").build(app)?;
+
+    let menu = MenuBuilder::new(app)
+        .item(&show)
+        .item(&clear)
+        .separator()
+        .item(&quit)
+        .build()?;
+
+    // Get the default window icon set in tauri.conf.json
+    let icon = app.default_window_icon().cloned()
+        .ok_or("No default window icon set")?;
+
+    let _tray = TrayIconBuilder::new()
+        .icon(icon)
+        .menu(&menu)
+        .tooltip("ClipHist - 剪贴板历史")
+        .on_menu_event(|app, event| {
+            match event.id().as_ref() {
+                "quit" => {
+                    write_log("Quit menu item clicked, exiting");
+                    app.exit(0);
+                }
+                "show" => {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                }
+                "clear" => {
+                    let state = app.state::<AppState>();
+                    let mut history = state.history.lock();
+                    history.clear();
+                    drop(history);
+                    save_history(&state.history.lock());
+                    let _ = app.emit("clipboard-changed", Vec::<ClipboardItem>::new());
+                    write_log("History cleared from tray menu");
+                }
+                _ => {}
+            }
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                let app = tray.app_handle();
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+        })
+        .build(app)?;
+
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -210,32 +439,20 @@ pub fn run() {
         .manage(state)
         .setup(|app| {
             write_log("setup start");
+
+            // Setup tray icon with menu
+            write_log("building tray icon");
+            if let Err(e) = setup_tray(app) {
+                write_log(&format!("Failed to setup tray: {}", e));
+            }
+
+            // Start clipboard polling
             let app_handle = app.handle().clone();
             let state = app.state::<AppState>();
             let hist = state.history.clone();
             let cnt = state.counter.clone();
-
             write_log("spawning clipboard poll thread");
             thread::spawn(move || poll_clipboard(app_handle, hist, cnt));
-
-            write_log("building tray icon");
-            let _tray = TrayIconBuilder::new()
-                .tooltip("ClipHist - 剪贴板历史")
-                .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    } = event
-                    {
-                        let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
-                    }
-                })
-                .build(app)?;
 
             write_log("setup complete, app running");
             Ok(())
@@ -246,7 +463,7 @@ pub fn run() {
             copy_to_clipboard,
             delete_item,
             clear_history,
-            get_item_count
+            get_item_count,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
