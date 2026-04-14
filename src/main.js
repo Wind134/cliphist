@@ -99,11 +99,15 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// Strip <script> and <style> tags from HTML to prevent XSS before rendering rich preview
 function stripScripts(html) {
   const div = document.createElement('div');
   div.innerHTML = html;
-  div.querySelectorAll('script, style').forEach(el => el.remove());
+  const dangerous = div.querySelectorAll('script, style, iframe, object, embed, form, input, button, select, textarea, [onerror], [onload], [onclick], [onmouseover], [onfocus], [onblur]');
+  dangerous.forEach(el => el.remove());
+  const attrsToRemove = ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur', 'onchange', 'onsubmit', 'src', 'href', 'data'];
+  div.querySelectorAll('*').forEach(el => {
+    attrsToRemove.forEach(attr => el.removeAttribute(attr));
+  });
   return div.innerHTML;
 }
 
@@ -324,6 +328,12 @@ async function init() {
       showToast('设置已保存');
     } catch (e) {
       showToast('保存失败: ' + e);
+    }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && settingsOpen) {
+      closeSettings();
     }
   });
 

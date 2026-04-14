@@ -23,7 +23,9 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { close_to_tray: true }
+        Settings {
+            close_to_tray: true,
+        }
     }
 }
 
@@ -164,12 +166,11 @@ fn search_history(state: tauri::State<'_, AppState>, query: String) -> Vec<Clipb
 }
 
 #[tauri::command]
-fn copy_to_clipboard(
-    state: tauri::State<'_, AppState>,
-    id: usize,
-) -> Result<(), String> {
+fn copy_to_clipboard(state: tauri::State<'_, AppState>, id: usize) -> Result<(), String> {
     let history = state.history.lock();
-    let item = history.iter().find(|i| i.id == id)
+    let item = history
+        .iter()
+        .find(|i| i.id == id)
         .ok_or("Item not found")?;
 
     let mut clipboard = Clipboard::new().map_err(|e| e.to_string())?;
@@ -202,7 +203,9 @@ fn copy_to_clipboard(
     }
 
     // Otherwise restore text
-    clipboard.set_text(&item.content).map_err(|e| e.to_string())?;
+    clipboard
+        .set_text(&item.content)
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -291,7 +294,7 @@ fn img_hash(img: &arboard::ImageData) -> u64 {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
     let mut h = DefaultHasher::new();
-    (img.bytes.len(), img.width, img.height).hash(&mut h);
+    img.bytes.hash(&mut h);
     h.finish()
 }
 
@@ -349,16 +352,16 @@ fn add_image_item(
 ) {
     // Skip very large images
     if img.bytes.len() > MAX_IMAGE_SIZE {
-        write_log(&format!("Image too large ({} bytes), skipping", img.bytes.len()));
+        write_log(&format!(
+            "Image too large ({} bytes), skipping",
+            img.bytes.len()
+        ));
         return;
     }
 
     // Convert to PNG for storage using image crate
-    let rgba_img = image::RgbaImage::from_raw(
-        img.width as u32,
-        img.height as u32,
-        img.bytes.to_vec(),
-    );
+    let rgba_img =
+        image::RgbaImage::from_raw(img.width as u32, img.height as u32, img.bytes.to_vec());
     let rgba_img = match rgba_img {
         Some(img) => img,
         None => {
@@ -378,10 +381,7 @@ fn add_image_item(
         return;
     }
 
-    let b64 = base64::Engine::encode(
-        &base64::engine::general_purpose::STANDARD,
-        &png_bytes,
-    );
+    let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &png_bytes);
 
     let id = {
         let mut c = counter.lock();
@@ -433,7 +433,9 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .build()?;
 
     // Get the default window icon set in tauri.conf.json
-    let icon = app.default_window_icon().cloned()
+    let icon = app
+        .default_window_icon()
+        .cloned()
         .ok_or("No default window icon set")?;
 
     let _tray = TrayIconBuilder::new()
