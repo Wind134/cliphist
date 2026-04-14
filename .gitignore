@@ -6,3 +6,4 @@ src-tauri/.cargo/
 *.log
 .DS_Store
 .vscode/
+package-lock.json
