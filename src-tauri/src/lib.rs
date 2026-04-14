@@ -64,7 +64,9 @@ fn save_history(items: &[ClipboardItem]) {
 }
 
 fn load_history() -> Vec<ClipboardItem> {
+    write_log("load_history: start");
     let path = get_storage_path();
+    write_log(&format!("load_history: path={:?}", path));
     if let Ok(json) = std::fs::read_to_string(path) {
         if let Ok(items) = serde_json::from_str::<Vec<ClipboardItem>>(&json) {
             return items;
@@ -187,7 +189,9 @@ pub fn run() {
     write_log("ClipHist starting...");
 
     let history = load_history();
+    write_log("load_history done");
     let counter = history.iter().map(|i| i.id).max().unwrap_or(0);
+    write_log("counter computed");
 
     let state = AppState {
         history: Arc::new(Mutex::new(history)),
