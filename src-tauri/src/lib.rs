@@ -124,10 +124,11 @@ fn load_history() -> Vec<ClipboardItem> {
 
 fn make_preview(content: &str) -> String {
     let trimmed = content.trim();
-    if trimmed.len() <= 80 {
+    if trimmed.char_indices().count() <= 80 {
         trimmed.to_string()
     } else {
-        format!("{}...", &trimmed[..80])
+        let preview: String = trimmed.chars().take(80).collect();
+        format!("{}...", preview)
     }
 }
 
