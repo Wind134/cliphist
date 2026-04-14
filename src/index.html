@@ -79,5 +79,30 @@
   </div>
 
   <div id="toast" class="toast" style="display:none"></div>
+
+  <!-- Settings Panel -->
+  <div id="settings-panel" class="settings-panel" style="display:none">
+    <div class="settings-header">
+      <span class="settings-title">设置</span>
+      <button id="btn-settings-close" class="btn-icon">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="settings-body">
+      <div class="settings-item">
+        <div class="settings-item-info">
+          <span class="settings-item-label">关闭时最小化到托盘</span>
+          <span class="settings-item-desc">关闭窗口时程序继续在后台运行</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="toggle-close-to-tray" checked />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

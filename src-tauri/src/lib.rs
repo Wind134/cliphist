@@ -17,6 +17,42 @@ const MAX_HISTORY: usize = 500;
 const MAX_IMAGE_SIZE: usize = 10 * 1024 * 1024; // 10MB
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Settings {
+    pub close_to_tray: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Settings { close_to_tray: true }
+    }
+}
+
+fn get_settings_path() -> std::path::PathBuf {
+    let data_dir = dirs::data_local_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("ClipHist");
+    std::fs::create_dir_all(&data_dir).ok();
+    data_dir.join("settings.json")
+}
+
+fn load_settings() -> Settings {
+    let path = get_settings_path();
+    if let Ok(json) = std::fs::read_to_string(path) {
+        if let Ok(s) = serde_json::from_str::<Settings>(&json) {
+            return s;
+        }
+    }
+    Settings::default()
+}
+
+fn save_settings(settings: &Settings) {
+    if let Ok(json) = serde_json::to_string_pretty(settings) {
+        let path = get_settings_path();
+        let _ = std::fs::write(path, json);
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClipboardItem {
     pub id: usize,
     pub content: String,
@@ -177,6 +213,16 @@ fn clear_history(state: tauri::State<'_, AppState>) {
 #[tauri::command]
 fn get_item_count(state: tauri::State<'_, AppState>) -> usize {
     state.history.lock().len()
+}
+
+#[tauri::command]
+fn get_settings() -> Settings {
+    load_settings()
+}
+
+#[tauri::command]
+fn save_settings_cmd(settings: Settings) {
+    save_settings(&settings);
 }
 
 fn poll_clipboard(
@@ -355,9 +401,11 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let quit = MenuItemBuilder::with_id("quit", "退出").build(app)?;
     let show = MenuItemBuilder::with_id("show", "显示窗口").build(app)?;
     let clear = MenuItemBuilder::with_id("clear", "清空历史").build(app)?;
+    let settings = MenuItemBuilder::with_id("settings", "设置").build(app)?;
 
     let menu = MenuBuilder::new(app)
         .item(&show)
+        .item(&settings)
         .item(&clear)
         .separator()
         .item(&quit)
@@ -371,29 +419,34 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .icon(icon)
         .menu(&menu)
         .tooltip("ClipHist - 剪贴板历史")
-        .on_menu_event(|app, event| {
-            match event.id().as_ref() {
-                "quit" => {
-                    write_log("Quit menu item clicked, exiting");
-                    app.exit(0);
-                }
-                "show" => {
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
-                }
-                "clear" => {
-                    let state = app.state::<AppState>();
-                    let mut history = state.history.lock();
-                    history.clear();
-                    drop(history);
-                    save_history(&state.history.lock());
-                    let _ = app.emit("clipboard-changed", Vec::<ClipboardItem>::new());
-                    write_log("History cleared from tray menu");
-                }
-                _ => {}
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "quit" => {
+                write_log("Quit menu item clicked, exiting");
+                app.exit(0);
             }
+            "show" => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+            "settings" => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                    let _ = window.emit("open-settings", ());
+                }
+            }
+            "clear" => {
+                let state = app.state::<AppState>();
+                let mut history = state.history.lock();
+                history.clear();
+                drop(history);
+                save_history(&state.history.lock());
+                let _ = app.emit("clipboard-changed", Vec::<ClipboardItem>::new());
+                write_log("History cleared from tray menu");
+            }
+            _ => {}
         })
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click {
@@ -446,6 +499,22 @@ pub fn run() {
                 write_log(&format!("Failed to setup tray: {}", e));
             }
 
+            // Intercept window close -> hide to tray instead of exiting
+            let settings = load_settings();
+            if settings.close_to_tray {
+                if let Some(window) = app.get_webview_window("main") {
+                    let app_handle = app.handle().clone();
+                    window.on_window_event(move |event| {
+                        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                            api.prevent_close();
+                            if let Some(win) = app_handle.get_webview_window("main") {
+                                let _ = win.hide();
+                            }
+                        }
+                    });
+                }
+            }
+
             // Start clipboard polling
             let app_handle = app.handle().clone();
             let state = app.state::<AppState>();
@@ -464,6 +533,8 @@ pub fn run() {
             delete_item,
             clear_history,
             get_item_count,
+            get_settings,
+            save_settings_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

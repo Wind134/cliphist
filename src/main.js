@@ -5,6 +5,7 @@ let history = [];
 let searchQuery = '';
 let selectedIndex = -1;
 let currentCategory = 'all';
+let settingsOpen = false;
 
 const historyList = document.getElementById('history-list');
 const searchInput = document.getElementById('search-input');
@@ -118,7 +119,7 @@ async function copyItem(id) {
   const item = history.find(i => i.id === id);
   if (!item) return;
   try {
-    await invoke('copy_to_clipboard', { content: item.content });
+    await invoke('copy_to_clipboard', { id });
     showToast('已复制到剪贴板');
   } catch (e) {
     showToast('复制失败: ' + e);
@@ -279,6 +280,45 @@ async function init() {
     } else if (e.key === 'Escape') {
       searchInput.blur();
     }
+  });
+
+  // --- Settings ---
+  const settingsPanel = document.getElementById('settings-panel');
+  const btnSettingsClose = document.getElementById('btn-settings-close');
+  const toggleCloseToTray = document.getElementById('toggle-close-to-tray');
+
+  async function openSettings() {
+    settingsOpen = true;
+    settingsPanel.style.display = 'flex';
+    try {
+      const s = await invoke('get_settings');
+      toggleCloseToTray.checked = s.close_to_tray;
+    } catch (e) {
+      console.error('Failed to load settings:', e);
+    }
+  }
+
+  function closeSettings() {
+    settingsOpen = false;
+    settingsPanel.style.display = 'none';
+  }
+
+  btnSettingsClose.addEventListener('click', closeSettings);
+
+  toggleCloseToTray.addEventListener('change', async () => {
+    try {
+      await invoke('save_settings_cmd', {
+        settings: { close_to_tray: toggleCloseToTray.checked },
+      });
+      showToast('设置已保存');
+    } catch (e) {
+      showToast('保存失败: ' + e);
+    }
+  });
+
+  // Listen for open-settings event from tray menu
+  listen('open-settings', () => {
+    openSettings();
   });
 }
 
