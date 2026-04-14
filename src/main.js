@@ -4,6 +4,7 @@ const { listen } = window.__TAURI__.event;
 let history = [];
 let searchQuery = '';
 let selectedIndex = -1;
+let currentCategory = 'all';
 
 const historyList = document.getElementById('history-list');
 const searchInput = document.getElementById('search-input');
@@ -95,9 +96,17 @@ function escapeHtml(text) {
 }
 
 function getFilteredHistory() {
-  if (!searchQuery) return history;
-  const q = searchQuery.toLowerCase();
-  return history.filter(item => item.content.toLowerCase().includes(q));
+  let items = history;
+  // Category filter
+  if (currentCategory !== 'all') {
+    items = items.filter(item => item.content_type === currentCategory);
+  }
+  // Search filter
+  if (searchQuery) {
+    const q = searchQuery.toLowerCase();
+    items = items.filter(item => item.content.toLowerCase().includes(q));
+  }
+  return items;
 }
 
 function updateCount() {
@@ -183,7 +192,10 @@ async function init() {
     const top5 = event.payload;
     history = [...top5, ...history.filter(h => !top5.find(t => t.id === h.id))];
     history = history.slice(0, 500);
-    renderHistory(getFilteredHistory());
+    // Only re-render if not filtering by category (or if new item matches current category)
+    if (currentCategory === 'all' || top5.some(t => t.content_type === currentCategory)) {
+      renderHistory(getFilteredHistory());
+    }
     updateCount();
   });
 
@@ -199,7 +211,18 @@ async function init() {
     searchInput.value = '';
     btnSearchClear.style.display = 'none';
     selectedIndex = -1;
-    renderHistory(history);
+    renderHistory(getFilteredHistory());
+  });
+
+  // Category tab switching
+  document.querySelectorAll('.cat-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.cat-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      currentCategory = tab.dataset.cat;
+      selectedIndex = -1;
+      renderHistory(getFilteredHistory());
+    });
   });
 
   historyList.addEventListener('click', (e) => {
