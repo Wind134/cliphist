@@ -180,13 +180,16 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(state)
         .setup(|app| {
+            log::info!("[ClipHist] setup start");
             let app_handle = app.handle().clone();
             let state = app.state::<AppState>();
             let hist = state.history.clone();
             let cnt = state.counter.clone();
 
+            log::info!("[ClipHist] spawning clipboard poll thread");
             thread::spawn(move || poll_clipboard(app_handle, hist, cnt));
 
+            log::info!("[ClipHist] building tray icon");
             let _tray = TrayIconBuilder::new()
                 .tooltip("ClipHist - 剪贴板历史")
                 .on_tray_icon_event(|tray, event| {
@@ -205,6 +208,7 @@ pub fn run() {
                 })
                 .build(app)?;
 
+            log::info!("[ClipHist] setup complete, app running");
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
