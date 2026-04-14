@@ -7,8 +7,6 @@
     "tauri": "tauri"
   },
   "devDependencies": {
-    "@napi-rs/canvas": "^0.1.97",
-    "@tauri-apps/cli": "^2",
-    "to-ico": "^1.1.5"
+    "@tauri-apps/cli": "^2"
   }
 }
