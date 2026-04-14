@@ -133,7 +133,8 @@ fn make_preview(content: &str) -> String {
 }
 
 fn get_content_type(content: &str) -> String {
-    if content.starts_with("http://") || content.starts_with("https://") {
+    // Check if content contains any URL
+    if content.contains("http://") || content.contains("https://") || content.contains("www.") {
         "link".to_string()
     } else if content.len() > 100 && content.contains('\n') {
         "text".to_string()
