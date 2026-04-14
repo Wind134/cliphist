@@ -28,6 +28,26 @@ pub struct AppState {
     pub counter: Arc<Mutex<usize>>,
 }
 
+fn get_log_path() -> std::path::PathBuf {
+    let data_dir = dirs::data_local_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("ClipHist");
+    std::fs::create_dir_all(&data_dir).ok();
+    data_dir.join("cliphist.log")
+}
+
+fn write_log(msg: &str) {
+    use std::io::Write;
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(get_log_path())
+    {
+        let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
+        let _ = writeln!(file, "[{}] {}", ts, msg);
+    }
+}
+
 fn get_storage_path() -> std::path::PathBuf {
     let data_dir = dirs::data_local_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
@@ -164,7 +184,7 @@ fn poll_clipboard(app_handle: tauri::AppHandle, state: Arc<Mutex<Vec<ClipboardIt
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    env_logger::init();
+    write_log("ClipHist starting...");
 
     let history = load_history();
     let counter = history.iter().map(|i| i.id).max().unwrap_or(0);
@@ -180,16 +200,16 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(state)
         .setup(|app| {
-            log::info!("[ClipHist] setup start");
+            write_log("setup start");
             let app_handle = app.handle().clone();
             let state = app.state::<AppState>();
             let hist = state.history.clone();
             let cnt = state.counter.clone();
 
-            log::info!("[ClipHist] spawning clipboard poll thread");
+            write_log("spawning clipboard poll thread");
             thread::spawn(move || poll_clipboard(app_handle, hist, cnt));
 
-            log::info!("[ClipHist] building tray icon");
+            write_log("building tray icon");
             let _tray = TrayIconBuilder::new()
                 .tooltip("ClipHist - 剪贴板历史")
                 .on_tray_icon_event(|tray, event| {
@@ -208,7 +228,7 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            log::info!("[ClipHist] setup complete, app running");
+            write_log("setup complete, app running");
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
