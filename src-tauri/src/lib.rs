@@ -45,6 +45,7 @@ fn write_log(msg: &str) {
     {
         let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
         let _ = writeln!(file, "[{}] {}", ts, msg);
+        let _ = file.flush();
     }
 }
 
@@ -186,6 +187,10 @@ fn poll_clipboard(app_handle: tauri::AppHandle, state: Arc<Mutex<Vec<ClipboardIt
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    std::panic::set_hook(Box::new(|panic_info| {
+        write_log(&format!("PANIC: {}", panic_info));
+    }));
+
     write_log("ClipHist starting...");
 
     let history = load_history();
