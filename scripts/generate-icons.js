@@ -2,65 +2,51 @@ import { createCanvas } from '@napi-rs/canvas';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import toIco from 'to-ico';
 
-// Target: src-tauri/icons/
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const iconsDir = path.resolve(__dirname, '..', 'src-tauri', 'icons');
 fs.mkdirSync(iconsDir, { recursive: true });
 
-// Sizes needed for Tauri
-const sizes = [
-  [16, 'icon.png'],
-  [32, '32x32.png'],
-  [128, '128x128.png'],
-  [256, '128x128@2x.png'],
-];
-
+// --- Draw icon at multiple sizes ---
 function drawIcon(size) {
   const canvas = createCanvas(size, size);
   const ctx = canvas.getContext('2d');
   const s = size / 64;
 
   // Background gradient - indigo
-  const bgColor = '#4F46E5';
-  const lightColor = '#818CF8';
-
   ctx.save();
   roundedRect(ctx, 4*s, 4*s, 56*s, 56*s, 10*s);
   const grad = ctx.createLinearGradient(4*s, 4*s, 60*s, 60*s);
-  grad.addColorStop(0, bgColor);
-  grad.addColorStop(1, lightColor);
+  grad.addColorStop(0, '#4F46E5');
+  grad.addColorStop(1, '#818CF8');
   ctx.fillStyle = grad;
   ctx.fill();
   ctx.restore();
 
-  // Clipboard board (white) with shadow effect
+  // White clipboard board
   ctx.save();
   roundedRect(ctx, 17*s, 12*s, 30*s, 40*s, 4*s);
   ctx.fillStyle = '#FFFFFF';
   ctx.fill();
-  // subtle inner shadow
-  ctx.strokeStyle = 'rgba(0,0,0,0.1)';
-  ctx.lineWidth = 1*s;
-  ctx.stroke();
   ctx.restore();
 
-  // Clipboard clip top
+  // Clip top
   ctx.save();
   roundedRect(ctx, 23*s, 7*s, 18*s, 11*s, 3*s);
   ctx.fillStyle = '#E0E7FF';
   ctx.fill();
   ctx.restore();
 
-  // Clip hole (dark)
+  // Clip hole
   ctx.save();
   roundedRect(ctx, 27*s, 9*s, 10*s, 6*s, 2*s);
-  ctx.fillStyle = bgColor;
+  ctx.fillStyle = '#4F46E5';
   ctx.fill();
   ctx.restore();
 
-  // Lines on clipboard
+  // Lines
   ctx.save();
   ctx.strokeStyle = '#CBD5E1';
   ctx.lineWidth = 1.8*s;
@@ -73,7 +59,7 @@ function drawIcon(size) {
   });
   ctx.restore();
 
-  // Orange dot (history indicator, bottom right)
+  // Orange dot
   ctx.save();
   ctx.beginPath();
   ctx.arc(45*s, 47*s, 9*s, 0, Math.PI * 2);
@@ -84,7 +70,7 @@ function drawIcon(size) {
   ctx.fill();
   ctx.restore();
 
-  // Clock face on dot
+  // Clock hands
   ctx.save();
   ctx.strokeStyle = '#FFFFFF';
   ctx.lineWidth = 1.5*s;
@@ -117,23 +103,34 @@ function roundedRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-// Generate all PNG sizes
-for (const [size, filename] of sizes) {
+// --- Generate PNGs for Tauri ---
+const pngSizes = [
+  [16, 'icon.png'],
+  [32, '32x32.png'],
+  [128, '128x128.png'],
+  [256, '128x128@2x.png'],
+];
+
+for (const [size, filename] of pngSizes) {
   const canvas = drawIcon(size);
-  const buffer = canvas.toBuffer('image/png');
-  fs.writeFileSync(path.join(iconsDir, filename), buffer);
-  console.log(`Generated ${filename} (${size}x${size})`);
+  fs.writeFileSync(path.join(iconsDir, filename), canvas.toBuffer('image/png'));
+  console.log(`Generated ${filename}`);
 }
 
-// For Windows ICO: create a 256x256 PNG (Tauri NSIS accepts PNG as icon)
-const ico256 = drawIcon(256);
-const icoBuffer = ico256.toBuffer('image/png');
+// --- Generate real ICO with multiple sizes (16,32,48,256) ---
+const icoSizes = [16, 32, 48, 256];
+const pngBuffers = icoSizes.map(size => {
+  const canvas = drawIcon(size);
+  return canvas.toBuffer('image/png');
+});
+
+const icoBuffer = await toIco(pngBuffers);
 fs.writeFileSync(path.join(iconsDir, 'icon.ico'), icoBuffer);
-console.log('Generated icon.ico (256x256 PNG - Tauri NSIS compatible)');
+console.log(`Generated icon.ico (real ICO with ${icoSizes.join(',')}-pixel sizes)`);
 
-// For macOS ICNS: PNG works for dev builds
-fs.writeFileSync(path.join(iconsDir, 'icon.icns'), icoBuffer);
-console.log('Generated icon.icns (256x256 PNG - macOS compatible)');
+// --- Generate ICNS (PNG works for dev/macOS builds) ---
+const icns256 = drawIcon(256);
+fs.writeFileSync(path.join(iconsDir, 'icon.icns'), icns256.toBuffer('image/png'));
+console.log('Generated icon.icns (256x256 PNG)');
 
-console.log(`\nAll icons written to: ${iconsDir}`);
-console.log('Done!');
+console.log(`\nAll icons → ${iconsDir}`);
