@@ -103,6 +103,25 @@
           <span class="toggle-slider"></span>
         </label>
       </div>
+      <div class="settings-item">
+        <div class="settings-item-info">
+          <span class="settings-item-label">窗口缩放</span>
+          <span class="settings-item-desc">调整界面显示大小</span>
+        </div>
+        <div class="zoom-control">
+          <button id="btn-zoom-down" class="zoom-btn">-</button>
+          <span id="zoom-level">100%</span>
+          <button id="btn-zoom-up" class="zoom-btn">+</button>
+        </div>
+      </div>
+      <div class="settings-item">
+        <div class="settings-item-info">
+          <span class="settings-item-label">全局快捷键</span>
+          <span class="settings-item-desc">唤醒窗口的快捷键</span>
+          <span id="hotkey-error" class="settings-item-error" style="display:none"></span>
+        </div>
+        <input type="text" id="input-hotkey" class="hotkey-input" placeholder="Ctrl+Shift+V" />
+      </div>
     </div>
   </div>
 </body>

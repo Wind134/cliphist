@@ -1,0 +1,220 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 850">
+  <defs>
+    <style>
+      .title { font-family: Arial, sans-serif; font-size: 12px; font-weight: bold; fill: #1a1a1a; }
+      .subtitle { font-family: Arial, sans-serif; font-size: 9px; fill: #374151; }
+      .label { font-family: Arial, sans-serif; font-size: 8px; fill: #6b7280; }
+      .layer-title { font-family: Arial, sans-serif; font-size: 11px; font-weight: bold; fill: #ffffff; }
+      .legend-title { font-family: Arial, sans-serif; font-size: 10px; font-weight: bold; fill: #1a1a1a; }
+    </style>
+    <marker id="arrowhead" markerWidth="6" markerHeight="5" refX="5" refY="2.5" orient="auto">
+      <polygon points="0 0, 6 2.5, 0 5" fill="#6b7280"/>
+    </marker>
+  </defs>
+
+  <rect width="900" height="850" fill="#ffffff"/>
+
+  <!-- ========== LAYER 1: Frontend ========== -->
+  <rect x="20" y="15" width="860" height="130" fill="#2563eb" rx="8"/>
+  <text x="35" y="33" class="layer-title">FRONTEND LAYER — src/</text>
+
+  <rect x="35" y="45" width="120" height="85" fill="white" stroke="#d1d5db" stroke-width="1" rx="4"/>
+  <text x="42" y="60" class="title">index.html</text>
+  <text x="42" y="74" class="subtitle">titlebar</text>
+  <text x="42" y="85" class="subtitle">search-container</text>
+  <text x="42" y="96" class="subtitle">history-list</text>
+  <text x="42" y="107" class="subtitle">statusbar</text>
+  <text x="42" y="118" class="subtitle">settings-panel</text>
+
+  <rect x="165" y="45" width="100" height="85" fill="white" stroke="#d1d5db" stroke-width="1" rx="4"/>
+  <text x="172" y="60" class="title">styles.css</text>
+  <text x="172" y="74" class="subtitle">CSS Variables</text>
+  <text x="172" y="85" class="subtitle">Components</text>
+  <text x="172" y="96" class="subtitle">Layout</text>
+  <text x="172" y="107" class="subtitle">Animations</text>
+
+  <rect x="275" y="45" width="120" height="85" fill="white" stroke="#d1d5db" stroke-width="1" rx="4"/>
+  <text x="282" y="60" class="title">main.js</text>
+  <text x="282" y="74" class="subtitle">Event Listeners</text>
+  <text x="282" y="85" class="subtitle">State Management</text>
+  <text x="282" y="96" class="subtitle">invoke() calls</text>
+  <text x="282" y="107" class="subtitle">listen() events</text>
+
+  <rect x="405" y="45" width="120" height="85" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5" rx="4"/>
+  <text x="412" y="60" class="title">Tauri API</text>
+  <text x="412" y="74" class="subtitle">invoke()</text>
+  <text x="412" y="85" class="subtitle">listen()</text>
+  <text x="412" y="96" class="subtitle">window control</text>
+  <text x="412" y="107" class="subtitle">tray events</text>
+
+  <line x1="535" y1="88" x2="565" y2="88" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+  <text x="542" y="82" class="label">IPC</text>
+
+  <rect x="575" y="45" width="100" height="85" fill="#f3e8ff" stroke="#9333ea" stroke-width="1.5" rx="4"/>
+  <text x="582" y="60" class="title">Tauri IPC</text>
+  <text x="582" y="74" class="subtitle">Commands</text>
+  <text x="582" y="85" class="subtitle">Events</text>
+  <text x="582" y="96" class="subtitle">Plugin Bridge</text>
+
+  <line x1="625" y1="130" x2="625" y2="160" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+
+  <!-- ========== LAYER 2: Rust Backend ========== -->
+  <rect x="20" y="165" width="860" height="340" fill="#16a34a" rx="8"/>
+  <text x="35" y="183" class="layer-title">RUST BACKEND — src-tauri/src/lib.rs</text>
+
+  <!-- Commands -->
+  <rect x="35" y="195" width="180" height="130" fill="white" stroke="#d1d5db" stroke-width="1" rx="4"/>
+  <text x="42" y="210" class="title">Tauri Commands</text>
+  <text x="42" y="225" class="subtitle">get_history()</text>
+  <text x="42" y="236" class="subtitle">search_history()</text>
+  <text x="42" y="247" class="subtitle">copy_to_clipboard()</text>
+  <text x="42" y="258" class="subtitle">delete_item()</text>
+  <text x="42" y="269" class="subtitle">clear_history()</text>
+  <text x="42" y="280" class="subtitle">get_settings()</text>
+  <text x="42" y="291" class="subtitle">save_settings_cmd()</text>
+  <text x="42" y="302" class="subtitle">update_settings()</text>
+  <text x="42" y="313" class="subtitle">get_item_count()</text>
+  <text x="42" y="324" class="label">#[tauri::command]</text>
+
+  <!-- Data Structures -->
+  <rect x="225" y="195" width="180" height="130" fill="white" stroke="#d1d5db" stroke-width="1" rx="4"/>
+  <text x="232" y="210" class="title">Data Structures</text>
+  <text x="232" y="228" class="subtitle" font-weight="bold">Settings</text>
+  <text x="232" y="240" class="subtitle">  close_to_tray: bool</text>
+  <text x="232" y="251" class="subtitle">  zoom_level: f32</text>
+  <text x="232" y="262" class="subtitle">  hotkey: String</text>
+  <text x="232" y="278" class="subtitle" font-weight="bold">ClipboardItem</text>
+  <text x="232" y="290" class="subtitle">  id, content, content_type</text>
+  <text x="232" y="301" class="subtitle">  timestamp, preview</text>
+  <text x="232" y="312" class="subtitle">  image_data, html_content</text>
+  <text x="232" y="326" class="label">serde::Serialize</text>
+
+  <!-- AppState -->
+  <rect x="415" y="195" width="150" height="70" fill="white" stroke="#d1d5db" stroke-width="1" rx="4"/>
+  <text x="422" y="210" class="title">AppState</text>
+  <text x="422" y="228" class="subtitle">history: Arc&lt;Mutex&lt;Vec&gt;&gt;</text>
+  <text x="422" y="240" class="subtitle">counter: Arc&lt;Mutex&lt;usize&gt;&gt;</text>
+  <text x="422" y="257" class="label">parking_lot::Mutex</text>
+
+  <!-- poll_clipboard -->
+  <rect x="415" y="275" width="150" height="70" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5" rx="4"/>
+  <text x="422" y="290" class="title">poll_clipboard()</text>
+  <text x="422" y="306" class="subtitle">500ms interval</text>
+  <text x="422" y="317" class="subtitle">Text + Image monitoring</text>
+  <text x="422" y="336" class="label">thread::spawn</text>
+
+  <!-- Global Shortcut -->
+  <rect x="415" y="355" width="150" height="70" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5" rx="4"/>
+  <text x="422" y="370" class="title">Global Shortcut</text>
+  <text x="422" y="386" class="subtitle">parse_shortcut()</text>
+  <text x="422" y="397" class="subtitle">register_global_shortcut()</text>
+  <text x="422" y="416" class="label">tauri-plugin-global-shortcut</text>
+
+  <!-- Storage -->
+  <rect x="575" y="195" width="130" height="100" fill="white" stroke="#d1d5db" stroke-width="1" rx="4"/>
+  <text x="582" y="210" class="title">Storage</text>
+  <text x="582" y="228" class="subtitle">history.json</text>
+  <text x="582" y="240" class="subtitle">settings.json</text>
+  <text x="582" y="252" class="subtitle">cliphist.log</text>
+  <text x="582" y="274" class="label">%LOCALAPPDATA%/</text>
+  <text x="582" y="285" class="label">ClipHist/</text>
+
+  <!-- Tray Setup -->
+  <rect x="575" y="305" width="130" height="120" fill="white" stroke="#d1d5db" stroke-width="1" rx="4"/>
+  <text x="582" y="320" class="title">Tray Setup</text>
+  <text x="582" y="338" class="subtitle">setup_tray()</text>
+  <text x="582" y="351" class="subtitle">on_menu_event()</text>
+  <text x="582" y="364" class="subtitle">on_tray_icon_event()</text>
+  <text x="582" y="384" class="label">tauri::tray</text>
+
+  <!-- Setup Phase -->
+  <rect x="715" y="195" width="150" height="130" fill="white" stroke="#d1d5db" stroke-width="1" rx="4"/>
+  <text x="722" y="210" class="title">Setup Phase</text>
+  <text x="722" y="230" class="subtitle">setup_tray()</text>
+  <text x="722" y="243" class="subtitle">register_global_shortcut()</text>
+  <text x="722" y="256" class="subtitle">close_to_tray handler</text>
+  <text x="722" y="276" class="subtitle">poll_clipboard thread</text>
+  <text x="722" y="296" class="subtitle">clipboard-changed emit</text>
+  <text x="722" y="316" class="label">tauri::Builder</text>
+
+  <line x1="790" y1="325" x2="835" y2="325" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+  <text x="795" y="320" class="label">triggers</text>
+
+  <!-- ========== LAYER 3: System Integration ========== -->
+  <rect x="20" y="520" width="860" height="210" fill="#ea580c" rx="8"/>
+  <text x="35" y="538" class="layer-title">SYSTEM INTEGRATION</text>
+
+  <!-- System Tray -->
+  <rect x="35" y="552" width="180" height="100" fill="white" stroke="#ea580c" stroke-width="1.5" rx="4"/>
+  <text x="42" y="567" class="title">System Tray</text>
+  <text x="42" y="583" class="subtitle">Left click: show window</text>
+  <text x="42" y="595" class="subtitle">Right click: menu</text>
+  <text x="42" y="607" class="subtitle">  - 显示窗口</text>
+  <text x="42" y="618" class="subtitle">  - 设置</text>
+  <text x="42" y="629" class="subtitle">  - 清空历史</text>
+  <text x="42" y="640" class="subtitle">  - 退出</text>
+
+  <!-- Global Shortcut System -->
+  <rect x="230" y="552" width="180" height="100" fill="white" stroke="#ea580c" stroke-width="1.5" rx="4"/>
+  <text x="237" y="567" class="title">Global Shortcut</text>
+  <text x="237" y="583" class="subtitle">Default: Ctrl+Shift+V</text>
+  <text x="237" y="595" class="subtitle">Action: show + focus window</text>
+  <text x="237" y="612" class="subtitle">Modifiers:</text>
+  <text x="237" y="623" class="subtitle">  Ctrl, Shift, Alt, Win</text>
+  <text x="237" y="634" class="subtitle">Keys: A-Z, 0-9, Space/Tab/Enter</text>
+
+  <!-- Clipboard Manager -->
+  <rect x="425" y="552" width="180" height="100" fill="white" stroke="#ea580c" stroke-width="1.5" rx="4"/>
+  <text x="432" y="567" class="title">Clipboard Manager</text>
+  <text x="432" y="583" class="subtitle">arboard crate</text>
+  <text x="432" y="595" class="subtitle">Text get/set</text>
+  <text x="432" y="607" class="subtitle">Image get/set (PNG)</text>
+  <text x="432" y="619" class="subtitle">HTML rich text</text>
+  <text x="432" y="631" class="subtitle">Base64 image encoding</text>
+  <text x="432" y="643" class="subtitle">image crate (PNG encode)</text>
+
+  <!-- Window Management -->
+  <rect x="620" y="552" width="180" height="100" fill="white" stroke="#ea580c" stroke-width="1.5" rx="4"/>
+  <text x="627" y="567" class="title">Window Management</text>
+  <text x="627" y="583" class="subtitle">Close → hide to tray</text>
+  <text x="627" y="595" class="subtitle">Minimize window</text>
+  <text x="627" y="607" class="subtitle">Show + set_focus()</text>
+  <text x="627" y="619" class="subtitle">Window size: 400x500</text>
+  <text x="627" y="631" class="subtitle">Min size: 320x400</text>
+  <text x="627" y="643" class="subtitle">Decorations: true</text>
+
+  <!-- ========== LEGEND ========== -->
+  <rect x="730" y="15" width="150" height="150" fill="#f9fafb" stroke="#e5e7eb" rx="4"/>
+  <text x="740" y="32" class="legend-title">Legend</text>
+
+  <rect x="740" y="42" width="12" height="12" fill="#dbeafe" stroke="#2563eb" stroke-width="1" rx="2"/>
+  <text x="758" y="52" class="subtitle">Tauri API</text>
+
+  <rect x="740" y="62" width="12" height="12" fill="#f3e8ff" stroke="#9333ea" stroke-width="1" rx="2"/>
+  <text x="758" y="72" class="subtitle">IPC Bridge</text>
+
+  <rect x="740" y="82" width="12" height="12" fill="#dcfce7" stroke="#16a34a" stroke-width="1" rx="2"/>
+  <text x="758" y="92" class="subtitle">Rust Backend</text>
+
+  <rect x="740" y="102" width="12" height="12" fill="#ffedd5" stroke="#ea580c" stroke-width="1" rx="2"/>
+  <text x="758" y="112" class="subtitle">System Layer</text>
+
+  <line x1="740" y1="130" x2="765" y2="130" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+  <text x="773" y="133" class="subtitle">Sync call</text>
+
+  <line x1="740" y1="148" x2="765" y2="148" stroke="#6b7280" stroke-width="1.5" stroke-dasharray="3,2" fill="none"/>
+  <text x="773" y="151" class="subtitle">Event</text>
+
+  <!-- ========== EVENT FLOW ========== -->
+  <rect x="35" y="745" width="830" height="90" fill="#f3f4f6" stroke="#e5e7eb" rx="4"/>
+  <text x="45" y="762" class="title">Event Flow</text>
+
+  <text x="45" y="780" class="subtitle">1. poll_clipboard() detects clipboard change (500ms interval)</text>
+  <text x="45" y="793" class="subtitle">2. Rust emits 'clipboard-changed' event via app_handle.emit()</text>
+  <text x="45" y="806" class="subtitle">3. Frontend listen('clipboard-changed') receives event and re-renders history list</text>
+  <text x="45" y="819" class="subtitle">4. User clicks item → invoke('copy_to_clipboard', {id}) → Rust copies to system clipboard</text>
+
+  <!-- ========== FOOTER ========== -->
+  <text x="450" y="845" class="label" text-anchor="middle">ClipHist Architecture — Tauri 2.0 + Rust + HTML/CSS/JS</text>
+
+</svg>
