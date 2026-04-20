@@ -16,6 +16,11 @@ const btnMinimize = document.getElementById('btn-minimize');
 const btnClose = document.getElementById('btn-close');
 const statusText = document.getElementById('status-text');
 const toast = document.getElementById('toast');
+const zoomLevel = document.getElementById('zoom-level');
+const btnZoomDown = document.getElementById('btn-zoom-down');
+const btnZoomUp = document.getElementById('btn-zoom-up');
+const inputHotkey = document.getElementById('input-hotkey');
+const hotkeyError = document.getElementById('hotkey-error');
 
 const TYPE_ICONS = {
   link: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>`,
@@ -203,6 +208,14 @@ async function loadHistory() {
 async function init() {
   await loadHistory();
 
+  // Load zoom level on startup
+  try {
+    const s = await invoke('get_settings');
+    document.body.style.zoom = s.zoom_level;
+  } catch (e) {
+    console.error('Failed to load zoom settings:', e);
+  }
+
   listen('clipboard-changed', (event) => {
     if (searchQuery) return;
     const top5 = event.payload;
@@ -308,6 +321,9 @@ async function init() {
     try {
       const s = await invoke('get_settings');
       toggleCloseToTray.checked = s.close_to_tray;
+      zoomLevel.textContent = Math.round(s.zoom_level * 100) + '%';
+      inputHotkey.value = s.hotkey;
+      document.body.style.zoom = s.zoom_level;
     } catch (e) {
       console.error('Failed to load settings:', e);
     }
@@ -322,10 +338,61 @@ async function init() {
 
   toggleCloseToTray.addEventListener('change', async () => {
     try {
-      await invoke('save_settings_cmd', {
-        settings: { close_to_tray: toggleCloseToTray.checked },
-      });
+      await invoke('update_settings', { close_to_tray: toggleCloseToTray.checked });
       showToast('设置已保存');
+    } catch (e) {
+      showToast('保存失败: ' + e);
+    }
+  });
+
+  btnZoomDown.addEventListener('click', async () => {
+    const current = parseInt(zoomLevel.textContent);
+    if (current > 50) {
+      const newZoom = (current - 10) / 100;
+      zoomLevel.textContent = (current - 10) + '%';
+      document.body.style.zoom = newZoom;
+      try {
+        await invoke('update_settings', { zoom_level: newZoom });
+        showToast('缩放已调整');
+      } catch (e) {
+        console.error('Failed to save zoom:', e);
+      }
+    }
+  });
+
+  btnZoomUp.addEventListener('click', async () => {
+    const current = parseInt(zoomLevel.textContent);
+    if (current < 200) {
+      const newZoom = (current + 10) / 100;
+      zoomLevel.textContent = (current + 10) + '%';
+      document.body.style.zoom = newZoom;
+      try {
+        await invoke('update_settings', { zoom_level: newZoom });
+        showToast('缩放已调整');
+      } catch (e) {
+        console.error('Failed to save zoom:', e);
+      }
+    }
+  });
+
+  inputHotkey.addEventListener('change', async () => {
+    const hotkey = inputHotkey.value.trim();
+    hotkeyError.style.display = 'none';
+    inputHotkey.style.borderColor = '';
+
+    if (!hotkey) return;
+
+    const isValid = await invoke('validate_hotkey', { hotkey });
+    if (!isValid) {
+      inputHotkey.style.borderColor = '#dc2626';
+      hotkeyError.textContent = '格式错误，例如：Ctrl+Shift+V';
+      hotkeyError.style.display = 'block';
+      return;
+    }
+
+    try {
+      await invoke('update_settings', { hotkey });
+      showToast('快捷键已保存，重启后生效');
     } catch (e) {
       showToast('保存失败: ' + e);
     }
