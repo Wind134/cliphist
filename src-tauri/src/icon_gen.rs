@@ -17,8 +17,29 @@ fn main() {
         (256, "128x128@2x.png"),
     ];
 
-    for (size, filename) in sizes {
-        let img = draw_icon(size);
+    for (size, filename) in &sizes {
+        let img = draw_icon(*size);
+        let path = icons_dir.join(filename);
+        img.save(&path).unwrap();
+        println!("Generated {}", path.display());
+    }
+
+    // Windows Store logos
+    let store_sizes: [(usize, &str); 10] = [
+        (30, "Square30x30Logo.png"),
+        (44, "Square44x44Logo.png"),
+        (50, "StoreLogo.png"),
+        (71, "Square71x71Logo.png"),
+        (89, "Square89x89Logo.png"),
+        (107, "Square107x107Logo.png"),
+        (142, "Square142x142Logo.png"),
+        (150, "Square150x150Logo.png"),
+        (284, "Square284x284Logo.png"),
+        (310, "Square310x310Logo.png"),
+    ];
+
+    for (size, filename) in &store_sizes {
+        let img = draw_icon(*size);
         let path = icons_dir.join(filename);
         img.save(&path).unwrap();
         println!("Generated {}", path.display());

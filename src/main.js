@@ -357,7 +357,7 @@ async function init() {
 
   toggleCloseToTray.addEventListener('change', async () => {
     try {
-      await invoke('update_settings', { close_to_tray: toggleCloseToTray.checked });
+      await invoke('update_settings', { partial: { close_to_tray: toggleCloseToTray.checked } });
       showToast('设置已保存');
     } catch (e) {
       showToast('保存失败: ' + e);
@@ -366,7 +366,7 @@ async function init() {
 
   toggleAutoStart.addEventListener('change', async () => {
     try {
-      await invoke('update_settings', { auto_start: toggleAutoStart.checked });
+      await invoke('update_settings', { partial: { auto_start: toggleAutoStart.checked } });
       await invoke('toggle_autostart', { enable: toggleAutoStart.checked });
       showToast('设置已保存');
     } catch (e) {
@@ -376,7 +376,7 @@ async function init() {
 
   toggleSilentStart.addEventListener('change', async () => {
     try {
-      await invoke('update_settings', { silent_start: toggleSilentStart.checked });
+      await invoke('update_settings', { partial: { silent_start: toggleSilentStart.checked } });
       showToast('设置已保存');
     } catch (e) {
       showToast('保存失败: ' + e);
@@ -390,7 +390,7 @@ async function init() {
       zoomLevel.textContent = (current - 10) + '%';
       applyZoom(newZoom);
       try {
-        await invoke('update_settings', { zoom_level: newZoom });
+        await invoke('update_settings', { partial: { zoom_level: newZoom } });
         showToast('缩放已调整');
       } catch (e) {
         console.error('Failed to save zoom:', e);
@@ -405,7 +405,7 @@ async function init() {
       zoomLevel.textContent = (current + 10) + '%';
       applyZoom(newZoom);
       try {
-        await invoke('update_settings', { zoom_level: newZoom });
+        await invoke('update_settings', { partial: { zoom_level: newZoom } });
         showToast('缩放已调整');
       } catch (e) {
         console.error('Failed to save zoom:', e);
@@ -429,7 +429,7 @@ async function init() {
     }
 
     try {
-      await invoke('update_settings', { hotkey });
+      await invoke('update_settings', { partial: { hotkey } });
       showToast('快捷键已保存，重启后生效');
     } catch (e) {
       showToast('保存失败: ' + e);
@@ -438,7 +438,7 @@ async function init() {
 
   selectDoubleTap.addEventListener('change', async () => {
     try {
-      await invoke('update_settings', { double_tap_key: selectDoubleTap.value });
+      await invoke('update_settings', { partial: { double_tap_key: selectDoubleTap.value } });
       showToast('双击快捷键已保存，重启后生效');
     } catch (e) {
       showToast('保存失败: ' + e);
