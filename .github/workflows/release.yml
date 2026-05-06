@@ -24,6 +24,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
+      - name: Set version from tag
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          sed -i "s/\"version\": \"0.1.0\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+          sed -i "s/^version = \"0.1.0\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+          sed -i "s/\"version\": \"0.1.0\"/\"version\": \"$VERSION\"/" package.json
       - run: npm ci
       - run: npm run tauri build
       - name: Upload deb artifact
@@ -44,13 +50,26 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
+      - name: Set version from tag
+        shell: bash
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          sed -i "s/\"version\": \"0.1.0\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+          sed -i "s/^version = \"0.1.0\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+          sed -i "s/\"version\": \"0.1.0\"/\"version\": \"$VERSION\"/" package.json
       - run: npm ci
       - run: npm run tauri build
       - name: Upload nsis artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cliphist-windows-x64
+          name: cliphist-windows-x64-setup
           path: src-tauri/target/release/bundle/nsis/*.exe
+          retention-days: 5
+      - name: Upload msi artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cliphist-windows-x64-msi
+          path: src-tauri/target/release/bundle/msi/*.msi
           retention-days: 5
 
   macos:
@@ -73,6 +92,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
+      - name: Set version from tag
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          sed -i '' "s/\"version\": \"0.1.0\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+          sed -i '' "s/^version = \"0.1.0\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+          sed -i '' "s/\"version\": \"0.1.0\"/\"version\": \"$VERSION\"/" package.json
       - run: npm ci
       - run: npm run tauri build -- --target ${{ matrix.target }}
       - name: Upload dmg artifact

@@ -90,8 +90,8 @@ fn draw_icon(size: usize) -> image::RgbaImage {
             let idx = (y * size + x) * 4;
 
             // Rounded corner mask
-            let margin = size as f32 * 0.06;
-            let corner_r = size as f32 * 0.18;
+            let margin = if size <= 32 { 0.0 } else { size as f32 * 0.06 };
+            let corner_r = if size <= 32 { 0.0 } else { size as f32 * 0.15 };
             let xf = x as f32;
             let yf = y as f32;
             let w = size as f32;
