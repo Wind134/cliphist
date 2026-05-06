@@ -183,14 +183,7 @@ function showToast(msg) {
 
 function applyZoom(zoom) {
   currentZoom = zoom;
-  const win = document.querySelector('.window');
-  if (zoom === 1.0) {
-    win.style.transform = '';
-    win.style.height = '';
-  } else {
-    win.style.transform = `scale(${zoom})`;
-    win.style.height = `${100 / zoom}vh`;
-  }
+  document.documentElement.style.zoom = zoom;
 }
 
 function moveSelection(delta) {
@@ -222,15 +215,15 @@ async function loadHistory() {
 }
 
 async function init() {
-  await loadHistory();
-
-  // Load zoom level on startup
+  // Apply zoom first to prevent flash
   try {
     const s = await invoke('get_settings');
     applyZoom(s.zoom_level);
   } catch (e) {
     console.error('Failed to load zoom settings:', e);
   }
+
+  await loadHistory();
 
   listen('clipboard-changed', (event) => {
     if (searchQuery) return;
