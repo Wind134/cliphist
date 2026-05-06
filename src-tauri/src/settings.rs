@@ -6,6 +6,9 @@ pub struct Settings {
     pub close_to_tray: bool,
     pub zoom_level: f32,
     pub hotkey: String,
+    pub auto_start: bool,
+    pub silent_start: bool,
+    pub double_tap_key: String,
 }
 
 impl Default for Settings {
@@ -14,6 +17,9 @@ impl Default for Settings {
             close_to_tray: true,
             zoom_level: 1.0,
             hotkey: "Ctrl+Shift+V".to_string(),
+            auto_start: false,
+            silent_start: false,
+            double_tap_key: String::new(),
         }
     }
 }

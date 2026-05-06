@@ -83,6 +83,20 @@ fn update_settings(partial: serde_json::Value) -> Result<Settings, String> {
             return Err(format!("无效的快捷键格式: {}", v));
         }
     }
+    if let Some(v) = partial.get("auto_start").and_then(|v| v.as_bool()) {
+        current.auto_start = v;
+    }
+    if let Some(v) = partial.get("silent_start").and_then(|v| v.as_bool()) {
+        current.silent_start = v;
+    }
+    if let Some(v) = partial.get("double_tap_key").and_then(|v| v.as_str()) {
+        let valid_keys = ["", "Ctrl", "Shift", "Alt"];
+        if valid_keys.contains(&v) {
+            current.double_tap_key = v.to_string();
+        } else {
+            return Err(format!("无效的双击键: {}", v));
+        }
+    }
 
     settings::save_settings(&current);
     Ok(current)
@@ -91,6 +105,19 @@ fn update_settings(partial: serde_json::Value) -> Result<Settings, String> {
 #[tauri::command]
 fn validate_hotkey(hotkey: String) -> bool {
     shortcut::validate_shortcut(&hotkey)
+}
+
+#[tauri::command]
+fn toggle_autostart(
+    enable: bool,
+    manager: tauri::State<'_, tauri_plugin_autostart::AutoLaunchManager>,
+) -> Result<(), String> {
+    if enable {
+        manager.enable().map_err(|e| e.to_string())?;
+    } else {
+        manager.disable().map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -115,6 +142,10 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .manage(state)
         .setup(|app| {
             log::write_log("setup start");
@@ -127,6 +158,15 @@ pub fn run() {
             let s = settings::load_settings();
             if let Err(e) = shortcut::register_global_shortcut(app, &s.hotkey) {
                 log::write_log(&format!("Failed to register global shortcut: {}", e));
+            }
+
+            // Configure autostart based on settings
+            use tauri_plugin_autostart::ManagerExt;
+            let autostart_manager = app.handle().autolaunch();
+            if s.auto_start {
+                let _ = autostart_manager.enable();
+            } else {
+                let _ = autostart_manager.disable();
             }
 
             if s.close_to_tray {
@@ -143,6 +183,14 @@ pub fn run() {
                 }
             }
 
+            // Silent start: hide window to tray on launch
+            if s.silent_start {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                    log::write_log("Silent start: window hidden");
+                }
+            }
+
             let app_handle = app.handle().clone();
             let state = app.state::<AppState>();
             let hist = state.history.clone();
@@ -152,6 +200,22 @@ pub fn run() {
             std::thread::spawn(move || {
                 poll_clipboard(app_handle, hist, cnt);
             });
+
+            // Start double-tap listener if configured
+            if !s.double_tap_key.is_empty() {
+                let app_handle = app.handle().clone();
+                let key = s.double_tap_key.clone();
+                std::thread::spawn(move || {
+                    if let Err(e) = shortcut::start_double_tap_listener(&key, move || {
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }) {
+                        log::write_log(&format!("Failed to start double tap listener: {}", e));
+                    }
+                });
+            }
 
             log::write_log("setup complete, app running");
             Ok(())
@@ -167,6 +231,7 @@ pub fn run() {
             save_settings_cmd,
             update_settings,
             validate_hotkey,
+            toggle_autostart,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
