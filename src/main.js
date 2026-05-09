@@ -25,6 +25,7 @@ const hotkeyError = document.getElementById('hotkey-error');
 const toggleAutoStart = document.getElementById('toggle-auto-start');
 const toggleSilentStart = document.getElementById('toggle-silent-start');
 const selectDoubleTap = document.getElementById('select-double-tap');
+const selectRetention = document.getElementById('select-retention');
 
 const TYPE_ICONS = {
   link: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>`,
@@ -68,6 +69,7 @@ function renderHistory(itemsToRender) {
 
   historyList.innerHTML = itemsToRender.map((item, idx) => `
     <div class="history-item" data-id="${item.id}" data-idx="${idx}">
+      ${idx < 9 ? `<div class="item-index">${idx + 1}</div>` : ''}
       <div class="item-header">
         <div class="item-type ${getTypeClass(item.content_type)}">
           <span class="item-type-icon">${TYPE_ICONS[item.content_type] || TYPE_ICONS.text}</span>
@@ -335,6 +337,7 @@ async function init() {
       zoomLevel.textContent = Math.round(s.zoom_level * 100) + '%';
       inputHotkey.value = s.hotkey;
       selectDoubleTap.value = s.double_tap_key || '';
+      selectRetention.value = s.retention_days.toString();
       applyZoom(s.zoom_level);
     } catch (e) {
       console.error('Failed to load settings:', e);
@@ -438,6 +441,15 @@ async function init() {
     }
   });
 
+  selectRetention.addEventListener('change', async () => {
+    try {
+      await invoke('update_settings', { partial: { retention_days: parseInt(selectRetention.value) } });
+      showToast('设置已保存');
+    } catch (e) {
+      showToast('保存失败: ' + e);
+    }
+  });
+
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && settingsOpen) {
       closeSettings();
@@ -447,6 +459,23 @@ async function init() {
   // Listen for open-settings event from tray menu
   listen('open-settings', () => {
     openSettings();
+  });
+
+  // 数字键快速选择（搜索框无焦点时）
+  document.addEventListener('keydown', (e) => {
+    if (document.activeElement === searchInput) return;
+    if (settingsOpen) return;
+    
+    const num = parseInt(e.key);
+    if (num >= 1 && num <= 9) {
+      const filtered = getFilteredHistory();
+      const idx = num - 1;
+      if (idx < filtered.length) {
+        copyItem(filtered[idx].id);
+        const { getCurrentWindow } = window.__TAURI__.window;
+        getCurrentWindow().hide();
+      }
+    }
   });
 }
 

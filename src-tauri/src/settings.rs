@@ -9,6 +9,7 @@ pub struct Settings {
     pub auto_start: bool,
     pub silent_start: bool,
     pub double_tap_key: String,
+    pub retention_days: u32,
 }
 
 impl Default for Settings {
@@ -20,6 +21,7 @@ impl Default for Settings {
             auto_start: false,
             silent_start: false,
             double_tap_key: String::new(),
+            retention_days: 3,
         }
     }
 }

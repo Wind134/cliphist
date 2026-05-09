@@ -69,6 +69,20 @@ pub fn get_content_type(content: &str) -> String {
     }
 }
 
+pub fn parse_timestamp(ts: &str) -> Option<chrono::NaiveDateTime> {
+    use chrono::NaiveDateTime;
+    // 先尝试完整格式
+    if let Ok(dt) = NaiveDateTime::parse_from_str(ts, "%Y-%m-%d %H:%M:%S") {
+        return Some(dt);
+    }
+    // 再尝试旧格式（视为今天）
+    if let Ok(time) = chrono::NaiveTime::parse_from_str(ts, "%H:%M:%S") {
+        let today = chrono::Local::now().date_naive();
+        return Some(today.and_time(time));
+    }
+    None
+}
+
 pub fn copy_item_to_clipboard(history: &[ClipboardItem], id: usize) -> Result<(), String> {
     let item = history
         .iter()
