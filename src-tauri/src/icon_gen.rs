@@ -17,8 +17,29 @@ fn main() {
         (256, "128x128@2x.png"),
     ];
 
-    for (size, filename) in sizes {
-        let img = draw_icon(size);
+    for (size, filename) in &sizes {
+        let img = draw_icon(*size);
+        let path = icons_dir.join(filename);
+        img.save(&path).unwrap();
+        println!("Generated {}", path.display());
+    }
+
+    // Windows Store logos
+    let store_sizes: [(usize, &str); 10] = [
+        (30, "Square30x30Logo.png"),
+        (44, "Square44x44Logo.png"),
+        (50, "StoreLogo.png"),
+        (71, "Square71x71Logo.png"),
+        (89, "Square89x89Logo.png"),
+        (107, "Square107x107Logo.png"),
+        (142, "Square142x142Logo.png"),
+        (150, "Square150x150Logo.png"),
+        (284, "Square284x284Logo.png"),
+        (310, "Square310x310Logo.png"),
+    ];
+
+    for (size, filename) in &store_sizes {
+        let img = draw_icon(*size);
         let path = icons_dir.join(filename);
         img.save(&path).unwrap();
         println!("Generated {}", path.display());
@@ -56,17 +77,45 @@ fn main() {
 fn draw_icon(size: usize) -> image::RgbaImage {
     let mut pixels: Vec<u8> = vec![0; size * size * 4];
 
-    // --- Background: indigo diagonal gradient (4,4 to 60,60) ---
+    // --- Background: modern blue-purple gradient with rounded corners ---
     for y in 0..size {
         for x in 0..size {
             let fx = x as f32 / size as f32;
             let fy = y as f32 / size as f32;
-            let t = (fx + fy) / 2.0;
-            let r = (0x4Fu8 as f32 + (0x81 - 0x4F) as f32 * t) as u8;
-            let g = (0x46u8 as f32 + (0x8C - 0x46) as f32 * t) as u8;
-            let b = (0xE5u8 as f32 + (0xF8 - 0xE5) as f32 * t) as u8;
+            let t = (fx * 0.6 + fy * 0.4).min(1.0);
+            // Deep blue to vibrant purple gradient
+            let r = (0x30u8 as f32 + (0x7E - 0x30) as f32 * t) as u8;
+            let g = (0x50u8 as f32 + (0x28 - 0x50) as f32 * t) as u8;
+            let b = (0xF0u8 as f32 + (0xE8 - 0xF0) as f32 * t) as u8;
             let idx = (y * size + x) * 4;
-            pixels[idx..idx + 4].copy_from_slice(&[r, g, b, 255]);
+
+            // Rounded corner mask
+            let margin = if size <= 32 { 0.0 } else { size as f32 * 0.06 };
+            let corner_r = if size <= 32 { 0.0 } else { size as f32 * 0.15 };
+            let xf = x as f32;
+            let yf = y as f32;
+            let w = size as f32;
+            let in_corner = |cx: f32, cy: f32| {
+                let dx = xf - cx;
+                let dy = yf - cy;
+                (dx * dx + dy * dy).sqrt() <= corner_r
+            };
+            let alpha = if xf < margin + corner_r && yf < margin + corner_r {
+                if in_corner(margin + corner_r, margin + corner_r) { 1.0 } else { 0.0 }
+            } else if xf > w - margin - corner_r && yf < margin + corner_r {
+                if in_corner(w - margin - corner_r, margin + corner_r) { 1.0 } else { 0.0 }
+            } else if xf < margin + corner_r && yf > w - margin - corner_r {
+                if in_corner(margin + corner_r, w - margin - corner_r) { 1.0 } else { 0.0 }
+            } else if xf > w - margin - corner_r && yf > w - margin - corner_r {
+                if in_corner(w - margin - corner_r, w - margin - corner_r) { 1.0 } else { 0.0 }
+            } else {
+                1.0
+            };
+
+            pixels[idx] = r;
+            pixels[idx + 1] = g;
+            pixels[idx + 2] = b;
+            pixels[idx + 3] = (alpha * 255.0) as u8;
         }
     }
 
@@ -142,35 +191,36 @@ fn draw_icon(size: usize) -> image::RgbaImage {
         }
     }
 
-    // --- White clipboard board ---
+    // --- White clipboard board (with subtle shadow) ---
+    fill_rect(&mut pixels, size, 16.0, 13.0, 48.0, 53.0, 245, 245, 250, 255);
     fill_rect(&mut pixels, size, 17.0, 12.0, 47.0, 52.0, 255, 255, 255, 255);
 
-    // --- Clip top (lighter indigo) ---
-    fill_rect(&mut pixels, size, 23.0, 7.0, 41.0, 18.0, 0xE0, 0xE7, 0xFF, 255);
+    // --- Clip top (gradient purple) ---
+    fill_rect(&mut pixels, size, 22.0, 7.0, 42.0, 18.0, 0xC7, 0xD2, 0xFE, 255);
 
-    // --- Clip hole ---
-    fill_rect(&mut pixels, size, 27.0, 9.0, 37.0, 15.0, 0x4F, 0x46, 0xE5, 255);
+    // --- Clip hole (deep purple) ---
+    fill_rect(&mut pixels, size, 27.0, 9.0, 37.0, 15.0, 0x5B, 0x21, 0xB6, 255);
 
-    // --- Lines on clipboard ---
-    for &ly in &[22.0, 28.0, 34.0, 40.0] {
-        fill_rect(&mut pixels, size, 21.0, ly - 0.9, 43.0, ly + 0.9, 0xCB, 0xD5, 0xE1, 255);
+    // --- Lines on clipboard (subtle gray) ---
+    for &ly in &[23.0, 29.0, 35.0, 41.0] {
+        fill_rect(&mut pixels, size, 21.0, ly - 0.8, 43.0, ly + 0.8, 0xE2, 0xE8, 0xF0, 255);
     }
 
-    // --- Orange dot with radial gradient ---
+    // --- Vibrant teal dot with radial gradient ---
     fill_circle(
         &mut pixels, size,
-        45.0, 47.0, 9.0,
-        0xFB, 0x92, 0x3C,  // inner
-        0xEA, 0x58, 0x0C,   // outer
+        46.0, 47.0, 9.5,
+        0x2D, 0xD4, 0xBF,  // inner (bright teal)
+        0x0D, 0x94, 0x88,  // outer (deep teal)
     );
 
-    // --- Clock circle (white stroke) ---
-    let clock_cx = 45.0_f32;
+    // --- Clock circle (white stroke, slightly thicker) ---
+    let clock_cx = 46.0_f32;
     let clock_cy = 47.0_f32;
-    let clock_r = 4.5_f32;
+    let clock_r = 5.0_f32;
     let s = size as f32 / 64.0;
     let clock_ir = (clock_r * s).ceil() as i64;
-    let thickness = (1.5_f32 * s).ceil() as i64;
+    let thickness = (1.8_f32 * s).ceil() as i64;
 
     for dy in -clock_ir..=clock_ir {
         for dx in -clock_ir..=clock_ir {
@@ -179,14 +229,14 @@ fn draw_icon(size: usize) -> image::RgbaImage {
             if d >= inner as f64 && d <= clock_ir as f64 {
                 let px = clock_cx * s + dx as f32;
                 let py = clock_cy * s + dy as f32;
-                put_pixel(&mut pixels, size, px, py, 255, 255, 255, 255);
+                put_pixel(&mut pixels, size, px, py, 255, 255, 255, 240);
             }
         }
     }
 
-    // --- Clock hands ---
-    fill_rect(&mut pixels, size, 45.0 - 0.75, 44.0, 45.0 + 0.75, 47.0, 255, 255, 255, 255);
-    fill_rect(&mut pixels, size, 45.0, 47.0 - 0.75, 47.5, 47.0 + 0.75, 255, 255, 255, 255);
+    // --- Clock hands (thicker, cleaner) ---
+    fill_rect(&mut pixels, size, 46.0 - 0.8, 43.5, 46.0 + 0.8, 47.0, 255, 255, 255, 255);
+    fill_rect(&mut pixels, size, 46.0, 47.0 - 0.8, 49.0, 47.0 + 0.8, 255, 255, 255, 255);
 
     image::RgbaImage::from_raw(size as u32, size as u32, pixels)
         .expect("failed to create RgbaImage")

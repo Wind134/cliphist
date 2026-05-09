@@ -6,6 +6,7 @@ let searchQuery = '';
 let selectedIndex = -1;
 let currentCategory = 'all';
 let settingsOpen = false;
+let currentZoom = 1.0;
 
 const historyList = document.getElementById('history-list');
 const searchInput = document.getElementById('search-input');
@@ -21,6 +22,9 @@ const btnZoomDown = document.getElementById('btn-zoom-down');
 const btnZoomUp = document.getElementById('btn-zoom-up');
 const inputHotkey = document.getElementById('input-hotkey');
 const hotkeyError = document.getElementById('hotkey-error');
+const toggleAutoStart = document.getElementById('toggle-auto-start');
+const toggleSilentStart = document.getElementById('toggle-silent-start');
+const selectDoubleTap = document.getElementById('select-double-tap');
 
 const TYPE_ICONS = {
   link: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>`,
@@ -177,6 +181,11 @@ function showToast(msg) {
   setTimeout(() => { toast.style.display = 'none'; }, 2000);
 }
 
+function applyZoom(zoom) {
+  currentZoom = zoom;
+  document.documentElement.style.zoom = zoom;
+}
+
 function moveSelection(delta) {
   const filtered = getFilteredHistory();
   if (filtered.length === 0) return;
@@ -206,15 +215,15 @@ async function loadHistory() {
 }
 
 async function init() {
-  await loadHistory();
-
-  // Load zoom level on startup
+  // Apply zoom first to prevent flash
   try {
     const s = await invoke('get_settings');
-    document.body.style.zoom = s.zoom_level;
+    applyZoom(s.zoom_level);
   } catch (e) {
     console.error('Failed to load zoom settings:', e);
   }
+
+  await loadHistory();
 
   listen('clipboard-changed', (event) => {
     if (searchQuery) return;
@@ -321,9 +330,12 @@ async function init() {
     try {
       const s = await invoke('get_settings');
       toggleCloseToTray.checked = s.close_to_tray;
+      toggleAutoStart.checked = s.auto_start;
+      toggleSilentStart.checked = s.silent_start;
       zoomLevel.textContent = Math.round(s.zoom_level * 100) + '%';
       inputHotkey.value = s.hotkey;
-      document.body.style.zoom = s.zoom_level;
+      selectDoubleTap.value = s.double_tap_key || '';
+      applyZoom(s.zoom_level);
     } catch (e) {
       console.error('Failed to load settings:', e);
     }
@@ -338,7 +350,26 @@ async function init() {
 
   toggleCloseToTray.addEventListener('change', async () => {
     try {
-      await invoke('update_settings', { close_to_tray: toggleCloseToTray.checked });
+      await invoke('update_settings', { partial: { close_to_tray: toggleCloseToTray.checked } });
+      showToast('设置已保存');
+    } catch (e) {
+      showToast('保存失败: ' + e);
+    }
+  });
+
+  toggleAutoStart.addEventListener('change', async () => {
+    try {
+      await invoke('update_settings', { partial: { auto_start: toggleAutoStart.checked } });
+      await invoke('toggle_autostart', { enable: toggleAutoStart.checked });
+      showToast('设置已保存');
+    } catch (e) {
+      showToast('保存失败: ' + e);
+    }
+  });
+
+  toggleSilentStart.addEventListener('change', async () => {
+    try {
+      await invoke('update_settings', { partial: { silent_start: toggleSilentStart.checked } });
       showToast('设置已保存');
     } catch (e) {
       showToast('保存失败: ' + e);
@@ -350,9 +381,9 @@ async function init() {
     if (current > 50) {
       const newZoom = (current - 10) / 100;
       zoomLevel.textContent = (current - 10) + '%';
-      document.body.style.zoom = newZoom;
+      applyZoom(newZoom);
       try {
-        await invoke('update_settings', { zoom_level: newZoom });
+        await invoke('update_settings', { partial: { zoom_level: newZoom } });
         showToast('缩放已调整');
       } catch (e) {
         console.error('Failed to save zoom:', e);
@@ -365,9 +396,9 @@ async function init() {
     if (current < 200) {
       const newZoom = (current + 10) / 100;
       zoomLevel.textContent = (current + 10) + '%';
-      document.body.style.zoom = newZoom;
+      applyZoom(newZoom);
       try {
-        await invoke('update_settings', { zoom_level: newZoom });
+        await invoke('update_settings', { partial: { zoom_level: newZoom } });
         showToast('缩放已调整');
       } catch (e) {
         console.error('Failed to save zoom:', e);
@@ -391,8 +422,17 @@ async function init() {
     }
 
     try {
-      await invoke('update_settings', { hotkey });
+      await invoke('update_settings', { partial: { hotkey } });
       showToast('快捷键已保存，重启后生效');
+    } catch (e) {
+      showToast('保存失败: ' + e);
+    }
+  });
+
+  selectDoubleTap.addEventListener('change', async () => {
+    try {
+      await invoke('update_settings', { partial: { double_tap_key: selectDoubleTap.value } });
+      showToast('双击快捷键已保存，重启后生效');
     } catch (e) {
       showToast('保存失败: ' + e);
     }
