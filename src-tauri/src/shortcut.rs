@@ -186,3 +186,24 @@ pub fn stop_double_tap_listener() {
     LISTENER_RUNNING.store(false, Ordering::SeqCst);
     crate::log::write_log("Double-tap listener stop requested");
 }
+
+pub fn simulate_paste() -> Result<(), String> {
+    use rdev::{simulate, EventType, Key};
+
+    simulate(&EventType::KeyPress(Key::ControlLeft))
+        .map_err(|e| format!("Simulate Ctrl press failed: {:?}", e))?;
+    std::thread::sleep(std::time::Duration::from_millis(30));
+
+    simulate(&EventType::KeyPress(Key::KeyV))
+        .map_err(|e| format!("Simulate V press failed: {:?}", e))?;
+    std::thread::sleep(std::time::Duration::from_millis(30));
+
+    simulate(&EventType::KeyRelease(Key::KeyV))
+        .map_err(|e| format!("Simulate V release failed: {:?}", e))?;
+    std::thread::sleep(std::time::Duration::from_millis(30));
+
+    simulate(&EventType::KeyRelease(Key::ControlLeft))
+        .map_err(|e| format!("Simulate Ctrl release failed: {:?}", e))?;
+
+    Ok(())
+}

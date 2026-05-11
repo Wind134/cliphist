@@ -246,7 +246,7 @@ fn draw_icon(size: usize) -> image::RgbaImage {
         }
     }
 
-    // --- Background: modern blue-purple gradient with rounded corners ---
+    // --- Background: modern blue-purple gradient (square, no rounded corners) ---
     for y in 0..draw_size {
         for x in 0..draw_size {
             let fx = x as f32 / draw_size as f32;
@@ -256,46 +256,11 @@ fn draw_icon(size: usize) -> image::RgbaImage {
             let g = (0x50u8 as f32 + (0x28 - 0x50) as f32 * t) as u8;
             let b = (0xF0u8 as f32 + (0xE8 - 0xF0) as f32 * t) as u8;
 
-            // Rounded corner with antialiasing
-            let margin = if draw_size <= 64 { 0.0 } else { draw_size as f32 * 0.06 };
-            let corner_r = if draw_size <= 64 { 0.0 } else { draw_size as f32 * 0.15 };
-            let xf = x as f32;
-            let yf = y as f32;
-            let w = draw_size as f32;
-
-            let dist = if xf < margin + corner_r && yf < margin + corner_r {
-                let dx = xf - (margin + corner_r);
-                let dy = yf - (margin + corner_r);
-                (dx * dx + dy * dy).sqrt() - corner_r
-            } else if xf > w - margin - corner_r && yf < margin + corner_r {
-                let dx = xf - (w - margin - corner_r);
-                let dy = yf - (margin + corner_r);
-                (dx * dx + dy * dy).sqrt() - corner_r
-            } else if xf < margin + corner_r && yf > w - margin - corner_r {
-                let dx = xf - (margin + corner_r);
-                let dy = yf - (w - margin - corner_r);
-                (dx * dx + dy * dy).sqrt() - corner_r
-            } else if xf > w - margin - corner_r && yf > w - margin - corner_r {
-                let dx = xf - (w - margin - corner_r);
-                let dy = yf - (w - margin - corner_r);
-                (dx * dx + dy * dy).sqrt() - corner_r
-            } else {
-                -1.0 // Inside
-            };
-
-            let alpha = if dist <= -1.5 {
-                1.0
-            } else if dist >= 1.5 {
-                0.0
-            } else {
-                0.5 - dist * 0.33
-            };
-
             let idx = (y * draw_size + x) * 4;
             pixels[idx] = r;
             pixels[idx + 1] = g;
             pixels[idx + 2] = b;
-            pixels[idx + 3] = (alpha * 255.0) as u8;
+            pixels[idx + 3] = 255;
         }
     }
 

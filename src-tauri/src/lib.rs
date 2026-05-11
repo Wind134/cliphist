@@ -125,6 +125,11 @@ fn toggle_autostart(
     Ok(())
 }
 
+#[tauri::command]
+fn simulate_paste_cmd() -> Result<(), String> {
+    shortcut::simulate_paste()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     std::panic::set_hook(Box::new(|panic_info| {
@@ -241,6 +246,7 @@ pub fn run() {
             update_settings,
             validate_hotkey,
             toggle_autostart,
+            simulate_paste_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

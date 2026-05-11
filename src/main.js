@@ -461,8 +461,8 @@ async function init() {
     openSettings();
   });
 
-  // 数字键快速选择（搜索框无焦点时）
-  document.addEventListener('keydown', (e) => {
+  // 数字键快速输入（搜索框无焦点时）
+  document.addEventListener('keydown', async (e) => {
     if (document.activeElement === searchInput) return;
     if (settingsOpen) return;
     
@@ -471,9 +471,19 @@ async function init() {
       const filtered = getFilteredHistory();
       const idx = num - 1;
       if (idx < filtered.length) {
-        copyItem(filtered[idx].id);
-        const { getCurrentWindow } = window.__TAURI__.window;
-        getCurrentWindow().hide();
+        try {
+          // 复制到剪贴板
+          await invoke('copy_to_clipboard', { id: filtered[idx].id });
+          // 隐藏窗口
+          const { getCurrentWindow } = window.__TAURI__.window;
+          await getCurrentWindow().hide();
+          // 等待焦点切换到之前的应用
+          await new Promise(r => setTimeout(r, 200));
+          // 模拟 Ctrl+V 粘贴
+          await invoke('simulate_paste_cmd');
+        } catch (e) {
+          showToast('输入失败: ' + e);
+        }
       }
     }
   });
