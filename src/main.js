@@ -148,7 +148,7 @@ async function copyItem(id) {
     await invoke('copy_to_clipboard', { id });
     showToast('已复制到剪贴板');
   } catch (e) {
-    showToast('复制失败: ' + e);
+    showToast('复制失败: ' + String(e));
   }
 }
 
@@ -160,7 +160,7 @@ async function deleteItem(id) {
     updateCount();
     showToast('已删除');
   } catch (e) {
-    showToast('删除失败: ' + e);
+    showToast('删除失败: ' + String(e));
   }
 }
 
@@ -173,7 +173,7 @@ async function clearAll() {
     updateCount();
     showToast('已清空');
   } catch (e) {
-    showToast('清空失败: ' + e);
+    showToast('清空失败: ' + String(e));
   }
 }
 
@@ -356,7 +356,7 @@ async function init() {
       await invoke('update_settings', { partial: { close_to_tray: toggleCloseToTray.checked } });
       showToast('设置已保存');
     } catch (e) {
-      showToast('保存失败: ' + e);
+      showToast('保存失败: ' + String(e));
     }
   });
 
@@ -366,7 +366,7 @@ async function init() {
       await invoke('toggle_autostart', { enable: toggleAutoStart.checked });
       showToast('设置已保存');
     } catch (e) {
-      showToast('保存失败: ' + e);
+      showToast('保存失败: ' + String(e));
     }
   });
 
@@ -375,7 +375,7 @@ async function init() {
       await invoke('update_settings', { partial: { silent_start: toggleSilentStart.checked } });
       showToast('设置已保存');
     } catch (e) {
-      showToast('保存失败: ' + e);
+      showToast('保存失败: ' + String(e));
     }
   });
 
@@ -428,7 +428,7 @@ async function init() {
       await invoke('update_settings', { partial: { hotkey } });
       showToast('快捷键已保存，重启后生效');
     } catch (e) {
-      showToast('保存失败: ' + e);
+      showToast('保存失败: ' + String(e));
     }
   });
 
@@ -437,7 +437,7 @@ async function init() {
       await invoke('update_settings', { partial: { double_tap_key: selectDoubleTap.value } });
       showToast('双击快捷键已保存，重启后生效');
     } catch (e) {
-      showToast('保存失败: ' + e);
+      showToast('保存失败: ' + String(e));
     }
   });
 
@@ -446,7 +446,7 @@ async function init() {
       await invoke('update_settings', { partial: { retention_days: parseInt(selectRetention.value) } });
       showToast('设置已保存');
     } catch (e) {
-      showToast('保存失败: ' + e);
+      showToast('保存失败: ' + String(e));
     }
   });
 
@@ -482,7 +482,7 @@ async function init() {
           // 模拟 Ctrl+V 粘贴
           await invoke('simulate_paste_cmd');
         } catch (e) {
-          showToast('输入失败: ' + e);
+          showToast('输入失败: ' + String(e));
         }
       }
     }

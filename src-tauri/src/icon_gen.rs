@@ -223,7 +223,7 @@ fn draw_icon(size: usize) -> image::RgbaImage {
 
                 // Distance from point to line segment
                 let t_param = if len_sq > 0.0 {
-                    ((fx - sx0) * dx + (fy - sy0) * dy / len_sq).clamp(0.0, 1.0)
+                    ((fx - sx0) * dx + (fy - sy0) * dy) / len_sq
                 } else {
                     0.0
                 };

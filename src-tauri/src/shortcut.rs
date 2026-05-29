@@ -94,6 +94,12 @@ pub fn register_global_shortcut(app: &tauri::App, shortcut_str: &str) -> Result<
     if let Some(parsed) = parse_shortcut(shortcut_str) {
         let shortcut = Shortcut::new(Some(parsed.modifiers), parsed.code);
         let app_handle = app.handle().clone();
+
+        // Unregister all existing shortcuts first to avoid duplicates
+        app.global_shortcut()
+            .unregister_all()
+            .map_err(|e| e.to_string())?;
+
         app.global_shortcut()
             .on_shortcut(shortcut, move |_app, _shortcut, _event| {
                 crate::log::write_log("Global shortcut triggered");
