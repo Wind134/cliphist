@@ -25,6 +25,7 @@ const hotkeyError = document.getElementById('hotkey-error');
 const toggleAutoStart = document.getElementById('toggle-auto-start');
 const toggleSilentStart = document.getElementById('toggle-silent-start');
 const selectDoubleTap = document.getElementById('select-double-tap');
+const selectRetention = document.getElementById('select-retention');
 
 const TYPE_ICONS = {
   link: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>`,
@@ -68,6 +69,7 @@ function renderHistory(itemsToRender) {
 
   historyList.innerHTML = itemsToRender.map((item, idx) => `
     <div class="history-item" data-id="${item.id}" data-idx="${idx}">
+      ${idx < 9 ? `<div class="item-index">${idx + 1}</div>` : ''}
       <div class="item-header">
         <div class="item-type ${getTypeClass(item.content_type)}">
           <span class="item-type-icon">${TYPE_ICONS[item.content_type] || TYPE_ICONS.text}</span>
@@ -146,7 +148,7 @@ async function copyItem(id) {
     await invoke('copy_to_clipboard', { id });
     showToast('已复制到剪贴板');
   } catch (e) {
-    showToast('复制失败: ' + e);
+    showToast('复制失败: ' + String(e));
   }
 }
 
@@ -158,7 +160,7 @@ async function deleteItem(id) {
     updateCount();
     showToast('已删除');
   } catch (e) {
-    showToast('删除失败: ' + e);
+    showToast('删除失败: ' + String(e));
   }
 }
 
@@ -171,7 +173,7 @@ async function clearAll() {
     updateCount();
     showToast('已清空');
   } catch (e) {
-    showToast('清空失败: ' + e);
+    showToast('清空失败: ' + String(e));
   }
 }
 
@@ -335,6 +337,7 @@ async function init() {
       zoomLevel.textContent = Math.round(s.zoom_level * 100) + '%';
       inputHotkey.value = s.hotkey;
       selectDoubleTap.value = s.double_tap_key || '';
+      selectRetention.value = s.retention_days.toString();
       applyZoom(s.zoom_level);
     } catch (e) {
       console.error('Failed to load settings:', e);
@@ -353,7 +356,7 @@ async function init() {
       await invoke('update_settings', { partial: { close_to_tray: toggleCloseToTray.checked } });
       showToast('设置已保存');
     } catch (e) {
-      showToast('保存失败: ' + e);
+      showToast('保存失败: ' + String(e));
     }
   });
 
@@ -363,7 +366,7 @@ async function init() {
       await invoke('toggle_autostart', { enable: toggleAutoStart.checked });
       showToast('设置已保存');
     } catch (e) {
-      showToast('保存失败: ' + e);
+      showToast('保存失败: ' + String(e));
     }
   });
 
@@ -372,7 +375,7 @@ async function init() {
       await invoke('update_settings', { partial: { silent_start: toggleSilentStart.checked } });
       showToast('设置已保存');
     } catch (e) {
-      showToast('保存失败: ' + e);
+      showToast('保存失败: ' + String(e));
     }
   });
 
@@ -425,7 +428,7 @@ async function init() {
       await invoke('update_settings', { partial: { hotkey } });
       showToast('快捷键已保存，重启后生效');
     } catch (e) {
-      showToast('保存失败: ' + e);
+      showToast('保存失败: ' + String(e));
     }
   });
 
@@ -434,7 +437,16 @@ async function init() {
       await invoke('update_settings', { partial: { double_tap_key: selectDoubleTap.value } });
       showToast('双击快捷键已保存，重启后生效');
     } catch (e) {
-      showToast('保存失败: ' + e);
+      showToast('保存失败: ' + String(e));
+    }
+  });
+
+  selectRetention.addEventListener('change', async () => {
+    try {
+      await invoke('update_settings', { partial: { retention_days: parseInt(selectRetention.value) } });
+      showToast('设置已保存');
+    } catch (e) {
+      showToast('保存失败: ' + String(e));
     }
   });
 
@@ -447,6 +459,33 @@ async function init() {
   // Listen for open-settings event from tray menu
   listen('open-settings', () => {
     openSettings();
+  });
+
+  // 数字键快速输入（搜索框无焦点时）
+  document.addEventListener('keydown', async (e) => {
+    if (document.activeElement === searchInput) return;
+    if (settingsOpen) return;
+    
+    const num = parseInt(e.key);
+    if (num >= 1 && num <= 9) {
+      const filtered = getFilteredHistory();
+      const idx = num - 1;
+      if (idx < filtered.length) {
+        try {
+          // 复制到剪贴板
+          await invoke('copy_to_clipboard', { id: filtered[idx].id });
+          // 隐藏窗口
+          const { getCurrentWindow } = window.__TAURI__.window;
+          await getCurrentWindow().hide();
+          // 等待焦点切换到之前的应用
+          await new Promise(r => setTimeout(r, 200));
+          // 模拟 Ctrl+V 粘贴
+          await invoke('simulate_paste_cmd');
+        } catch (e) {
+          showToast('输入失败: ' + String(e));
+        }
+      }
+    }
   });
 }
 

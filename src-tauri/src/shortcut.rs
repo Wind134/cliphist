@@ -94,6 +94,12 @@ pub fn register_global_shortcut(app: &tauri::App, shortcut_str: &str) -> Result<
     if let Some(parsed) = parse_shortcut(shortcut_str) {
         let shortcut = Shortcut::new(Some(parsed.modifiers), parsed.code);
         let app_handle = app.handle().clone();
+
+        // Unregister all existing shortcuts first to avoid duplicates
+        app.global_shortcut()
+            .unregister_all()
+            .map_err(|e| e.to_string())?;
+
         app.global_shortcut()
             .on_shortcut(shortcut, move |_app, _shortcut, _event| {
                 crate::log::write_log("Global shortcut triggered");
@@ -185,4 +191,25 @@ pub fn start_double_tap_listener<F: Fn() + Send + Sync + 'static>(
 pub fn stop_double_tap_listener() {
     LISTENER_RUNNING.store(false, Ordering::SeqCst);
     crate::log::write_log("Double-tap listener stop requested");
+}
+
+pub fn simulate_paste() -> Result<(), String> {
+    use rdev::{simulate, EventType, Key};
+
+    simulate(&EventType::KeyPress(Key::ControlLeft))
+        .map_err(|e| format!("Simulate Ctrl press failed: {:?}", e))?;
+    std::thread::sleep(std::time::Duration::from_millis(30));
+
+    simulate(&EventType::KeyPress(Key::KeyV))
+        .map_err(|e| format!("Simulate V press failed: {:?}", e))?;
+    std::thread::sleep(std::time::Duration::from_millis(30));
+
+    simulate(&EventType::KeyRelease(Key::KeyV))
+        .map_err(|e| format!("Simulate V release failed: {:?}", e))?;
+    std::thread::sleep(std::time::Duration::from_millis(30));
+
+    simulate(&EventType::KeyRelease(Key::ControlLeft))
+        .map_err(|e| format!("Simulate Ctrl release failed: {:?}", e))?;
+
+    Ok(())
 }

@@ -97,6 +97,11 @@ fn update_settings(partial: serde_json::Value) -> Result<Settings, String> {
             return Err(format!("无效的双击键: {}", v));
         }
     }
+    if let Some(v) = partial.get("retention_days").and_then(|v| v.as_u64()) {
+        if v <= 365 {
+            current.retention_days = v as u32;
+        }
+    }
 
     settings::save_settings(&current);
     Ok(current)
@@ -118,6 +123,11 @@ fn toggle_autostart(
         manager.disable().map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+#[tauri::command]
+fn simulate_paste_cmd() -> Result<(), String> {
+    shortcut::simulate_paste()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -197,6 +207,10 @@ pub fn run() {
             let cnt = state.counter.clone();
             log::write_log("spawning clipboard poll thread");
 
+            // 启动时清理过期记录
+            let retention = s.retention_days;
+            clean_expired_history(&hist, retention);
+
             std::thread::spawn(move || {
                 poll_clipboard(app_handle, hist, cnt);
             });
@@ -232,6 +246,7 @@ pub fn run() {
             update_settings,
             validate_hotkey,
             toggle_autostart,
+            simulate_paste_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -249,9 +264,17 @@ fn poll_clipboard(
 
     let mut last_text_hash: u64 = 0;
     let mut last_image_hash: u64 = 0;
+    let mut last_clean_time = std::time::Instant::now();
 
     loop {
         std::thread::sleep(std::time::Duration::from_millis(500));
+
+        // 每小时清理一次过期记录
+        if last_clean_time.elapsed().as_secs() >= 3600 {
+            let retention = settings::load_settings().retention_days;
+            clean_expired_history(&state, retention);
+            last_clean_time = std::time::Instant::now();
+        }
 
         if let Ok(text) = clipboard.get_text() {
             let text = text.trim().to_string();
@@ -278,7 +301,7 @@ fn poll_clipboard(
                         id,
                         content: text.clone(),
                         content_type,
-                        timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+                        timestamp: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
                         preview: clipboard::make_preview(&text),
                         char_count: text.len(),
                         image_data: None,
@@ -357,7 +380,7 @@ fn poll_clipboard(
                     id,
                     content: preview.clone(),
                     content_type: "image".to_string(),
-                    timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+                    timestamp: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
                     preview,
                     char_count: png_bytes.len(),
                     image_data: Some(b64),
@@ -397,4 +420,34 @@ fn img_hash(img: &arboard::ImageData) -> u64 {
     let mut h = DefaultHasher::new();
     img.bytes.hash(&mut h);
     h.finish()
+}
+
+fn clean_expired_history(
+    state: &std::sync::Arc<parking_lot::Mutex<Vec<ClipboardItem>>>,
+    retention_days: u32,
+) {
+    if retention_days == 0 {
+        return;
+    }
+
+    let cutoff = chrono::Local::now()
+        .checked_sub_signed(chrono::Duration::days(retention_days as i64))
+        .unwrap();
+
+    let mut history = state.lock();
+    let before = history.len();
+    history.retain(|item| {
+        if let Some(dt) = clipboard::parse_timestamp(&item.timestamp) {
+            dt >= cutoff.naive_local()
+        } else {
+            true
+        }
+    });
+    if history.len() != before {
+        clipboard::save_history(&history);
+        log::write_log(&format!(
+            "Cleaned {} expired history items",
+            before - history.len()
+        ));
+    }
 }
