@@ -127,6 +127,13 @@ fn key_name_to_rdev(key_name: &str) -> Option<rdev::Key> {
     }
 }
 
+struct DoubleTapState {
+    last_press: Option<Instant>,
+    /// Whether the key has been released since the last press.
+    /// This prevents key-repeat (long-press) from being treated as a double-tap.
+    released: bool,
+}
+
 pub fn start_double_tap_listener<F: Fn() + Send + Sync + 'static>(
     key_name: &str,
     on_trigger: F,
@@ -141,7 +148,10 @@ pub fn start_double_tap_listener<F: Fn() + Send + Sync + 'static>(
 
     LISTENER_RUNNING.store(true, Ordering::SeqCst);
 
-    let last_press: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
+    let state: Arc<Mutex<DoubleTapState>> = Arc::new(Mutex::new(DoubleTapState {
+        last_press: None,
+        released: true,
+    }));
     let callback = Arc::new(on_trigger);
 
     std::thread::Builder::new()
@@ -157,20 +167,32 @@ pub fn start_double_tap_listener<F: Fn() + Send + Sync + 'static>(
                     return Some(event);
                 }
 
-                if let rdev::EventType::KeyPress(key) = event.event_type {
-                    if key == target_key {
+                match event.event_type {
+                    rdev::EventType::KeyPress(key) if key == target_key => {
                         let now = Instant::now();
-                        let mut last = last_press.lock();
-                        if let Some(prev) = *last {
-                            if now.duration_since(prev).as_millis() < DOUBLE_TAP_MS {
-                                *last = None;
-                                crate::log::write_log("Double-tap detected!");
-                                callback();
-                                return Some(event);
+                        let mut s = state.lock();
+                        // Only treat as a potential second tap if the key was
+                        // released after the first press — this filters out
+                        // key-repeat events from holding the key down.
+                        if s.released {
+                            if let Some(prev) = s.last_press {
+                                if now.duration_since(prev).as_millis() < DOUBLE_TAP_MS {
+                                    s.last_press = None;
+                                    s.released = false;
+                                    crate::log::write_log("Double-tap detected!");
+                                    drop(s);
+                                    callback();
+                                    return Some(event);
+                                }
                             }
+                            s.last_press = Some(now);
+                            s.released = false;
                         }
-                        *last = Some(now);
                     }
+                    rdev::EventType::KeyRelease(key) if key == target_key => {
+                        state.lock().released = true;
+                    }
+                    _ => {}
                 }
 
                 Some(event)
