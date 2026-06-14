@@ -448,6 +448,14 @@ pub fn start_double_tap_listener<F: Fn() + Send + Sync + 'static>(
     windows_impl::start_windows_double_tap_listener(key_name, on_trigger)
 }
 
+#[cfg(target_os = "macos")]
+pub fn start_double_tap_listener<F: Fn() + Send + Sync + 'static>(
+    _key_name: &str,
+    _on_trigger: F,
+) -> Result<(), String> {
+    Err("Double-tap listener is not supported on macOS".into())
+}
+
 pub fn stop_double_tap_listener() {
     LISTENER_RUNNING.store(false, Ordering::SeqCst);
     crate::log::write_log("Double-tap listener stop requested");
@@ -461,4 +469,9 @@ pub fn simulate_paste() -> Result<(), String> {
 #[cfg(target_os = "windows")]
 pub fn simulate_paste() -> Result<(), String> {
     windows_impl::windows_simulate_paste()
+}
+
+#[cfg(target_os = "macos")]
+pub fn simulate_paste() -> Result<(), String> {
+    Err("Paste simulation is not supported on macOS".into())
 }
