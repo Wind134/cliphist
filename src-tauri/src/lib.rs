@@ -1,5 +1,7 @@
 mod clipboard;
 mod consts;
+#[cfg(target_os = "linux")]
+pub mod evdev_helper;
 mod log;
 mod settings;
 mod shortcut;
@@ -221,10 +223,22 @@ pub fn run() {
                 let key = s.double_tap_key.clone();
                 std::thread::spawn(move || {
                     if let Err(e) = shortcut::start_double_tap_listener(&key, move || {
+                        let win_app_handle = app_handle.clone();
                         if let Some(window) = app_handle.get_webview_window("main") {
+                            // Set always_on_top and hide-then-show to force restack
+                            let _ = window.set_always_on_top(true);
+                            let _ = window.hide();
+                            std::thread::sleep(std::time::Duration::from_millis(30));
                             let _ = window.show();
                             let _ = window.set_focus();
                         }
+                        // Release always_on_top after 500ms so the window doesn't stay pinned
+                        std::thread::spawn(move || {
+                            std::thread::sleep(std::time::Duration::from_millis(500));
+                            if let Some(window) = win_app_handle.get_webview_window("main") {
+                                let _ = window.set_always_on_top(false);
+                            }
+                        });
                     }) {
                         log::write_log(&format!("Failed to start double tap listener: {}", e));
                     }

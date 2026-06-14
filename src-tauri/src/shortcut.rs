@@ -1,18 +1,12 @@
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::time::Instant;
-
-use parking_lot::Mutex;
 use tauri::Manager;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
 
-static LISTENER_RUNNING: AtomicBool = AtomicBool::new(false);
+// ============================================================================
+// Shared types and helpers (both platforms)
+// ============================================================================
 
-#[derive(Debug, Clone)]
-pub struct ParsedShortcut {
-    pub modifiers: Modifiers,
-    pub code: Code,
-}
+static LISTENER_RUNNING: AtomicBool = AtomicBool::new(false);
 
 pub fn parse_shortcut(shortcut_str: &str) -> Option<ParsedShortcut> {
     let parts: Vec<&str> = shortcut_str.split('+').collect();
@@ -38,6 +32,12 @@ pub fn parse_shortcut(shortcut_str: &str) -> Option<ParsedShortcut> {
     }
 
     code.map(|c| ParsedShortcut { modifiers, code: c })
+}
+
+#[derive(Debug, Clone)]
+pub struct ParsedShortcut {
+    pub modifiers: Modifiers,
+    pub code: Code,
 }
 
 fn parse_key_code(key: &str) -> Option<Code> {
@@ -114,100 +114,338 @@ pub fn register_global_shortcut(app: &tauri::App, shortcut_str: &str) -> Result<
     Ok(())
 }
 
-// --- Double-tap modifier key detection ---
+// ============================================================================
+// Double-tap state (shared between platforms)
+// ============================================================================
 
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 const DOUBLE_TAP_MS: u128 = 300;
 
-fn key_name_to_rdev(key_name: &str) -> Option<rdev::Key> {
-    match key_name {
-        "Ctrl" => Some(rdev::Key::ControlLeft),
-        "Shift" => Some(rdev::Key::ShiftLeft),
-        "Alt" => Some(rdev::Key::Alt),
-        _ => None,
-    }
-}
-
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 struct DoubleTapState {
-    last_press: Option<Instant>,
+    last_press: Option<std::time::Instant>,
     /// Whether the key has been released since the last press.
     /// This prevents key-repeat (long-press) from being treated as a double-tap.
     released: bool,
 }
 
+// ============================================================================
+// Platform-specific: Linux — evdev-based double-tap + uinput simulate_paste
+// ============================================================================
+
+#[cfg(target_os = "linux")]
+mod linux_impl {
+    use std::io::{Read, Write};
+    use std::os::unix::net::{UnixListener, UnixStream};
+    use std::sync::atomic::Ordering;
+    use std::sync::Mutex;
+
+    /// Bidirectional stream to the pkexec helper, stored so `simulate_paste`
+    /// can send paste commands to the root process.
+    static PASTE_STREAM: Mutex<Option<UnixStream>> = Mutex::new(None);
+
+    /// Start the double-tap listener by spawning a privileged helper via pkexec.
+    ///
+    /// The helper binary is the same executable, invoked as:
+    ///   pkexec cliphist --evdev-helper --key <KEY> --socket <SOCKET_PATH>
+    ///
+    /// pkexec triggers a polkit authentication dialog. Once authorized, the helper
+    /// runs as root, reads /dev/input/event* via evdev, and writes a single byte to
+    /// the Unix socket for each detected double-tap.
+    ///
+    /// The main process listens on the socket and fires `on_trigger`.
+    pub fn start_linux_double_tap_listener<F: Fn() + Send + Sync + 'static>(
+        key_name: &str,
+        on_trigger: F,
+    ) -> Result<(), String> {
+        if super::LISTENER_RUNNING.load(Ordering::SeqCst) {
+            super::stop_double_tap_listener();
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+
+        super::LISTENER_RUNNING.store(true, Ordering::SeqCst);
+
+        let key_name = key_name.to_string();
+
+        // Create a Unix socket for the helper to notify us
+        let socket_path = format!(
+            "/tmp/cliphist-dtap-{}.sock",
+            std::process::id()
+        );
+        // Clean up any stale socket
+        let _ = std::fs::remove_file(&socket_path);
+
+        let listener = UnixListener::bind(&socket_path)
+            .map_err(|e| format!("Failed to create Unix socket: {}", e))?;
+
+        crate::log::write_log(&format!(
+            "Starting pkexec evdev helper, socket: {}",
+            socket_path
+        ));
+
+        // Get the path to the current executable
+        let exe = std::env::current_exe()
+            .map_err(|e| format!("Failed to get current exe path: {}", e))?;
+
+        // Spawn the helper via pkexec
+        let wayland_display = std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "wayland-0".to_string());
+        let xdg_runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| format!("/run/user/{}", unsafe { libc::getuid() }));
+
+        let mut child = std::process::Command::new("pkexec")
+            .arg(&exe)
+            .arg("--evdev-helper")
+            .arg("--key")
+            .arg(&key_name)
+            .arg("--socket")
+            .arg(&socket_path)
+            .arg("--wayland-display")
+            .arg(&wayland_display)
+            .arg("--xdg-runtime-dir")
+            .arg(&xdg_runtime_dir)
+            .spawn()
+            .map_err(|e| format!("Failed to spawn pkexec: {}", e))?;
+
+        crate::log::write_log(&format!(
+            "pkexec helper spawned, pid: {}",
+            child.id()
+        ));
+
+        // Spawn a thread to wait for the helper to connect and send notifications
+        std::thread::Builder::new()
+            .name("double-tap-socket-listener".to_string())
+            .spawn(move || {
+                crate::log::write_log("Waiting for evdev helper to connect...");
+
+                // Accept one connection from the helper
+                let (mut stream, addr) = match listener.accept() {
+                    Ok(s) => s,
+                    Err(e) => {
+                        crate::log::write_log(&format!(
+                            "Failed to accept helper connection: {}",
+                            e
+                        ));
+                        let _ = std::fs::remove_file(&socket_path);
+                        super::LISTENER_RUNNING.store(false, Ordering::SeqCst);
+                        return;
+                    }
+                };
+                crate::log::write_log(&format!(
+                    "Evdev helper connected from {:?}",
+                    addr
+                ));
+
+                // Clone the stream for paste commands
+                {
+                    let mut paste_stream = PASTE_STREAM.lock().unwrap();
+                    *paste_stream = stream.try_clone().ok();
+                }
+
+                // Read notification bytes in a loop. Each byte = one double-tap.
+                let mut buf = [0u8; 1];
+                loop {
+                    if !super::LISTENER_RUNNING.load(Ordering::SeqCst) {
+                        break;
+                    }
+                    match stream.read(&mut buf) {
+                        Ok(1) => {
+                            crate::log::write_log("Double-tap notification from helper!");
+                            on_trigger();
+                        }
+                        Ok(0) => {
+                            crate::log::write_log("Evdev helper disconnected");
+                            break;
+                        }
+                        Ok(n) => {
+                            crate::log::write_log(&format!(
+                                "Unexpected read size: {}",
+                                n
+                            ));
+                        }
+                        Err(e) => {
+                            crate::log::write_log(&format!(
+                                "Socket read error: {}",
+                                e
+                            ));
+                            break;
+                        }
+                    }
+                }
+
+                // Cleanup
+                drop(stream);
+                // Clear the paste stream
+                {
+                    let mut paste_stream = PASTE_STREAM.lock().unwrap();
+                    *paste_stream = None;
+                }
+                let _ = std::fs::remove_file(&socket_path);
+                // Wait for the helper to exit (pkexec may stick around)
+                let _ = child.wait();
+                super::LISTENER_RUNNING.store(false, Ordering::SeqCst);
+                crate::log::write_log("Double-tap socket listener stopped");
+            })
+            .map_err(|e| format!("Failed to spawn socket listener thread: {}", e))?;
+
+        Ok(())
+    }
+
+    /// Send a paste command to the evdev helper via the bidirectional socket.
+    /// The helper (running as root) performs the actual uinput injection.
+    pub fn linux_simulate_paste() -> Result<(), String> {
+        let mut guard = PASTE_STREAM
+            .lock()
+            .map_err(|e| format!("PASTE_STREAM lock poisoned: {}", e))?;
+
+        if let Some(stream) = guard.as_mut() {
+            stream
+                .write_all(b"P")
+                .map_err(|e| format!("Failed to send paste command to helper: {}", e))?;
+            crate::log::write_log("Sent paste command to evdev helper");
+        } else {
+            crate::log::write_log("No evdev helper connected; clipboard populated, user can paste manually");
+        }
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Platform-specific: Windows — rdev-based double-tap + simulate_paste
+// ============================================================================
+
+#[cfg(target_os = "windows")]
+mod windows_impl {
+    use super::DoubleTapState;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::time::Instant;
+
+    use parking_lot::Mutex;
+
+    fn key_name_to_rdev(key_name: &str) -> Option<rdev::Key> {
+        match key_name {
+            "Ctrl" => Some(rdev::Key::ControlLeft),
+            "Shift" => Some(rdev::Key::ShiftLeft),
+            "Alt" => Some(rdev::Key::Alt),
+            _ => None,
+        }
+    }
+
+    pub fn start_windows_double_tap_listener<F: Fn() + Send + Sync + 'static>(
+        key_name: &str,
+        on_trigger: F,
+    ) -> Result<(), String> {
+        let target_key = key_name_to_rdev(key_name)
+            .ok_or_else(|| format!("Unsupported double-tap key: {}", key_name))?;
+
+        if super::LISTENER_RUNNING.load(Ordering::SeqCst) {
+            super::stop_double_tap_listener();
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+
+        super::LISTENER_RUNNING.store(true, Ordering::SeqCst);
+
+        let state: Arc<Mutex<DoubleTapState>> = Arc::new(Mutex::new(DoubleTapState {
+            last_press: None,
+            released: true,
+        }));
+        let callback = Arc::new(on_trigger);
+
+        std::thread::Builder::new()
+            .name("double-tap-listener".to_string())
+            .spawn(move || {
+                crate::log::write_log(&format!(
+                    "Starting Windows double-tap listener for key: {:?}",
+                    target_key
+                ));
+
+                let result = rdev::grab(move |event| {
+                    if !super::LISTENER_RUNNING.load(Ordering::SeqCst) {
+                        return Some(event);
+                    }
+
+                    match event.event_type {
+                        rdev::EventType::KeyPress(key) if key == target_key => {
+                            let now = Instant::now();
+                            let mut s = state.lock();
+                            if s.released {
+                                if let Some(prev) = s.last_press {
+                                    if now.duration_since(prev).as_millis() < super::DOUBLE_TAP_MS {
+                                        s.last_press = None;
+                                        s.released = false;
+                                        crate::log::write_log("Double-tap detected! (Windows)");
+                                        drop(s);
+                                        callback();
+                                        return Some(event);
+                                    }
+                                }
+                                s.last_press = Some(now);
+                                s.released = false;
+                            }
+                        }
+                        rdev::EventType::KeyRelease(key) if key == target_key => {
+                            state.lock().released = true;
+                        }
+                        _ => {}
+                    }
+
+                    Some(event)
+                });
+
+                match result {
+                    Ok(()) => crate::log::write_log("Windows double-tap listener stopped normally"),
+                    Err(e) => crate::log::write_log(&format!(
+                        "Windows double-tap grab error: {:?}",
+                        e
+                    )),
+                }
+
+                super::LISTENER_RUNNING.store(false, Ordering::SeqCst);
+            })
+            .map_err(|e| format!("Failed to spawn double-tap listener thread: {}", e))?;
+
+        Ok(())
+    }
+
+    pub fn windows_simulate_paste() -> Result<(), String> {
+        use rdev::{simulate, EventType, Key};
+
+        simulate(&EventType::KeyPress(Key::ControlLeft))
+            .map_err(|e| format!("Simulate Ctrl press failed: {:?}", e))?;
+        std::thread::sleep(std::time::Duration::from_millis(30));
+
+        simulate(&EventType::KeyPress(Key::KeyV))
+            .map_err(|e| format!("Simulate V press failed: {:?}", e))?;
+        std::thread::sleep(std::time::Duration::from_millis(30));
+
+        simulate(&EventType::KeyRelease(Key::KeyV))
+            .map_err(|e| format!("Simulate V release failed: {:?}", e))?;
+        std::thread::sleep(std::time::Duration::from_millis(30));
+
+        simulate(&EventType::KeyRelease(Key::ControlLeft))
+            .map_err(|e| format!("Simulate Ctrl release failed: {:?}", e))?;
+
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Public API — dispatches to platform impl
+// ============================================================================
+
+#[cfg(target_os = "linux")]
 pub fn start_double_tap_listener<F: Fn() + Send + Sync + 'static>(
     key_name: &str,
     on_trigger: F,
 ) -> Result<(), String> {
-    let target_key = key_name_to_rdev(key_name)
-        .ok_or_else(|| format!("Unsupported double-tap key: {}", key_name))?;
+    linux_impl::start_linux_double_tap_listener(key_name, on_trigger)
+}
 
-    if LISTENER_RUNNING.load(Ordering::SeqCst) {
-        stop_double_tap_listener();
-        std::thread::sleep(std::time::Duration::from_millis(200));
-    }
-
-    LISTENER_RUNNING.store(true, Ordering::SeqCst);
-
-    let state: Arc<Mutex<DoubleTapState>> = Arc::new(Mutex::new(DoubleTapState {
-        last_press: None,
-        released: true,
-    }));
-    let callback = Arc::new(on_trigger);
-
-    std::thread::Builder::new()
-        .name("double-tap-listener".to_string())
-        .spawn(move || {
-            crate::log::write_log(&format!(
-                "Starting double-tap listener for key: {:?}",
-                target_key
-            ));
-
-            let result = rdev::grab(move |event| {
-                if !LISTENER_RUNNING.load(Ordering::SeqCst) {
-                    return Some(event);
-                }
-
-                match event.event_type {
-                    rdev::EventType::KeyPress(key) if key == target_key => {
-                        let now = Instant::now();
-                        let mut s = state.lock();
-                        // Only treat as a potential second tap if the key was
-                        // released after the first press — this filters out
-                        // key-repeat events from holding the key down.
-                        if s.released {
-                            if let Some(prev) = s.last_press {
-                                if now.duration_since(prev).as_millis() < DOUBLE_TAP_MS {
-                                    s.last_press = None;
-                                    s.released = false;
-                                    crate::log::write_log("Double-tap detected!");
-                                    drop(s);
-                                    callback();
-                                    return Some(event);
-                                }
-                            }
-                            s.last_press = Some(now);
-                            s.released = false;
-                        }
-                    }
-                    rdev::EventType::KeyRelease(key) if key == target_key => {
-                        state.lock().released = true;
-                    }
-                    _ => {}
-                }
-
-                Some(event)
-            });
-
-            match result {
-                Ok(()) => crate::log::write_log("Double-tap listener stopped normally"),
-                Err(e) => crate::log::write_log(&format!("Double-tap grab error: {:?}", e)),
-            }
-
-            LISTENER_RUNNING.store(false, Ordering::SeqCst);
-        })
-        .map_err(|e| format!("Failed to spawn double-tap listener thread: {}", e))?;
-
-    Ok(())
+#[cfg(target_os = "windows")]
+pub fn start_double_tap_listener<F: Fn() + Send + Sync + 'static>(
+    key_name: &str,
+    on_trigger: F,
+) -> Result<(), String> {
+    windows_impl::start_windows_double_tap_listener(key_name, on_trigger)
 }
 
 pub fn stop_double_tap_listener() {
@@ -215,23 +453,12 @@ pub fn stop_double_tap_listener() {
     crate::log::write_log("Double-tap listener stop requested");
 }
 
+#[cfg(target_os = "linux")]
 pub fn simulate_paste() -> Result<(), String> {
-    use rdev::{simulate, EventType, Key};
+    linux_impl::linux_simulate_paste()
+}
 
-    simulate(&EventType::KeyPress(Key::ControlLeft))
-        .map_err(|e| format!("Simulate Ctrl press failed: {:?}", e))?;
-    std::thread::sleep(std::time::Duration::from_millis(30));
-
-    simulate(&EventType::KeyPress(Key::KeyV))
-        .map_err(|e| format!("Simulate V press failed: {:?}", e))?;
-    std::thread::sleep(std::time::Duration::from_millis(30));
-
-    simulate(&EventType::KeyRelease(Key::KeyV))
-        .map_err(|e| format!("Simulate V release failed: {:?}", e))?;
-    std::thread::sleep(std::time::Duration::from_millis(30));
-
-    simulate(&EventType::KeyRelease(Key::ControlLeft))
-        .map_err(|e| format!("Simulate Ctrl release failed: {:?}", e))?;
-
-    Ok(())
+#[cfg(target_os = "windows")]
+pub fn simulate_paste() -> Result<(), String> {
+    windows_impl::windows_simulate_paste()
 }

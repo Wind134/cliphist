@@ -1,7 +1,7 @@
 [package]
 name = "tauri-app"
 version = "0.1.0"
-description = "A Tauri App"
+description = "Clipboard history manager"
 authors = ["you"]
 edition = "2021"
 
@@ -35,6 +35,12 @@ base64 = "0.22"
 image = "0.25"
 png = "0.18.1"
 byteorder = "1.5.0"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+evdev-rs = "0.4"
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
 rdev = { version = "0.5", features = ["unstable_grab", "serialize"] }
 
 [[bin]]
@@ -44,4 +50,3 @@ path = "src/main.rs"
 [[bin]]
 name = "icon-gen"
 path = "src/icon_gen.rs"
-
