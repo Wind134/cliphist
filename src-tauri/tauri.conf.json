@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "identifier": "com.ping.cliphist",
   "build": {
-    "frontendDist": "../src-tauri/dist"
+    "frontendDist": "../src-tauri/dist",
+    "beforeBuildCommand": "npm run build"
   },
   "app": {
     "withGlobalTauri": true,
