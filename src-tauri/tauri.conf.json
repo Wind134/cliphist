@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "com.ping.cliphist",
   "build": {
-    "frontendDist": "../src"
+    "frontendDist": "../src-tauri/dist"
   },
   "app": {
     "withGlobalTauri": true,
@@ -12,13 +12,15 @@
       {
         "title": "ClipHist",
         "width": 400,
-        "height": 500,
+        "height": 600,
         "minWidth": 320,
         "minHeight": 400,
         "resizable": true,
-        "decorations": true,
+        "decorations": false,
         "transparent": false,
-        "center": true
+        "minimizable": true,
+        "center": true,
+        "shadow": false
       }
     ],
     "security": {

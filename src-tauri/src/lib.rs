@@ -12,6 +12,8 @@ use clipboard::ClipboardItem;
 use image::ImageEncoder;
 use settings::Settings;
 use state::AppState;
+use std::cell::Cell;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
 #[tauri::command]
@@ -66,7 +68,7 @@ fn save_settings_cmd(settings: Settings) {
 }
 
 #[tauri::command]
-fn update_settings(partial: serde_json::Value) -> Result<Settings, String> {
+fn update_settings(app: tauri::AppHandle, partial: serde_json::Value) -> Result<Settings, String> {
     let mut current = settings::load_settings();
 
     if let Some(v) = partial.get("close_to_tray").and_then(|v| v.as_bool()) {
@@ -81,6 +83,8 @@ fn update_settings(partial: serde_json::Value) -> Result<Settings, String> {
     if let Some(v) = partial.get("hotkey").and_then(|v| v.as_str()) {
         if shortcut::validate_shortcut(v) {
             current.hotkey = v.to_string();
+            // Register new shortcut immediately
+            let _ = shortcut::register_global_shortcut(&app, v);
         } else {
             return Err(format!("无效的快捷键格式: {}", v));
         }
@@ -102,6 +106,16 @@ fn update_settings(partial: serde_json::Value) -> Result<Settings, String> {
     if let Some(v) = partial.get("retention_days").and_then(|v| v.as_u64()) {
         if v <= 365 {
             current.retention_days = v as u32;
+        }
+    }
+    if let Some(v) = partial.get("window_width").and_then(|v| v.as_u64()) {
+        if v >= 320 && v <= 9999 {
+            current.window_width = v as u32;
+        }
+    }
+    if let Some(v) = partial.get("window_height").and_then(|v| v.as_u64()) {
+        if v >= 400 && v <= 9999 {
+            current.window_height = v as u32;
         }
     }
 
@@ -158,6 +172,12 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            let _ = app.get_webview_window("main").map(|w| {
+                let _ = w.show();
+                let _ = w.set_focus();
+            });
+        }))
         .manage(state)
         .setup(|app| {
             log::write_log("setup start");
@@ -168,7 +188,7 @@ pub fn run() {
             }
 
             let s = settings::load_settings();
-            if let Err(e) = shortcut::register_global_shortcut(app, &s.hotkey) {
+            if let Err(e) = shortcut::register_global_shortcut(app.handle(), &s.hotkey) {
                 log::write_log(&format!("Failed to register global shortcut: {}", e));
             }
 
@@ -181,8 +201,15 @@ pub fn run() {
                 let _ = autostart_manager.disable();
             }
 
-            if s.close_to_tray {
-                if let Some(window) = app.get_webview_window("main") {
+            if let Some(window) = app.get_webview_window("main") {
+                // Restore saved window size only if user had previously resized it.
+                // Resize event saves physical size, so restore with PhysicalSize
+                // to avoid compounding growth from logical↔physical mismatch.
+                if s.window_width != 400 || s.window_height != 600 {
+                    let _ = window.set_size(tauri::PhysicalSize::new(s.window_width, s.window_height));
+                }
+
+                if s.close_to_tray {
                     let app_handle = app.handle().clone();
                     window.on_window_event(move |event| {
                         if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -193,8 +220,21 @@ pub fn run() {
                         }
                     });
                 }
-            }
 
+                // Save window size on resize (throttled to 500ms)
+                let last_save = Cell::new(Instant::now());
+                window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::Resized(size) = event {
+                        if last_save.get().elapsed() > Duration::from_millis(500) {
+                            let mut s = settings::load_settings();
+                            s.window_width = size.width;
+                            s.window_height = size.height;
+                            settings::save_settings(&s);
+                            last_save.set(Instant::now());
+                        }
+                    }
+                });
+            }
             // Silent start: hide window to tray on launch
             if s.silent_start {
                 if let Some(window) = app.get_webview_window("main") {

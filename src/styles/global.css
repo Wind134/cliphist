@@ -1,0 +1,63 @@
+/* === ClipHist Global Styles — KDE Breeze palette === */
+
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --bg-primary: #eff0f1;
+  --bg-secondary: #fcfcfc;
+  --bg-tertiary: #f1f2f3;
+  --bg-hover: #e4e4e4;
+  --bg-active: #d8d9da;
+  --text-primary: #232629;
+  --text-secondary: #4d4f52;
+  --text-tertiary: #76787d;
+  --accent: #3daee9;
+  --accent-hover: #3498d6;
+  --border: #bcbec0;
+  --shadow: rgba(0, 0, 0, 0.06);
+  --radius: 6px;
+  --radius-sm: 4px;
+  --titlebar-bg: #ecedee;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+
+  font-family: "Noto Sans SC", "Noto Sans", system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: transparent;
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  user-select: none;
+}
+
+input, select, button {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+}

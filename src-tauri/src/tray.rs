@@ -23,10 +23,14 @@ pub fn setup(app: &App) -> Result<(), Box<dyn std::error::Error>> {
         .item(&quit)
         .build()?;
 
-    let icon = app
-        .default_window_icon()
-        .cloned()
-        .ok_or("No default window icon set")?;
+    // Decode the tray icon from embeded PNG using the `image` crate directly,
+    // then wrap it in a tauri Image. This avoids tauri-build caching issues.
+    let img = image::load_from_memory(include_bytes!("../icons/32x32.png"))
+        .map_err(|e| format!("Failed to decode tray icon: {}", e))?
+        .into_rgba8();
+    let (width, height) = img.dimensions();
+    let rgba = img.into_raw();
+    let icon = tauri::image::Image::new(&rgba, width, height);
 
     let _tray = TrayIconBuilder::new()
         .icon(icon)

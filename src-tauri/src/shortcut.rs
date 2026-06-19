@@ -90,10 +90,10 @@ pub fn validate_shortcut(shortcut_str: &str) -> bool {
     parse_shortcut(shortcut_str).is_some()
 }
 
-pub fn register_global_shortcut(app: &tauri::App, shortcut_str: &str) -> Result<(), String> {
+pub fn register_global_shortcut(app: &tauri::AppHandle, shortcut_str: &str) -> Result<(), String> {
     if let Some(parsed) = parse_shortcut(shortcut_str) {
         let shortcut = Shortcut::new(Some(parsed.modifiers), parsed.code);
-        let app_handle = app.handle().clone();
+        let app_handle = app.clone();
 
         // Unregister all existing shortcuts first to avoid duplicates
         app.global_shortcut()
