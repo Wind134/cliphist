@@ -69,6 +69,10 @@ fn save_settings_cmd(settings: Settings) {
 
 #[tauri::command]
 fn update_settings(app: tauri::AppHandle, partial: serde_json::Value) -> Result<Settings, String> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static UPDATE_CALLS: AtomicU64 = AtomicU64::new(0);
+    let call_id = UPDATE_CALLS.fetch_add(1, Ordering::SeqCst);
+    log::write_log(&format!("update_settings[{}]: {:?}", call_id, partial));
     let mut current = settings::load_settings();
 
     if let Some(v) = partial.get("close_to_tray").and_then(|v| v.as_bool()) {
