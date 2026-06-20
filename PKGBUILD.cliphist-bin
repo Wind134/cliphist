@@ -1,0 +1,38 @@
+# Maintainer: Ping <wind134@example.com>
+
+pkgname=cliphist-bin
+pkgver=1.1.0
+pkgrel=1
+pkgdesc="Clipboard history manager with per-item paste injection (prebuilt binary)"
+arch=('x86_64')
+url="https://github.com/Wind134/cliphist"
+license=('MIT')
+depends=(
+  'webkit2gtk-4.1'
+  'libayatana-appindicator'
+  'gtk3'
+)
+provides=('cliphist')
+conflicts=('cliphist')
+source=("${url}/releases/download/v${pkgver}/ClipHist_${pkgver}_amd64.deb")
+sha256sums=('1b54e4c6ae8338591692f6274526b94acd8214f29d402e8734ef6a0254c2febb')
+
+package() {
+  # Extract data.tar.gz from deb archive, then extract usr contents
+  bsdtar -xf "${srcdir}/ClipHist_${pkgver}_amd64.deb" -C "${srcdir}" data.tar.gz
+  bsdtar -xf "${srcdir}/data.tar.gz" -C "${pkgdir}" usr/
+
+  # Rename binary from tauri-app to cliphist
+  mv "${pkgdir}/usr/bin/tauri-app" "${pkgdir}/usr/bin/cliphist"
+
+  # Remove the unused icon-gen binary
+  rm -f "${pkgdir}/usr/bin/icon-gen"
+
+  # Rename desktop file Exec line and icon reference
+  sed -i 's/Exec=tauri-app/Exec=cliphist/' "${pkgdir}/usr/share/applications/ClipHist.desktop"
+  sed -i 's/Icon=tauri-app/Icon=cliphist/' "${pkgdir}/usr/share/applications/ClipHist.desktop"
+
+  # Rename icon to match
+  find "${pkgdir}/usr/share/icons" -name 'tauri-app.png' -exec sh -c \
+    'mv "$1" "${1%/*}/cliphist.png"' _ {} \;
+}

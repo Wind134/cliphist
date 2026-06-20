@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { slide } from 'svelte/transition';
   import { get } from 'svelte/store';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { initClipboard, settingsOpen, settingsData } from './stores/clipboard';
@@ -33,7 +34,9 @@
 <div class="window">
   <Titlebar />
   {#if $settingsOpen}
-    <SettingsPanel />
+    <div in:slide={{duration: 150, axis: "x"}} out:slide={{duration: 100, axis: "x"}}>
+      <SettingsPanel />
+    </div>
   {:else}
     <HistoryList />
   {/if}

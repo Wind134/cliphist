@@ -37,7 +37,7 @@
     font-size: 12px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     color: var(--text-secondary);
     background: var(--bg-tertiary);
   }
@@ -48,5 +48,6 @@
   .cat-tab.active {
     color: #fff;
     font-weight: 600;
+    transform: scale(1.02);
   }
 </style>

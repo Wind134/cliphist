@@ -9,6 +9,7 @@ export const selectedIndex = writable<number>(-1);
 export const searchQuery = writable<string>('');
 export const currentCategory = writable<ContentCategory>('all');
 export const settingsOpen = writable<boolean>(false);
+export const helperConnected = writable<boolean>(false);
 export const toastMessage = writable<string>('');
 export const zoomLevel = writable<number>(1.0);
 export const settingsData = writable<Settings>({
@@ -76,6 +77,10 @@ export async function initClipboard() {
       const merged = [...top5, ...h.filter(hi => !top5.find(t => t.id === hi.id))];
       return merged.slice(0, 500);
     });
+  });
+
+  await listen<boolean>('helper-status', (event) => {
+    helperConnected.set(event.payload);
   });
 
   await listen('open-settings', () => {

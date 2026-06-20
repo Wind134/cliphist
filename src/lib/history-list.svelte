@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { slide, fade } from 'svelte/transition';
   import { invoke } from '@tauri-apps/api/core';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import {
@@ -198,7 +199,9 @@
     <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
     <div class="history-list" onclick={handleItemClick} ondblclick={handleDblClick} role="listbox">
       {#each $filteredHistory as item, i (item.id)}
-        <HistoryItem item={item} index={i} isSelected={i === $selectedIndex} />
+        <div in:slide={{duration: 180}} out:fade={{duration: 100}}>
+          <HistoryItem item={item} index={i} isSelected={i === $selectedIndex} />
+        </div>
       {/each}
     </div>
   {/if}

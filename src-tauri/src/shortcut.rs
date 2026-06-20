@@ -7,6 +7,7 @@ use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut}
 // ============================================================================
 
 static LISTENER_RUNNING: AtomicBool = AtomicBool::new(false);
+pub static HELPER_CONNECTED: AtomicBool = AtomicBool::new(false);
 
 pub fn parse_shortcut(shortcut_str: &str) -> Option<ParsedShortcut> {
     let parts: Vec<&str> = shortcut_str.split('+').collect();
@@ -233,6 +234,7 @@ mod linux_impl {
                     "Evdev helper connected from {:?}",
                     addr
                 ));
+                super::HELPER_CONNECTED.store(true, Ordering::SeqCst);
 
                 // Clone the stream for paste commands
                 {
@@ -281,6 +283,7 @@ mod linux_impl {
                 let _ = std::fs::remove_file(&socket_path);
                 // Wait for the helper to exit (pkexec may stick around)
                 let _ = child.wait();
+                super::HELPER_CONNECTED.store(false, Ordering::SeqCst);
                 super::LISTENER_RUNNING.store(false, Ordering::SeqCst);
                 crate::log::write_log("Double-tap socket listener stopped");
             })
@@ -343,6 +346,7 @@ mod windows_impl {
         }
 
         super::LISTENER_RUNNING.store(true, Ordering::SeqCst);
+        super::HELPER_CONNECTED.store(true, Ordering::SeqCst);
 
         let state: Arc<Mutex<DoubleTapState>> = Arc::new(Mutex::new(DoubleTapState {
             last_press: None,
@@ -399,6 +403,7 @@ mod windows_impl {
                     )),
                 }
 
+                super::HELPER_CONNECTED.store(false, Ordering::SeqCst);
                 super::LISTENER_RUNNING.store(false, Ordering::SeqCst);
             })
             .map_err(|e| format!("Failed to spawn double-tap listener thread: {}", e))?;
@@ -458,7 +463,16 @@ pub fn start_double_tap_listener<F: Fn() + Send + Sync + 'static>(
 
 pub fn stop_double_tap_listener() {
     LISTENER_RUNNING.store(false, Ordering::SeqCst);
+    HELPER_CONNECTED.store(false, Ordering::SeqCst);
     crate::log::write_log("Double-tap listener stop requested");
+}
+
+pub fn is_helper_connected() -> bool {
+    HELPER_CONNECTED.load(Ordering::SeqCst)
+}
+
+pub fn is_listener_running() -> bool {
+    LISTENER_RUNNING.load(Ordering::SeqCst)
 }
 
 #[cfg(target_os = "linux")]

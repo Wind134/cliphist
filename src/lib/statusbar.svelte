@@ -1,9 +1,12 @@
 <script lang="ts">
-  import { history } from '../stores/clipboard';
+  import { helperConnected } from '../stores/clipboard';
 </script>
 
 <footer class="statusbar">
-  <span class="status-indicator">监听中</span>
+  <div class="status-indicator">
+    <span class="status-dot" class:connected={$helperConnected}></span>
+    <span>{$helperConnected ? '快捷键就绪' : '监听中'}</span>
+  </div>
   <span class="shortcut-hint">双击或 Enter 复制 &middot; 1-9 快捷输入</span>
 </footer>
 
@@ -25,13 +28,17 @@
     align-items: center;
     gap: 5px;
   }
-  .status-indicator::before {
-    content: '';
+  .status-dot {
     display: inline-block;
     width: 6px;
     height: 6px;
-    background: #6d6d6d;
     border-radius: 50%;
+    background: #6d6d6d;
+    transition: background 0.3s ease, box-shadow 0.3s ease;
+  }
+  .status-dot.connected {
+    background: #22c55e;
+    box-shadow: 0 0 6px rgba(34, 197, 94, 0.5);
   }
   .shortcut-hint {
     opacity: 0.7;
