@@ -1,6 +1,6 @@
 pkgname=cliphist
-pkgver=0.1.0
-pkgrel=1
+pkgver=1.0.0
+pkgrel=2
 pkgdesc="Clipboard history manager with per-item paste injection"
 arch=('x86_64')
 url="https://github.com/ping/cliphist"
@@ -21,6 +21,7 @@ package() {
   install -Dm644 src-tauri/icons/128x128.png "$pkgdir/usr/share/icons/hicolor/128x128/apps/cliphist.png"
   install -Dm644 src-tauri/icons/48x48.png "$pkgdir/usr/share/icons/hicolor/48x48/apps/cliphist.png"
   install -Dm644 src-tauri/icons/32x32.png "$pkgdir/usr/share/icons/hicolor/32x32/apps/cliphist.png"
+  install -Dm644 src-tauri/com.ping.cliphist.policy "$pkgdir/usr/share/polkit-1/actions/com.ping.cliphist.policy"
   install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/cliphist.desktop" <<'DESKTOP'
 [Desktop Entry]
 Type=Application

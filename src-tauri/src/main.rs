@@ -2,6 +2,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+
+    if args.contains(&"--version".to_string()) || args.contains(&"-v".to_string()) {
+        println!("ClipHist {}", env!("CARGO_PKG_VERSION"));
+        std::process::exit(0);
+    }
+
     // --- Evdev helper mode (Linux only) ---
     // Invoked via: pkexec cliphist --evdev-helper --key Ctrl
     //               --socket /tmp/cliphist-dtap.sock
@@ -9,7 +16,6 @@ fn main() {
     //               --xdg-runtime-dir /run/user/1000
     #[cfg(target_os = "linux")]
     {
-        let args: Vec<String> = std::env::args().collect();
         if args.iter().any(|a| a == "--evdev-helper") {
             let get_arg = |name: &str| -> String {
                 args.iter()

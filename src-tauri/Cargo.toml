@@ -1,6 +1,6 @@
 [package]
 name = "tauri-app"
-version = "0.1.0"
+version = "1.0.0"
 description = "Clipboard history manager"
 default-run = "tauri-app"
 authors = ["you"]
@@ -44,6 +44,7 @@ libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 rdev = { version = "0.5", features = ["unstable_grab", "serialize"] }
+windows = { version = "0.58", features = ["Win32_UI_WindowsAndMessaging"] }
 
 [[bin]]
 name = "tauri-app"

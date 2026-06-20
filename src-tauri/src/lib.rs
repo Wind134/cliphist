@@ -245,6 +245,25 @@ pub fn run() {
 
             let app_handle = app.handle().clone();
             let state = app.state::<AppState>();
+
+            // Force rounded corners on Windows 11 via DWM
+            #[cfg(target_os = "windows")]
+            if let Some(window) = app.get_webview_window("main") {
+                use tauri::Manager;
+                if let Ok(handle) = window.window_handle() {
+                    if let Ok(raw) = handle.as_raw() {
+                        let corner_pref: u32 = 1; // DWMWCP_ROUND_SMALL
+                        unsafe {
+                            windows::Win32::UI::WindowsAndMessaging::DwmSetWindowAttribute(
+                                windows::Win32::Foundation::HWND(raw as *mut _),
+                                windows::Win32::UI::WindowsAndMessaging::DWMWA_WINDOW_CORNER_PREFERENCE,
+                                &corner_pref as *const _ as *const std::ffi::c_void,
+                                std::mem::size_of::<u32>() as u32,
+                            );
+                        }
+                    }
+                }
+            }
             let hist = state.history.clone();
             let cnt = state.counter.clone();
             log::write_log("spawning clipboard poll thread");

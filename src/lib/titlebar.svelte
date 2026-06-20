@@ -18,7 +18,7 @@
   function handleMousedown(e: MouseEvent) {
     if (e.button !== 0) return;
     const target = e.target as HTMLElement;
-    if (target.closest('.titlebar-actions') || target.closest('.resize-handle')) return;
+    if (target.closest('.titlebar-actions')) return;
     e.preventDefault();
 
     // Check if mouse is near the titlebar edges for resize
@@ -84,15 +84,6 @@
       </svg>
     </button>
     <button
-      class="titlebar-btn titlebar-resize"
-      onmousedown={e => { e.stopPropagation(); e.preventDefault(); appWindow.startResizeDragging('SouthEast'); }}
-      aria-label="调整大小"
-    >
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <polyline points="7 17 17 7"></polyline>
-        <polyline points="7 7 17 7 17 17"></polyline>
-      </svg>
-    </button>
     <button class="titlebar-btn" onpointerdown={handleClose} aria-label="关闭">&times;</button>
   </div>
 
@@ -146,20 +137,4 @@
     background: var(--bg-active);
     color: var(--accent);
   }
-  .titlebar-resize {
-    cursor: se-resize !important;
-  }
-  .resize-handle {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 5px;
-    cursor: s-resize;
-    z-index: 20;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
 </style>
