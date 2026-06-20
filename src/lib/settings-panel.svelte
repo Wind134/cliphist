@@ -2,7 +2,7 @@
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import {
     settingsOpen, settingsData, showToast,
-    updateSettings, validateHotkey, toggleAutostart, applyZoom, helperConnected,
+    updateSettings, validateHotkey, toggleAutostart, applyZoom, helperConnected, feLog,
   } from '../stores/clipboard';
 
   const settingsWindow = getCurrentWindow();
@@ -115,6 +115,7 @@
   }
 
   async function onRetentionChange(e: Event) {
+    feLog("onRetentionChange raw=" + (e.target as HTMLSelectElement).value);
     const val = parseInt((e.target as HTMLSelectElement).value);
     try {
       await updateSettings({ retention_days: val });

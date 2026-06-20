@@ -1,5 +1,6 @@
 import { writable, derived } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
+export const feLog = (msg: string) => { invoke('fe_log', { message: msg }).catch(() => {}); };
 import { listen } from '@tauri-apps/api/event';
 import type { ClipboardItem, Settings, ContentCategory } from '../types';
 
@@ -52,6 +53,7 @@ export function showToast(msg: string) {
 export async function initClipboard() {
   try {
     const s = await invoke<Settings>('get_settings');
+    feLog("loaded retention_days=" + s.retention_days);
     settingsData.set(s);
     zoomLevel.set(s.zoom_level);
     applyZoom(s.zoom_level);
@@ -92,7 +94,8 @@ export async function initClipboard() {
 export async function refreshSettings() {
   try {
     const s = await invoke<Settings>('get_settings');
-    settingsData.set(s);
+      feLog("refreshSettings retention_days=" + s.retention_days);
+settingsData.set(s);
     zoomLevel.set(s.zoom_level);
     applyZoom(s.zoom_level);
   } catch (e) {

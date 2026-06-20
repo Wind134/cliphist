@@ -194,6 +194,11 @@ fn toggle_autostart(
 }
 
 #[tauri::command]
+fn fe_log(message: String) {
+    log::write_log(&format!("[FE] {}", message));
+}
+
+#[tauri::command]
 fn simulate_paste_cmd() -> Result<(), String> {
     shortcut::simulate_paste()
 }
@@ -376,6 +381,7 @@ pub fn run() {
             update_settings,
             validate_hotkey,
             toggle_autostart,
+            fe_log,
             simulate_paste_cmd,
         ])
         .run(tauri::generate_context!())
