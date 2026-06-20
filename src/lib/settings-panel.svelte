@@ -8,8 +8,8 @@
   const settingsWindow = getCurrentWindow();
   let hotkeyInput = $state('');
   let hotkeyError = $state('');
-  let retentionVal = $state(3);
-  let doubleTapVal = $state('');
+  let retentionSelect: HTMLSelectElement;
+  let doubleTapSelect: HTMLSelectElement;
 
   function handleHeaderMousedown(e: MouseEvent) {
     if (e.button !== 0) return;
@@ -142,10 +142,14 @@
     }
   });
   $effect(() => {
-    retentionVal = $settingsData.retention_days;
+    if (retentionSelect && $settingsData.retention_days !== undefined) {
+      retentionSelect.value = String($settingsData.retention_days);
+    }
   });
   $effect(() => {
-    doubleTapVal = $settingsData.double_tap_key;
+    if (doubleTapSelect && $settingsData.double_tap_key !== undefined) {
+      doubleTapSelect.value = String($settingsData.double_tap_key);
+    }
   });
 </script>
 
@@ -241,7 +245,7 @@
               </span>
             {/if}
           </div>
-          <select class="hotkey-input" bind:value={doubleTapVal} onchange={onDoubleTapChange}>
+          <select class="hotkey-input" bind:this={doubleTapSelect} value={$settingsData.double_tap_key} onchange={onDoubleTapChange}>
             <option value="">禁用</option>
             <option value="Ctrl">Ctrl</option>
             <option value="Shift">Shift</option>
@@ -255,7 +259,7 @@
             <span class="settings-item-label">历史记录保存时长</span>
             <span class="settings-item-desc">超过设定时间的记录将自动清理</span>
           </div>
-          <select class="hotkey-input" bind:value={retentionVal} onchange={onRetentionChange}>
+          <select class="hotkey-input" bind:this={retentionSelect} value={$settingsData.retention_days} onchange={onRetentionChange}>
             <option value="1">1 天</option>
             <option value="3">3 天</option>
             <option value="7">7 天</option>
