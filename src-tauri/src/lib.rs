@@ -59,7 +59,9 @@ fn get_item_count(state: tauri::State<'_, AppState>) -> usize {
 
 #[tauri::command]
 fn get_settings() -> Settings {
-    settings::load_settings()
+    let s = settings::load_settings();
+    log::write_log(&format!("get_settings returning: retention_days={}, zoom_level={}, window_width={}", s.retention_days, s.zoom_level, s.window_width));
+    s
 }
 
 #[tauri::command]
