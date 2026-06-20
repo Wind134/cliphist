@@ -34,5 +34,9 @@
   }
   .shortcut-hint {
     opacity: 0.7;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
   }
 </style>

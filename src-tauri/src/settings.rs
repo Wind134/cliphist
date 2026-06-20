@@ -43,6 +43,7 @@ pub fn load_settings() -> Settings {
     if let Ok(json) = std::fs::read_to_string(&path) {
         if let Ok(s) = serde_json::from_str::<Settings>(&json) {
             crate::log::write_log(&format!("Settings loaded from {:?}", path));
+            crate::log::write_log(&format!("Loaded retention_days={}", s.retention_days));
             return s;
         }
         crate::log::write_log(&format!("Failed to parse settings from {:?}", path));
