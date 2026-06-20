@@ -165,11 +165,15 @@
     color: var(--text-tertiary);
   }
   .item-actions {
-    display: none;
+    display: flex;
     gap: 4px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s;
   }
   .history-item:hover .item-actions {
-    display: flex;
+    opacity: 1;
+    pointer-events: auto;
   }
   .item-action-btn {
     display: flex;

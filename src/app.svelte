@@ -33,13 +33,15 @@
 
 <div class="window">
   <Titlebar />
-  {#if $settingsOpen}
-    <div in:slide={{duration: 150, axis: "x"}} out:slide={{duration: 100, axis: "x"}}>
-      <SettingsPanel />
-    </div>
-  {:else}
-    <HistoryList />
-  {/if}
+  <main class="content-area">
+    {#if $settingsOpen}
+      <div in:slide={{duration: 150, axis: "x"}} out:slide={{duration: 100, axis: "x"}}>
+        <SettingsPanel />
+      </div>
+    {:else}
+      <HistoryList />
+    {/if}
+  </main>
   <StatusBar />
 </div>
 
@@ -54,5 +56,12 @@
     background: var(--bg-primary);
     overflow: hidden;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  }
+  .content-area {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
 </style>
