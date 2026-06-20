@@ -81,11 +81,11 @@
   }
   .history-item:hover {
     background: var(--bg-hover);
-    border-color: var(--border);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08); border-color: transparent;
   }
   .history-item.selected {
     background: var(--bg-hover);
-    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent); border-color: transparent;
   }
   .item-index {
     position: absolute;

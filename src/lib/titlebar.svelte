@@ -95,7 +95,7 @@
     align-items: center;
     height: 32px;
     background: var(--titlebar-bg, #ecedee);
-    border-bottom: 1px solid var(--border);
+    /*removed border-bottom*/
     user-select: none;
     flex-shrink: 0;
   }

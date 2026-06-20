@@ -1,8 +1,8 @@
+pub(crate) mod log;
 mod clipboard;
 mod consts;
 #[cfg(target_os = "linux")]
 pub mod evdev_helper;
-mod log;
 mod settings;
 mod shortcut;
 mod state;
@@ -98,7 +98,51 @@ fn update_settings(app: tauri::AppHandle, partial: serde_json::Value) -> Result<
     if let Some(v) = partial.get("double_tap_key").and_then(|v| v.as_str()) {
         let valid_keys = ["", "Ctrl", "Shift", "Alt"];
         if valid_keys.contains(&v) {
+            let old = current.double_tap_key.clone();
             current.double_tap_key = v.to_string();
+            if old != v {
+                shortcut::stop_double_tap_listener();
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                if !v.is_empty() {
+                    let app_clone = app.clone();
+                    let key = v.to_string();
+                    std::thread::spawn(move || {
+                        if let Err(e) = shortcut::start_double_tap_listener(&key, move || {
+                            let h = app_clone.clone();
+                            std::thread::spawn(move || {
+                                if let Some(w) = h.get_webview_window("main") {
+                                    let _ = w.set_always_on_top(true);
+                                    let _ = w.hide();
+                                    std::thread::sleep(std::time::Duration::from_millis(30));
+                                    let _ = w.show();
+                                    let _ = w.set_focus();
+                                }
+                                std::thread::sleep(std::time::Duration::from_millis(500));
+                                if let Some(w) = h.get_webview_window("main") {
+                                    let _ = w.set_always_on_top(false);
+                                }
+                            });
+                        }) {
+                            log::write_log(&format!("Failed to restart double tap listener: {}", e));
+                        }
+                    });
+                    let mon = app.clone();
+                    std::thread::spawn(move || {
+                        let mut was = false;
+                        loop {
+                            std::thread::sleep(std::time::Duration::from_secs(1));
+                            let now = shortcut::is_helper_connected();
+                            if now != was {
+                                was = now;
+                                let _ = mon.emit("helper-status", now);
+                            }
+                            if !shortcut::is_listener_running() {
+                                break;
+                            }
+                        }
+                    });
+                }
+            }
         } else {
             return Err(format!("无效的双击键: {}", v));
         }
@@ -188,6 +232,7 @@ pub fn run() {
             }
 
             let s = settings::load_settings();
+            log::write_log(&format!("Startup settings: hotkey={}, retention={}d, double_tap={}, silent={}", s.hotkey, s.retention_days, s.double_tap_key, s.silent_start));
             if let Err(e) = shortcut::register_global_shortcut(app.handle(), &s.hotkey) {
                 log::write_log(&format!("Failed to register global shortcut: {}", e));
             }

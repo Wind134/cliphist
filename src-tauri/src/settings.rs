@@ -40,10 +40,14 @@ pub fn get_settings_path() -> PathBuf {
 
 pub fn load_settings() -> Settings {
     let path = get_settings_path();
-    if let Ok(json) = std::fs::read_to_string(path) {
+    if let Ok(json) = std::fs::read_to_string(&path) {
         if let Ok(s) = serde_json::from_str::<Settings>(&json) {
+            crate::log::write_log(&format!("Settings loaded from {:?}", path));
             return s;
         }
+        crate::log::write_log(&format!("Failed to parse settings from {:?}", path));
+    } else {
+        crate::log::write_log(&format!("No settings file at {:?}, using defaults", path));
     }
     Settings::default()
 }
@@ -51,6 +55,8 @@ pub fn load_settings() -> Settings {
 pub fn save_settings(settings: &Settings) {
     if let Ok(json) = serde_json::to_string_pretty(settings) {
         let path = get_settings_path();
-        let _ = std::fs::write(path, json);
+        if let Err(e) = std::fs::write(&path, json) {
+            crate::log::write_log(&format!("Failed to save settings to {:?}: {}", path, e));
+        }
     }
 }

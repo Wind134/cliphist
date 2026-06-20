@@ -271,7 +271,7 @@
     height: 32px;
     padding: 0 8px 0 16px;
     background: var(--titlebar-bg);
-    border-bottom: 1px solid var(--border);
+    /*removed*/
     flex-shrink: 0;
   }
   .settings-title {
@@ -311,7 +311,7 @@
     padding: 12px;
     background: var(--bg-secondary);
     border-radius: 8px;
-    border: 1px solid var(--border);
+    border: none; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
   }
   .settings-item-info {
     display: flex;

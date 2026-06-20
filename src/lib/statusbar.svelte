@@ -14,7 +14,7 @@
     height: 24px;
     padding: 0 12px;
     background: var(--bg-secondary);
-    border-top: 1px solid var(--border);
+    /*removed*/
     font-size: 11px;
     color: var(--text-tertiary);
     flex-shrink: 0;

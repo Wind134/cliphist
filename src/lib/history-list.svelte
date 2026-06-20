@@ -214,7 +214,7 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
-    border-bottom: 1px solid var(--border);
+    /*removed*/
   }
   .search-box {
     display: flex;
@@ -268,7 +268,7 @@
     justify-content: space-between;
     padding: 4px 12px;
     background: var(--bg-secondary);
-    border-bottom: 1px solid var(--border);
+    /*removed*/
   }
   .item-count {
     font-size: 11px;
