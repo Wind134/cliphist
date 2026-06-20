@@ -2,7 +2,7 @@
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import {
     settingsOpen, settingsData, showToast,
-    updateSettings, validateHotkey, toggleAutostart, applyZoom,
+    updateSettings, validateHotkey, toggleAutostart, applyZoom, helperConnected,
   } from '../stores/clipboard';
 
   const settingsWindow = getCurrentWindow();
@@ -226,6 +226,11 @@
           <div class="settings-item-info">
             <span class="settings-item-label">双击快捷键</span>
             <span class="settings-item-desc">快速双击指定键唤醒窗口</span>
+            {#if $settingsData.double_tap_key}
+              <span class="settings-item-note" class:authorized={$helperConnected}>
+                {$helperConnected ? '已授权' : 'Linux 下首次使用需授权'}
+              </span>
+            {/if}
           </div>
           <select class="hotkey-input" value={$settingsData.double_tap_key} onchange={onDoubleTapChange}>
             <option value="">禁用</option>
@@ -327,6 +332,14 @@
     font-size: 11px;
     color: #dc2626;
     margin-top: 2px;
+  }
+  .settings-item-note {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    margin-top: 2px;
+  }
+  .settings-item-note.authorized {
+    color: #22c55e;
   }
   .toggle-switch {
     position: relative;

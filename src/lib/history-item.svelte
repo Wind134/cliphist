@@ -69,15 +69,15 @@
   .history-item {
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    padding: 8px 10px 8px 28px;
+    gap: 4px;
+    padding: 12px 14px 12px 36px;
     background: var(--bg-secondary);
-    border-radius: 6px;
+    border-radius: 8px;
     cursor: pointer;
     transition: all 0.15s;
     border: 1px solid transparent;
     position: relative;
-    margin-bottom: 2px;
+    margin-bottom: 8px;
   }
   .history-item:hover {
     background: var(--bg-hover);
@@ -89,7 +89,7 @@
   }
   .item-index {
     position: absolute;
-    left: 6px;
+    left: 8px;
     top: 50%;
     transform: translateY(-50%);
     width: 18px;
@@ -166,7 +166,7 @@
   }
   .item-actions {
     display: none;
-    gap: 2px;
+    gap: 4px;
   }
   .history-item:hover .item-actions {
     display: flex;

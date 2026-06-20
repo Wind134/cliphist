@@ -295,7 +295,7 @@
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 4px 8px;
+    padding: 8px 12px;
   }
   .history-list {
     display: flex;
