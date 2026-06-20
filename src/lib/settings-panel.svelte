@@ -233,7 +233,7 @@
               </span>
             {/if}
           </div>
-          <select class="hotkey-input" value={$settingsData.double_tap_key} onchange={onDoubleTapChange}>
+          <select class="hotkey-input" bind:value={$settingsData.double_tap_key} onchange={onDoubleTapChange}>
             <option value="">禁用</option>
             <option value="Ctrl">Ctrl</option>
             <option value="Shift">Shift</option>
@@ -247,7 +247,7 @@
             <span class="settings-item-label">历史记录保存时长</span>
             <span class="settings-item-desc">超过设定时间的记录将自动清理</span>
           </div>
-          <select class="hotkey-input" value={$settingsData.retention_days} onchange={onRetentionChange}>
+          <select class="hotkey-input" bind:value={$settingsData.retention_days} onchange={onRetentionChange}>
             <option value="1">1 天</option>
             <option value="3">3 天</option>
             <option value="7">7 天</option>
