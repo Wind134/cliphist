@@ -160,14 +160,12 @@
       oninput={handleSearchInput}
       onkeydown={handleSearchKeydown}
     />
-    {#if $searchQuery.length > 0}
-      <button class="search-clear" onclick={clearSearch} aria-label="清除搜索">
+    <button class="search-clear" class:visible={$searchQuery.length > 0} onclick={clearSearch} aria-label="清除搜索">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="18" y1="6" x2="6" y2="18"></line>
           <line x1="6" y1="6" x2="18" y2="18"></line>
         </svg>
       </button>
-    {/if}
   </div>
 </div>
 
@@ -257,6 +255,12 @@
     border-radius: 50%;
     cursor: pointer;
     transition: all 0.15s;
+    visibility: hidden;
+    opacity: 0;
+  }
+  .search-clear.visible {
+    visibility: visible;
+    opacity: 1;
   }
   .search-clear:hover {
     background: var(--bg-active);

@@ -150,6 +150,8 @@ fn update_settings(app: tauri::AppHandle, partial: serde_json::Value) -> Result<
     if let Some(v) = partial.get("retention_days").and_then(|v| v.as_u64()) {
         if v <= 365 {
             current.retention_days = v as u32;
+            log::write_log(&format!("Retention days saved: {} -> {}", 
+                settings::load_settings().retention_days, v));
         }
     }
     if let Some(v) = partial.get("window_width").and_then(|v| v.as_u64()) {
