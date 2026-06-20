@@ -42,8 +42,7 @@ pub fn load_settings() -> Settings {
     let path = get_settings_path();
     if let Ok(json) = std::fs::read_to_string(&path) {
         if let Ok(s) = serde_json::from_str::<Settings>(&json) {
-            crate::log::write_log(&format!("Settings loaded from {:?}", path));
-            crate::log::write_log(&format!("Loaded retention_days={}", s.retention_days));
+            crate::log::write_log(&format!("Settings loaded: retention_days={}", s.retention_days));
             return s;
         }
         crate::log::write_log(&format!("Failed to parse settings from {:?}", path));
@@ -53,11 +52,11 @@ pub fn load_settings() -> Settings {
     Settings::default()
 }
 
-pub fn save_settings(settings: &Settings) {
-    if let Ok(json) = serde_json::to_string_pretty(settings) {
-        let path = get_settings_path();
-        if let Err(e) = std::fs::write(&path, json) {
-            crate::log::write_log(&format!("Failed to save settings to {:?}: {}", path, e));
-        }
-    }
+pub fn save_settings(settings: &Settings) -> Result<(), String> {
+    let json = serde_json::to_string_pretty(settings)
+        .map_err(|e| format!("Failed to serialize settings: {}", e))?;
+    let path = get_settings_path();
+    std::fs::write(&path, json)
+        .map_err(|e| format!("Failed to save settings to {:?}: {}", path, e))?;
+    Ok(())
 }

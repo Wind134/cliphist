@@ -1,6 +1,6 @@
 import { writable, derived } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
-export const feLog = (msg: string) => { invoke('fe_log', { message: msg }).catch(() => {}); };
+export const feLog = (msg: string) => { if (typeof window !== 'undefined') invoke('fe_log', { message: msg.slice(0, 300) }).catch(() => {}); };
 import { listen } from '@tauri-apps/api/event';
 import type { ClipboardItem, Settings, ContentCategory } from '../types';
 

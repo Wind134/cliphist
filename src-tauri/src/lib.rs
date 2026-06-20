@@ -66,7 +66,9 @@ fn get_settings() -> Settings {
 
 #[tauri::command]
 fn save_settings_cmd(settings: Settings) {
-    settings::save_settings(&settings);
+    if let Err(e) = settings::save_settings(&settings) {
+        log::write_log(&format!("save_settings_cmd failed: {}", e));
+    }
 }
 
 #[tauri::command]
@@ -136,7 +138,7 @@ fn update_settings(app: tauri::AppHandle, partial: serde_json::Value) -> Result<
                     std::thread::spawn(move || {
                         let mut was = false;
                         loop {
-                            std::thread::sleep(std::time::Duration::from_secs(1));
+                            std::thread::sleep(std::time::Duration::from_millis(200));
                             let now = shortcut::is_helper_connected();
                             if now != was {
                                 was = now;
@@ -171,7 +173,7 @@ fn update_settings(app: tauri::AppHandle, partial: serde_json::Value) -> Result<
         }
     }
 
-    settings::save_settings(&current);
+    settings::save_settings(&current).map_err(|e| format!("保存设置失败: {}", e))?;
     Ok(current)
 }
 
@@ -195,7 +197,9 @@ fn toggle_autostart(
 
 #[tauri::command]
 fn fe_log(message: String) {
-    log::write_log(&format!("[FE] {}", message));
+    // Truncate to 300 bytes for safety
+    let msg = if message.len() > 300 { &message[..300] } else { &message };
+    log::write_log(&format!("[FE] {}", msg));
 }
 
 #[tauri::command]
@@ -287,7 +291,9 @@ pub fn run() {
                             let mut s = settings::load_settings();
                             s.window_width = size.width;
                             s.window_height = size.height;
-                            settings::save_settings(&s);
+                            if let Err(e) = settings::save_settings(&s) {
+                                log::write_log(&format!("Failed to save window size: {}", e));
+                            }
                             last_save.set(Instant::now());
                         }
                     }
