@@ -320,13 +320,13 @@ pub fn run() {
             #[cfg(target_os = "windows")]
             if let Some(window) = app.get_webview_window("main") {
                 if let Ok(hwnd) = window.hwnd() {
-                    let corner_pref: u32 = 2; // DWMWCP_ROUND
+                    let corner_pref = windows::Win32::Graphics::Dwm::DWMWCP_ROUND;
                     unsafe {
                         windows::Win32::Graphics::Dwm::DwmSetWindowAttribute(
                             hwnd,
                             windows::Win32::Graphics::Dwm::DWMWA_WINDOW_CORNER_PREFERENCE,
                             &corner_pref as *const _ as *const std::ffi::c_void,
-                            std::mem::size_of::<u32>() as u32,
+                            std::mem::size_of_val(&corner_pref) as u32,
                         ).ok();
                     }
                 }
