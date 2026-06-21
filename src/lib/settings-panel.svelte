@@ -264,7 +264,7 @@
             <option value="3">3 天</option>
             <option value="7">7 天</option>
             <option value="30">30 天</option>
-            <option value="0">永久</option>
+            <option value="0" title="保留全部记录，不自动清理">永久</option>
           </select>
         </div>
       </div>

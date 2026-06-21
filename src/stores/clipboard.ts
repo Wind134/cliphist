@@ -70,11 +70,6 @@ export async function initClipboard() {
 
   await listen<ClipboardItem[]>('clipboard-changed', (event) => {
     const top5 = event.payload;
-    let q = '';
-    const unsub = searchQuery.subscribe(v => { q = v; });
-    unsub();
-    if (q) return;
-
     history.update(h => {
       const merged = [...top5, ...h.filter(hi => !top5.find(t => t.id === hi.id))];
       return merged.slice(0, 500);
@@ -172,12 +167,33 @@ export function stripScripts(html: string): string {
   const div = document.createElement('div');
   div.innerHTML = html;
   const dangerous = div.querySelectorAll(
-    'script, style, iframe, object, embed, form, input, button, select, textarea, [onerror], [onload], [onclick], [onmouseover], [onfocus], [onblur]'
+    'script, style, iframe, object, embed, form, input, button, select, textarea, link, meta, base'
   );
   dangerous.forEach(el => el.remove());
-  const attrs = ['onerror','onload','onclick','onmouseover','onfocus','onblur','onchange','onsubmit','src','href','data'];
+  // Strip every inline event handler (on*) so no clipboard-sourced HTML can
+  // run scripts in the Tauri webview. A blocklist of specific on* names is
+  // unsafe because there are dozens of valid event-handler attributes.
+  const SAFE_URL_ATTRS: Record<string, string[]> = {
+    a: ['href'],
+    img: ['src'],
+  };
   div.querySelectorAll('*').forEach(el => {
-    attrs.forEach(a => el.removeAttribute(a));
+    // remove all on* attributes
+    Array.from(el.attributes).forEach(attr => {
+      if (/^on/i.test(attr.name)) el.removeAttribute(attr.name);
+    });
+    // sanitize url-bearing attributes: drop javascript:/data:script, keep safe ones
+    const allow = SAFE_URL_ATTRS[el.tagName.toLowerCase()] ?? [];
+    Array.from(el.attributes).forEach(attr => {
+      if ((attr.name === 'src' || attr.name === 'href' || attr.name === 'xlink:href') && !allow.includes(attr.name)) {
+        el.removeAttribute(attr.name);
+      } else if (allow.includes(attr.name)) {
+        const v = (el.getAttribute(attr.name) || '').trim().toLowerCase();
+        if (v.startsWith('javascript:') || v.startsWith('data:text/html') || v.startsWith('vbscript:')) {
+          el.removeAttribute(attr.name);
+        }
+      }
+    });
   });
   return div.innerHTML;
 }

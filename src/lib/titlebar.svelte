@@ -4,16 +4,50 @@
 
   const appWindow = getCurrentWindow();
 
-  function handleClose(e: PointerEvent) {
-    e.stopPropagation();
+  function readCloseToTray() {
     let closeToTray = true;
     settingsData.subscribe(s => closeToTray = s.close_to_tray)();
-    if (closeToTray) {
+    return closeToTray;
+  }
+
+  function handleClose(e: PointerEvent) {
+    e.stopPropagation();
+    if (readCloseToTray()) {
       appWindow.hide();
     } else {
       appWindow.close();
     }
   }
+
+  function handleMinimize(e: PointerEvent) {
+    e.stopPropagation();
+    appWindow.minimize();
+  }
+
+  type ResizeDir = 'NorthWest' | 'NorthEast' | 'West' | 'East' | 'North';
+
+  function edgeHitTest(el: HTMLElement, e: MouseEvent): ResizeDir | null {
+    const rect = el.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const w = rect.width;
+    const edge = 8;
+
+    if (y < edge && x < 16) return 'NorthWest';
+    if (y < edge && x > w - 16) return 'NorthEast';
+    if (x < 4) return 'West';
+    if (x > w - 4) return 'East';
+    if (y < edge) return 'North';
+    return null;
+  }
+
+  const cursorMap: Record<ResizeDir, string> = {
+    NorthWest: 'nw-resize',
+    NorthEast: 'ne-resize',
+    West: 'w-resize',
+    East: 'e-resize',
+    North: 'n-resize',
+  };
 
   function handleMousedown(e: MouseEvent) {
     if (e.button !== 0) return;
@@ -21,49 +55,17 @@
     if (target.closest('.titlebar-actions')) return;
     e.preventDefault();
 
-    // Check if mouse is near the titlebar edges for resize
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const w = rect.width;
-    const h = rect.height;
-    const edge = 8;
-
-    if (y < edge && x < 16) {
-      appWindow.startResizeDragging('NorthWest');
-    } else if (y < edge && x > w - 16) {
-      appWindow.startResizeDragging('NorthEast');
-    } else if (x < 4) {
-      appWindow.startResizeDragging('West');
-    } else if (x > w - 4) {
-      appWindow.startResizeDragging('East');
-    } else if (y < edge) {
-      appWindow.startResizeDragging('North');
+    const dir = edgeHitTest(e.currentTarget as HTMLElement, e);
+    if (dir) {
+      appWindow.startResizeDragging(dir);
     } else {
       appWindow.startDragging();
     }
   }
 
   function handleMousemove(e: MouseEvent) {
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const w = rect.width;
-    const h = rect.height;
-    const edge = 8;
-
-    if (y < edge && x < 16) {
-      titlebar.style.cursor = 'nw-resize';
-    } else if (y < edge && x > w - 16) {
-      titlebar.style.cursor = 'ne-resize';
-    } else if (x < 4) {
-      titlebar.style.cursor = 'w-resize';
-    } else if (x > w - 4) {
-      titlebar.style.cursor = 'e-resize';
-    } else if (y < edge) {
-      titlebar.style.cursor = 'n-resize';
-    } else {
-      titlebar.style.cursor = '';
-    }
+    const dir = edgeHitTest(e.currentTarget as HTMLElement, e);
+    (e.currentTarget as HTMLElement).style.cursor = dir ? cursorMap[dir] : '';
   }
 </script>
 
@@ -83,10 +85,13 @@
         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
       </svg>
     </button>
-    <button
+    <button class="titlebar-btn" onpointerdown={handleMinimize} aria-label="最小化">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <line x1="5" y1="12" x2="19" y2="12"></line>
+      </svg>
+    </button>
     <button class="titlebar-btn" onpointerdown={handleClose} aria-label="关闭">&times;</button>
   </div>
-
 </div>
 
 <style>

@@ -1,16 +1,17 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { get } from 'svelte/store';
   import { invoke } from '@tauri-apps/api/core';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import {
     filteredHistory, selectedIndex, searchQuery, currentCategory,
-    history, copyItem, deleteItem, clearHistory, showToast,
+    history, copyItem, deleteItem, clearHistory, showToast, settingsData,
   } from '../stores/clipboard';
   import CategoryTabs from './category-tabs.svelte';
   import HistoryItem from './history-item.svelte';
 
   let searchInput: HTMLInputElement;
-  let listContainer: HTMLDivElement;
+  let listContainer: HTMLElement;
     function handleSearchInput(e: Event) {
     const val = (e.target as HTMLInputElement).value;
     searchQuery.set(val);
@@ -44,7 +45,8 @@
     const itemEl = target.closest('.history-item') as HTMLElement;
     if (itemEl) {
       const id = parseInt(itemEl.dataset.id || '0');
-      copyItem(id).then(() => showToast('已复制到剪贴板')).catch(err => showToast('复制失败: ' + err));
+      const idx = $filteredHistory.findIndex(it => it.id === id);
+      if (idx >= 0) selectedIndex.set(idx);
     }
   }
 
@@ -52,7 +54,14 @@
     const itemEl = (e.target as HTMLElement).closest('.history-item') as HTMLElement;
     if (itemEl) {
       const id = parseInt(itemEl.dataset.id || '0');
-      copyItem(id).then(() => showToast('已复制到剪贴板')).catch(err => showToast('复制失败: ' + err));
+      copyItem(id)
+        .then(() => {
+          showToast('已复制到剪贴板');
+          if (get(settingsData).close_to_tray) {
+            getCurrentWindow().hide();
+          }
+        })
+        .catch(err => showToast('复制失败: ' + err));
     }
   }
 
@@ -126,7 +135,7 @@
 
   function onGlobalKeydown(e: KeyboardEvent) {
     // don't intercept when typing text in search
-    if (document.activeElement === searchInput && searchInput.value.trim() !== '') return;
+    if (document.activeElement === searchInput) return;
 
     const num = parseInt(e.key);
     if (num >= 1 && num <= 9) {

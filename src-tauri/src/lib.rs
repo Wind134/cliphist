@@ -59,9 +59,7 @@ fn get_item_count(state: tauri::State<'_, AppState>) -> usize {
 
 #[tauri::command]
 fn get_settings() -> Settings {
-    let s = settings::load_settings();
-    log::write_log(&format!("get_settings returning: retention_days={}, zoom_level={}, window_width={}", s.retention_days, s.zoom_level, s.window_width));
-    s
+    settings::load_settings()
 }
 
 #[tauri::command]
@@ -73,10 +71,6 @@ fn save_settings_cmd(settings: Settings) {
 
 #[tauri::command]
 fn update_settings(app: tauri::AppHandle, partial: serde_json::Value) -> Result<Settings, String> {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static UPDATE_CALLS: AtomicU64 = AtomicU64::new(0);
-    let call_id = UPDATE_CALLS.fetch_add(1, Ordering::SeqCst);
-    log::write_log(&format!("update_settings[{}]: {:?}", call_id, partial));
     let mut current = settings::load_settings();
 
     if let Some(v) = partial.get("close_to_tray").and_then(|v| v.as_bool()) {
@@ -137,15 +131,16 @@ fn update_settings(app: tauri::AppHandle, partial: serde_json::Value) -> Result<
                     let mon = app.clone();
                     std::thread::spawn(move || {
                         let mut was = false;
+                        let my_gen = shortcut::listener_generation();
                         loop {
                             std::thread::sleep(std::time::Duration::from_millis(200));
+                            if shortcut::listener_generation() != my_gen {
+                                break;
+                            }
                             let now = shortcut::is_helper_connected();
                             if now != was {
                                 was = now;
                                 let _ = mon.emit("helper-status", now);
-                            }
-                            if !shortcut::is_listener_running() {
-                                break;
                             }
                         }
                     });
@@ -158,8 +153,6 @@ fn update_settings(app: tauri::AppHandle, partial: serde_json::Value) -> Result<
     if let Some(v) = partial.get("retention_days").and_then(|v| v.as_u64()) {
         if v <= 365 {
             current.retention_days = v as u32;
-            log::write_log(&format!("Retention days saved: {} -> {} caller_partial={:?}", 
-                settings::load_settings().retention_days, v, partial));
         }
     }
     if let Some(v) = partial.get("window_width").and_then(|v| v.as_u64()) {
@@ -197,9 +190,21 @@ fn toggle_autostart(
 
 #[tauri::command]
 fn fe_log(message: String) {
-    // Truncate to 300 bytes for safety
-    let msg = if message.len() > 300 { &message[..300] } else { &message };
+    // Truncate to a UTF-8 char boundary so non-ASCII (e.g. Chinese) logs
+    // do not panic when slicing by byte index.
+    let msg = truncate_char_boundary(&message, 300);
     log::write_log(&format!("[FE] {}", msg));
+}
+
+fn truncate_char_boundary(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut idx = max_bytes;
+    while !s.is_char_boundary(idx) {
+        idx -= 1;
+    }
+    &s[..idx]
 }
 
 #[tauri::command]
@@ -264,12 +269,12 @@ pub fn run() {
             }
 
             if let Some(window) = app.get_webview_window("main") {
-                // Restore saved window size only if user had previously resized it.
-                // Resize event saves physical size, so restore with PhysicalSize
-                // to avoid compounding growth from logical↔physical mismatch.
-                if s.window_width != 400 || s.window_height != 600 {
-                    let _ = window.set_size(tauri::PhysicalSize::new(s.window_width, s.window_height));
-                }
+               // Restore saved window size only if user had previously resized it.
+               // Resize event saves physical size, so restore with PhysicalSize
+               // to avoid compounding growth from logical↔physical mismatch.
+                if s.window_user_resized {
+                   let _ = window.set_size(tauri::PhysicalSize::new(s.window_width, s.window_height));
+               }
 
                 if s.close_to_tray {
                     let app_handle = app.handle().clone();
@@ -286,13 +291,14 @@ pub fn run() {
                 // Save window size on resize (throttled to 500ms)
                 let last_save = Cell::new(Instant::now());
                 window.on_window_event(move |event| {
-                    if let tauri::WindowEvent::Resized(size) = event {
-                        if last_save.get().elapsed() > Duration::from_millis(500) {
-                            let mut s = settings::load_settings();
-                            s.window_width = size.width;
-                            s.window_height = size.height;
-                            if let Err(e) = settings::save_settings(&s) {
-                                log::write_log(&format!("Failed to save window size: {}", e));
+                   if let tauri::WindowEvent::Resized(size) = event {
+                       if last_save.get().elapsed() > Duration::from_millis(500) {
+                           let mut s = settings::load_settings();
+                           s.window_width = size.width;
+                           s.window_height = size.height;
+                            s.window_user_resized = true;
+                           if let Err(e) = settings::save_settings(&s) {
+                               log::write_log(&format!("Failed to save window size: {}", e));
                             }
                             last_save.set(Instant::now());
                         }

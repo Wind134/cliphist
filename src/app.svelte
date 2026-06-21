@@ -35,7 +35,7 @@
   <Titlebar />
   <main class="content-area">
     {#if $settingsOpen}
-      <div in:slide={{duration: 150, axis: "x"}} out:slide={{duration: 100, axis: "x"}}>
+      <div class="settings-wrapper" in:slide={{duration: 150, axis: "x"}} out:slide={{duration: 100, axis: "x"}}>
         <SettingsPanel />
       </div>
     {:else}
@@ -63,5 +63,11 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+  }
+  .settings-wrapper {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
   }
 </style>

@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tauri::Manager;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
 
@@ -7,6 +7,7 @@ use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut}
 // ============================================================================
 
 static LISTENER_RUNNING: AtomicBool = AtomicBool::new(false);
+static LISTENER_GENERATION: AtomicU64 = AtomicU64::new(0);
 pub static HELPER_CONNECTED: AtomicBool = AtomicBool::new(false);
 
 pub fn parse_shortcut(shortcut_str: &str) -> Option<ParsedShortcut> {
@@ -464,6 +465,7 @@ pub fn start_double_tap_listener<F: Fn() + Send + Sync + 'static>(
 pub fn stop_double_tap_listener() {
     LISTENER_RUNNING.store(false, Ordering::SeqCst);
     HELPER_CONNECTED.store(false, Ordering::SeqCst);
+    LISTENER_GENERATION.fetch_add(1, Ordering::SeqCst);
     crate::log::write_log("Double-tap listener stop requested");
 }
 
@@ -473,6 +475,10 @@ pub fn is_helper_connected() -> bool {
 
 pub fn is_listener_running() -> bool {
     LISTENER_RUNNING.load(Ordering::SeqCst)
+}
+
+pub fn listener_generation() -> u64 {
+    LISTENER_GENERATION.load(Ordering::SeqCst)
 }
 
 #[cfg(target_os = "linux")]

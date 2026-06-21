@@ -12,6 +12,7 @@ pub struct Settings {
     pub retention_days: u32,
     pub window_width: u32,
     pub window_height: u32,
+    pub window_user_resized: bool,
 }
 
 impl Default for Settings {
@@ -26,6 +27,7 @@ impl Default for Settings {
             retention_days: 3,
             window_width: 400,
             window_height: 600,
+            window_user_resized: false,
         }
     }
 }
@@ -42,7 +44,6 @@ pub fn load_settings() -> Settings {
     let path = get_settings_path();
     if let Ok(json) = std::fs::read_to_string(&path) {
         if let Ok(s) = serde_json::from_str::<Settings>(&json) {
-            crate::log::write_log(&format!("Settings loaded: retention_days={}", s.retention_days));
             return s;
         }
         crate::log::write_log(&format!("Failed to parse settings from {:?}", path));

@@ -25,7 +25,7 @@ pub fn setup(app: &App) -> Result<(), Box<dyn std::error::Error>> {
 
     // Decode the tray icon from embeded PNG using the `image` crate directly,
     // then wrap it in a tauri Image. This avoids tauri-build caching issues.
-    let img = image::load_from_memory(include_bytes!("../icons/32x32.png"))
+    let img = image::load_from_memory(include_bytes!("../icons/48x48.png"))
         .map_err(|e| format!("Failed to decode tray icon: {}", e))?
         .into_rgba8();
     let (width, height) = img.dimensions();

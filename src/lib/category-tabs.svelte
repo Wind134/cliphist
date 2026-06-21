@@ -1,7 +1,8 @@
 <script lang="ts">
   import { currentCategory } from '../stores/clipboard';
+  import type { ContentCategory } from '../types';
 
-  const tabs: { cat: string; label: string; color: string }[] = [
+  const tabs: { cat: ContentCategory; label: string; color: string }[] = [
     { cat: 'all', label: '全部', color: '#4F46E5' },
     { cat: 'image', label: '图片', color: '#059669' },
     { cat: 'text', label: '文本', color: '#2563EB' },
