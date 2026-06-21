@@ -45,7 +45,7 @@ libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 rdev = { version = "0.5", features = ["unstable_grab", "serialize"] }
-windows = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging"] }
+windows = { version = "0.61", features = ["Win32_Graphics_Dwm"] }
 
 [[bin]]
 name = "tauri-app"
