@@ -38,11 +38,11 @@ jobs:
       - name: Set version from tag
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          sed -i "s/\"version\": \"0.1.0\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
-          sed -i "s/^version = \"0.1.0\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
-          sed -i "s/\"version\": \"0.1.0\"/\"version\": \"$VERSION\"/" package.json
+          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+          sed -i 's/^version = ".*"/version = "'"$VERSION"'"/' src-tauri/Cargo.toml
+          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" package.json
 
-      - run: npm ci
+     - run: npm ci
       - run: npm run tauri build
 
       - name: Upload deb
@@ -79,9 +79,9 @@ jobs:
         shell: bash
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          sed -i "s/\"version\": \"0.1.0\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
-          sed -i "s/^version = \"0.1.0\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
-          sed -i "s/\"version\": \"0.1.0\"/\"version\": \"$VERSION\"/" package.json
+          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+          sed -i 's/^version = ".*"/version = "'"$VERSION"'"/' src-tauri/Cargo.toml
+          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" package.json
 
       - run: npm ci
       - run: npm run tauri build
@@ -129,9 +129,9 @@ jobs:
       - name: Set version from tag
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          sed -i '' "s/\"version\": \"0.1.0\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
-          sed -i '' "s/^version = \"0.1.0\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
-          sed -i '' "s/\"version\": \"0.1.0\"/\"version\": \"$VERSION\"/" package.json
+          sed -i '' 's/"version": "[^"]*"/"version": "'"$VERSION"'"/' src-tauri/tauri.conf.json
+          sed -i '' 's/^version = ".*"/version = "'"$VERSION"'"/' src-tauri/Cargo.toml
+          sed -i '' 's/"version": "[^"]*"/"version": "'"$VERSION"'"/' package.json
 
       - run: npm ci
       - run: npm run tauri build -- --target ${{ matrix.target }}

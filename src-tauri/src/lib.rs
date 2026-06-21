@@ -320,7 +320,7 @@ pub fn run() {
             #[cfg(target_os = "windows")]
             if let Some(window) = app.get_webview_window("main") {
                 if let Ok(hwnd) = window.hwnd() {
-                    let corner_pref: u32 = 1; // DWMWCP_ROUND_SMALL
+                    let corner_pref: u32 = 2; // DWMWCP_ROUND
                     unsafe {
                         windows::Win32::Graphics::Dwm::DwmSetWindowAttribute(
                             hwnd,
