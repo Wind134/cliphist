@@ -7,6 +7,7 @@ authors = ["you"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+license = "MIT"
 
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
@@ -44,7 +45,7 @@ libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 rdev = { version = "0.5", features = ["unstable_grab", "serialize"] }
-windows = { version = "0.58", features = ["Win32_UI_WindowsAndMessaging"] }
+windows = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging"] }
 
 [[bin]]
 name = "tauri-app"

@@ -319,18 +319,17 @@ pub fn run() {
             // Force rounded corners on Windows 11 via DWM
             #[cfg(target_os = "windows")]
             if let Some(window) = app.get_webview_window("main") {
-                use tauri::Manager;
-                if let Ok(handle) = window.window_handle() {
-                    if let Ok(raw) = handle.as_raw() {
-                        let corner_pref: u32 = 1; // DWMWCP_ROUND_SMALL
-                        unsafe {
-                            windows::Win32::UI::WindowsAndMessaging::DwmSetWindowAttribute(
-                                windows::Win32::Foundation::HWND(raw as *mut _),
-                                windows::Win32::UI::WindowsAndMessaging::DWMWA_WINDOW_CORNER_PREFERENCE,
-                                &corner_pref as *const _ as *const std::ffi::c_void,
-                                std::mem::size_of::<u32>() as u32,
-                            );
-                        }
+                use tauri::WebviewWindowExt;
+                let hwnd = window.hwnd().unwrap_or(0);
+                if hwnd != 0 {
+                    let corner_pref: u32 = 1; // DWMWCP_ROUND_SMALL
+                    unsafe {
+                        windows::Win32::UI::WindowsAndMessaging::DwmSetWindowAttribute(
+                            windows::Win32::Foundation::HWND(hwnd as usize as *mut std::ffi::c_void),
+                            windows::Win32::UI::WindowsAndMessaging::DWMWA_WINDOW_CORNER_PREFERENCE,
+                            &corner_pref as *const _ as *const std::ffi::c_void,
+                            std::mem::size_of::<u32>() as u32,
+                        );
                     }
                 }
             }
