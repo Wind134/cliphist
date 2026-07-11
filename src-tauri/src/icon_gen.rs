@@ -1,409 +1,258 @@
 //! Icon generator for ClipHist.
-//! Replaces the Node.js generate-icons.js script.
 //! Generates all required icon files from pure pixel drawing.
+//! Design: clipboard with integrated clock face on indigo-purple bg.
 use std::fs::File;
-use std::io::{BufWriter, Cursor, Seek, Write};
+use std::io::{BufWriter, Cursor, Write};
 use std::path::PathBuf;
 
 fn main() {
-    let icons_dir = PathBuf::from("icons");
-    std::fs::create_dir_all(&icons_dir).unwrap();
-
-    let sizes: [(usize, &str); 5] = [
-        (16, "icon.png"),
-        (32, "32x32.png"),
-        (48, "48x48.png"),
-        (128, "128x128.png"),
-        (256, "128x128@2x.png"),
-    ];
-
-    for (size, filename) in &sizes {
-        let img = draw_icon(*size);
-        let path = icons_dir.join(filename);
-        img.save(&path).unwrap();
-        println!("Generated {}", path.display());
+    let dir = PathBuf::from("icons");
+    std::fs::create_dir_all(&dir).unwrap();
+    for (&s, n) in SIZES.iter().zip(NAMES.iter()) {
+        draw_icon(s).save(&dir.join(n)).unwrap();
+        println!("Generated {}", dir.join(n).display());
     }
-
-    // Windows Store logos
-    let store_sizes: [(usize, &str); 10] = [
-        (30, "Square30x30Logo.png"),
-        (44, "Square44x44Logo.png"),
-        (50, "StoreLogo.png"),
-        (71, "Square71x71Logo.png"),
-        (89, "Square89x89Logo.png"),
-        (107, "Square107x107Logo.png"),
-        (142, "Square142x142Logo.png"),
-        (150, "Square150x150Logo.png"),
-        (284, "Square284x284Logo.png"),
-        (310, "Square310x310Logo.png"),
-    ];
-
-    for (size, filename) in &store_sizes {
-        let img = draw_icon(*size);
-        let path = icons_dir.join(filename);
-        img.save(&path).unwrap();
-        println!("Generated {}", path.display());
+    for &(s, n) in STORE {
+        draw_icon(s).save(&dir.join(n)).unwrap();
     }
-
-    // Generate icon.ico: ICO header + entry per image + PNG data blobs
-    let ico_sizes = [16, 32, 48, 256];
-    let png_buffers: Vec<Vec<u8>> = ico_sizes
-        .iter()
-        .map(|&s| {
-            let img = draw_icon(s);
-            let mut buf = Vec::new();
-            img.write_to(&mut Cursor::new(&mut buf), image::ImageFormat::Png)
-                .unwrap();
-            buf
-        })
-        .collect();
-
-    let ico_path = icons_dir.join("icon.ico");
-    write_ico(&ico_path, &png_buffers, &ico_sizes).unwrap();
-    println!("Generated {}", ico_path.display());
-
-    // For macOS: icon.icns must be a real ICNS, but the macOS build
-    // process will extract from the PNG. We just put a PNG here as placeholder.
-    let img256 = draw_icon(256);
-    img256
-        .save_with_format(icons_dir.join("icon.icns"), image::ImageFormat::Png)
-        .unwrap();
-    println!("Generated {}/icon.icns (PNG placeholder)", icons_dir.display());
-
-    println!("\nAll icons generated in {}", icons_dir.display());
+    let pngs: Vec<Vec<u8>> = ICO_SIZES.iter().map(|&s| {
+        let mut b = Vec::new();
+        draw_icon(s).write_to(&mut Cursor::new(&mut b), image::ImageFormat::Png).unwrap();
+        b
+    }).collect();
+    write_ico(&dir.join("icon.ico"), &pngs, &ICO_SIZES).unwrap();
+    draw_icon(256).save_with_format(dir.join("icon.icns"), image::ImageFormat::Png).unwrap();
+    println!("Done");
 }
 
-/// Draw the clipboard icon at `size` pixels with 2x supersampling for antialiasing.
+const SIZES: &[usize] = &[16, 32, 48, 128, 256];
+const NAMES: &[&str] = &["icon.png", "32x32.png", "48x48.png", "128x128.png", "128x128@2x.png"];
+const ICO_SIZES: &[usize] = &[16, 32, 48, 256];
+const STORE: &[(usize, &str)] = &[
+    (30, "Square30x30Logo.png"), (44, "Square44x44Logo.png"),
+    (50, "StoreLogo.png"), (71, "Square71x71Logo.png"),
+    (89, "Square89x89Logo.png"), (107, "Square107x107Logo.png"),
+    (142, "Square142x142Logo.png"), (150, "Square150x150Logo.png"),
+    (284, "Square284x284Logo.png"), (310, "Square310x310Logo.png"),
+];
+
 fn draw_icon(size: usize) -> image::RgbaImage {
-    // Use 2x supersampling for better antialiasing
     let ss = 2;
-    let draw_size = size * ss;
-    let mut pixels: Vec<u8> = vec![0; draw_size * draw_size * 4];
-    let s = draw_size as f32 / 64.0;
-
-    // Helper: write a single pixel with alpha blending
-    fn put_pixel(pixels: &mut [u8], draw_size: usize, px: i64, py: i64, r: u8, g: u8, b: u8, a: f32) {
-        if px < 0 || py < 0 || px >= draw_size as i64 || py >= draw_size as i64 {
-            return;
+    let ds = size * ss;
+    let sc = ds as f32 / 64.0;
+    let mut px = vec![0u8; ds * ds * 4];
+    // Background gradient: indigo #4F46E5 -> purple #7C3AED
+    for y in 0..ds {
+        for x in 0..ds {
+            let t = ((x as f32/ds as f32)*0.55 + (y as f32/ds as f32)*0.45).min(1.0);
+            let i = (y*ds+x)*4;
+            px[i] = (0x4Fu8 as f32 + (0x7C-0x4F) as f32*t) as u8;
+            px[i+1] = (0x46u8 as f32 + (0x3A-0x46) as f32*t) as u8;
+            px[i+2] = (0xE5u8 as f32 + (0xED-0xE5) as f32*t) as u8;
+            px[i+3] = 255;
         }
-        let idx = ((py as usize) * draw_size + (px as usize)) * 4;
-        let inv = 1.0 - a;
-        pixels[idx] = (r as f32 * a + pixels[idx] as f32 * inv) as u8;
-        pixels[idx + 1] = (g as f32 * a + pixels[idx + 1] as f32 * inv) as u8;
-        pixels[idx + 2] = (b as f32 * a + pixels[idx + 2] as f32 * inv) as u8;
-        pixels[idx + 3] = 255;
     }
-
-    // Helper: fill rounded rectangle with antialiased edges
-    fn fill_rounded_rect(
-        pixels: &mut [u8], draw_size: usize, s: f32,
-        x0: f32, y0: f32, x1: f32, y1: f32, radius: f32,
-        r: u8, g: u8, b: u8, a: u8,
-    ) {
-        let sx0 = (x0 * s).floor() as i64;
-        let sy0 = (y0 * s).floor() as i64;
-        let ex0 = (x1 * s).ceil() as i64;
-        let ey0 = (y1 * s).ceil() as i64;
-        let r_scaled = radius * s;
-        let alpha = a as f32 / 255.0;
-
-        for py in sy0..=ey0 {
-            for px in sx0..=ex0 {
-                // Distance to rectangle edge (with rounded corners)
-                let fx = px as f32;
-                let fy = py as f32;
-                let left = x0 * s;
-                let right = x1 * s;
-                let top = y0 * s;
-                let bottom = y1 * s;
-
-                // Distance from each edge
-                let dl = left - fx;
-                let dr = fx - right;
-                let dt = top - fy;
-                let db = fy - bottom;
-
-                // Distance to corner circles
-                let dx = dl.max(0.0).max(dr.max(0.0));
-                let dy = dt.max(0.0).max(db.max(0.0));
-                let dist = (dx * dx + dy * dy).sqrt() - r_scaled;
-
-                // Antialiasing: smooth transition at edge
-                let aa = if dist <= -1.5 {
-                    1.0
-                } else if dist >= 1.5 {
-                    0.0
-                } else {
-                    0.5 - dist * 0.33
-                };
-
-                if aa > 0.0 {
-                    put_pixel(pixels, draw_size, px, py, r, g, b, alpha * aa);
-                }
+    // Background rounded corners (radius 12)
+    let bcr = 12.0 * sc;
+    for y in 0..ds {
+        for x in 0..ds {
+            let dl = (0.0 - x as f32).max(0.0);
+            let dr = (x as f32 - (ds-1) as f32).max(0.0);
+            let dt = (0.0 - y as f32).max(0.0);
+            let db = (y as f32 - (ds-1) as f32).max(0.0);
+            let d = (dl.max(dr).powi(2) + dt.max(db).powi(2)).sqrt() - bcr;
+            if d > 0.0 {
+                let a = if d >= 1.0 { 0.0 } else { 1.0 - d * 0.5 };
+                px[(y*ds+x)*4+3] = (px[(y*ds+x)*4+3] as f32 * a) as u8;
             }
         }
     }
-
-    // Helper: fill rectangle (no rounded corners)
-    fn fill_rect(
-        pixels: &mut [u8], draw_size: usize, s: f32,
-        x0: f32, y0: f32, x1: f32, y1: f32,
-        r: u8, g: u8, b: u8, a: u8,
-    ) {
-        fill_rounded_rect(pixels, draw_size, s, x0, y0, x1, y1, 0.0, r, g, b, a);
+    // Helper macros
+    macro_rules! setp { ($x:expr,$y:expr,$r:expr,$g:expr,$b:expr,$a:expr) => {
+        if $x>=0 && $y>=0 && $x<ds as i64 && $y<ds as i64 {
+            let i_ = ($y as usize*ds+$x as usize)*4;
+            let ia = 1.0 - $a;
+            px[i_] = ($r as f32*$a + px[i_] as f32*ia) as u8;
+            px[i_+1] = ($g as f32*$a + px[i_+1] as f32*ia) as u8;
+            px[i_+2] = ($b as f32*$a + px[i_+2] as f32*ia) as u8;
+            px[i_+3] = px[i_+3].max(($a*255.0) as u8);
+        }
+    };}
+    macro_rules! rrect { ($x0:expr,$y0:expr,$x1:expr,$y1:expr,$cr:expr,$r:expr,$g:expr,$b:expr,$a:expr) => {
+        let sx = ($x0*sc).floor() as i64; let sy = ($y0*sc).floor() as i64;
+        let ex = ($x1*sc).ceil() as i64; let ey = ($y1*sc).ceil() as i64;
+        let rs = $cr*sc; let al = $a as f32/255.0;
+        for py in sy..=ey { for px_ in sx..=ex {
+            let dl_ = ($x0*sc - px_ as f32).max(0.0);
+            let dr_ = (px_ as f32 - $x1*sc).max(0.0);
+            let dt_ = ($y0*sc - py as f32).max(0.0);
+            let db_ = (py as f32 - $y1*sc).max(0.0);
+            let d_ = (dl_.max(dr_).powi(2) + dt_.max(db_).powi(2)).sqrt() - rs;
+            let aa = if d_<=-1.0{1.0}else if d_>=1.0{0.0}else{0.5-d_*0.5};
+            if aa>0.0 { setp!(px_, py, $r, $g, $b, al*aa); }
+        }}
+    };}
+    // Shadow under clipboard
+    rrect!(14.0, 13.0, 51.0, 57.0, 6.0, 0, 0, 0, 25);
+    // Clipboard body (white)
+    rrect!(13.0, 12.0, 51.0, 56.0, 6.0, 255, 255, 255, 255);
+    // Clip arc at top (sampled as line segments)
+    for i in 0..20 {
+        let t1 = std::f32::consts::PI * (i as f32)/20.0 + std::f32::consts::PI;
+        let t2 = std::f32::consts::PI * ((i+1) as f32)/20.0 + std::f32::consts::PI;
+        let x1 = (32.0 + t1.cos()*10.0)*sc; let y1 = (10.0 + t1.sin()*5.0)*sc;
+        let x2 = (32.0 + t2.cos()*10.0)*sc; let y2 = (10.0 + t2.sin()*5.0)*sc;
+        let t = (3.0*sc).max(1.0)*0.5;
+        let lsq = (x2-x1)*(x2-x1)+(y2-y1)*(y2-y1);
+        let mix = (x1.min(x2)-t-1.0).floor() as i64;
+        let mxx = (x1.max(x2)+t+1.0).ceil() as i64;
+        let miy = (y1.min(y2)-t-1.0).floor() as i64;
+        let mxy = (y1.max(y2)+t+1.0).ceil() as i64;
+        for py in miy..=mxy { for px_ in mix..=mxx {
+            let fx = px_ as f32+0.5; let fy = py as f32+0.5;
+            let tp = if lsq>0.0{((fx-x1)*(x2-x1)+(fy-y1)*(y2-y1))/lsq}else{0.0};
+            let tc = tp.max(0.0).min(1.0);
+            let d = ((fx-(x1+tc*(x2-x1)))*(fx-(x1+tc*(x2-x1)))+(fy-(y1+tc*(y2-y1)))*(fy-(y1+tc*(y2-y1)))).sqrt()-t;
+            let aa = if d<=-1.0{1.0}else if d>=1.0{0.0}else{0.5-d*0.5};
+            if aa>0.0 { setp!(px_, py, 255,255,255, aa); }
+        }}
     }
-
-    // Helper: fill circle with radial gradient and antialiasing
-    fn fill_circle(
-        pixels: &mut [u8], draw_size: usize, s: f32,
-        cx: f32, cy: f32, radius: f32,
-        r_inner: u8, g_inner: u8, b_inner: u8,
-        r_outer: u8, g_outer: u8, b_outer: u8,
-    ) {
-        let cxc = cx * s;
-        let cyc = cy * s;
-        let cr = radius * s;
-        let ir = (cr + 1.5).ceil() as i64;
-
-        for dy in -ir..=ir {
-            for dx in -ir..=ir {
-                let d = ((dx * dx + dy * dy) as f32).sqrt();
-                let dist = d - cr;
-
-                // Antialiasing
-                let aa = if dist <= -1.5 {
-                    1.0
-                } else if dist >= 1.5 {
-                    0.0
-                } else {
-                    0.5 - dist * 0.33
-                };
-
-                if aa > 0.0 {
-                    let frac = (d / cr).min(1.0);
-                    let r = (r_inner as f32 + (r_outer as f32 - r_inner as f32) * frac) as u8;
-                    let g = (g_inner as f32 + (g_outer as f32 - g_inner as f32) * frac) as u8;
-                    let b = (b_inner as f32 + (b_outer as f32 - b_inner as f32) * frac) as u8;
-                    let px = cxc + dx as f32;
-                    let py = cyc + dy as f32;
-                    put_pixel(pixels, draw_size, px as i64, py as i64, r, g, b, aa);
-                }
-            }
+    // Clip inner hole (restore background gradient)
+    for py in (6.0*sc).floor() as i64..=(14.0*sc).ceil() as i64 {
+        for px_ in (26.0*sc).floor() as i64..=(38.0*sc).ceil() as i64 {
+            let t = ((px_ as f32/ds as f32)*0.55 + (py as f32/ds as f32)*0.45).min(1.0);
+            let i_ = (py as usize*ds+px_ as usize)*4;
+            px[i_] = (0x4Fu8 as f32+(0x7C-0x4F) as f32*t) as u8;
+            px[i_+1] = (0x46u8 as f32+(0x3A-0x46) as f32*t) as u8;
+            px[i_+2] = (0xE5u8 as f32+(0xED-0xE5) as f32*t) as u8;
+            px[i_+3] = 255;
         }
     }
-
-    // Helper: draw antialiased line
-    fn fill_line(
-        pixels: &mut [u8], draw_size: usize, s: f32,
-        x0: f32, y0: f32, x1: f32, y1: f32, thickness: f32,
-        r: u8, g: u8, b: u8, a: u8,
-    ) {
-        let sx0 = x0 * s;
-        let sy0 = y0 * s;
-        let sx1 = x1 * s;
-        let sy1 = y1 * s;
-        let t = thickness * s;
-        let half_t = t / 2.0;
-
-        // Bounding box
-        let min_x = (sx0.min(sx1) - half_t - 1.0).floor() as i64;
-        let max_x = (sx0.max(sx1) + half_t + 1.0).ceil() as i64;
-        let min_y = (sy0.min(sy1) - half_t - 1.0).floor() as i64;
-        let max_y = (sy0.max(sy1) + half_t + 1.0).ceil() as i64;
-
-        let dx = sx1 - sx0;
-        let dy = sy1 - sy0;
-        let len_sq = dx * dx + dy * dy;
-        let alpha = a as f32 / 255.0;
-
-        for py in min_y..=max_y {
-            for px in min_x..=max_x {
-                let fx = px as f32 + 0.5;
-                let fy = py as f32 + 0.5;
-
-                // Distance from point to line segment
-                let t_param = if len_sq > 0.0 {
-                    ((fx - sx0) * dx + (fy - sy0) * dy) / len_sq
-                } else {
-                    0.0
-                };
-                let proj_x = sx0 + t_param * dx;
-                let proj_y = sy0 + t_param * dy;
-                let dist = ((fx - proj_x).powi(2) + (fy - proj_y).powi(2)).sqrt() - half_t;
-
-                let aa = if dist <= -1.5 {
-                    1.0
-                } else if dist >= 1.5 {
-                    0.0
-                } else {
-                    0.5 - dist * 0.33
-                };
-
-                if aa > 0.0 {
-                    put_pixel(pixels, draw_size, px, py, r, g, b, alpha * aa);
-                }
-            }
+    // Clock face: fill light gray
+    let ccx = 32.0*sc; let ccy = 36.0*sc; let cr = 11.0*sc; let cri = cr.ceil() as i64;
+    for dy in -cri..=cri { for dx_ in -cri..=cri {
+        let d = ((dx_*dx_+dy*dy) as f32).sqrt();
+        let dd = d - cr;
+        let aa = if dd<=-1.0{1.0}else if dd>=1.0{0.0}else{1.0+dd*0.5};
+        if aa>0.0 { setp!((ccx+dx_ as f32) as i64, (ccy+dy as f32) as i64, 243,244,246, aa); }
+    }}
+    // Clock border ring
+    for dy in -cri..=cri { for dx_ in -cri..=cri {
+        let d = ((dx_*dx_+dy*dy) as f32).sqrt();
+        let do_ = d-cr; let di = d-(cr-2.0*sc);
+        if do_<=0.0 && di>=0.0 {
+            let ai = if di<=-1.0{1.0}else if di>=1.0{0.0}else{0.5-di*0.5};
+            let ao = if do_<=-1.0{1.0}else if do_>=1.0{0.0}else{0.5+do_*0.5};
+            let aa = ai*ao;
+            if aa>0.0 { setp!((ccx+dx_ as f32) as i64, (ccy+dy as f32) as i64, 229,231,235, aa*0.8); }
         }
-    }
-
-    // --- Background: modern blue-purple gradient (square, no rounded corners) ---
-    for y in 0..draw_size {
-        for x in 0..draw_size {
-            let fx = x as f32 / draw_size as f32;
-            let fy = y as f32 / draw_size as f32;
-            let t = (fx * 0.6 + fy * 0.4).min(1.0);
-            let r = (0x30u8 as f32 + (0x7E - 0x30) as f32 * t) as u8;
-            let g = (0x50u8 as f32 + (0x28 - 0x50) as f32 * t) as u8;
-            let b = (0xF0u8 as f32 + (0xE8 - 0xF0) as f32 * t) as u8;
-
-            let idx = (y * draw_size + x) * 4;
-            pixels[idx] = r;
-            pixels[idx + 1] = g;
-            pixels[idx + 2] = b;
-            pixels[idx + 3] = 255;
+    }}
+    // Tick marks at 12,3,6,9 (bold indigo)
+    let (cxc, cyc, rc) = (32.0, 36.0, 11.0);
+    rrect!(cxc-1.0, cyc-rc+1.5, cxc+1.0, cyc-rc+1.5+3.0, 0.0, 0x4F,0x46,0xE5, 220);
+    rrect!(cxc-1.0, cyc+rc-1.5-3.0, cxc+1.0, cyc+rc-1.5, 0.0, 0x4F,0x46,0xE5, 220);
+    rrect!(cxc+rc-1.5-3.0, cyc-1.0, cxc+rc-1.5, cyc+1.0, 0.0, 0x4F,0x46,0xE5, 220);
+    rrect!(cxc-rc+1.5, cyc-1.0, cxc-rc+1.5+3.0, cyc+1.0, 0.0, 0x4F,0x46,0xE5, 220);
+    // Small tick marks at other hours (only at >=32px for visibility)
+    if size >= 32 {
+        for h in [1.0,2.0,4.0,5.0,7.0,8.0,10.0,11.0] {
+            let a = std::f32::consts::PI * (h-3.0)/6.0;
+            let ri = rc-1.5-2.0; let ro_ = rc-1.5;
+            let x1 = (cxc+a.cos()*ri)*sc; let y1 = (cyc+a.sin()*ri)*sc;
+            let x2 = (cxc+a.cos()*ro_)*sc; let y2 = (cyc+a.sin()*ro_)*sc;
+            let t = (1.0*sc).max(1.0)*0.5;
+            let lsq = (x2-x1)*(x2-x1)+(y2-y1)*(y2-y1);
+            let mix = (x1.min(x2)-t-1.0).floor() as i64;
+            let mxx = (x1.max(x2)+t+1.0).ceil() as i64;
+            let miy = (y1.min(y2)-t-1.0).floor() as i64;
+            let mxy = (y1.max(y2)+t+1.0).ceil() as i64;
+            for py in miy..=mxy { for px_ in mix..=mxx {
+                let fx = px_ as f32+0.5; let fy = py as f32+0.5;
+                let tp = if lsq>0.0{((fx-x1)*(x2-x1)+(fy-y1)*(y2-y1))/lsq}else{0.0};
+                let tc = tp.max(0.0).min(1.0);
+                let d = ((fx-(x1+tc*(x2-x1)))*(fx-(x1+tc*(x2-x1)))+(fy-(y1+tc*(y2-y1)))*(fy-(y1+tc*(y2-y1)))).sqrt()-t;
+                let aa = if d<=-1.0{1.0}else if d>=1.0{0.0}else{0.5-d*0.5};
+                if aa>0.0 { setp!(px_, py, 0xA5,0xB4,0xFC, aa*0.63); }
+            }}
         }
+        // Hour hand (~10 o'clock, indigo)
+        let ha = std::f32::consts::PI * 10.0/6.0;
+        let hx1 = (cxc+ha.cos()*5.5)*sc; let hy1 = (cyc+ha.sin()*5.5)*sc;
+        let ht = (2.5*sc).max(1.0)*0.5;
+        let hlsq = (hx1-ccx)*(hx1-ccx)+(hy1-ccy)*(hy1-ccy);
+        let hmix = (ccx.min(hx1)-ht-1.0).floor() as i64;
+        let hmxx = (ccx.max(hx1)+ht+1.0).ceil() as i64;
+        let hmiy = (ccy.min(hy1)-ht-1.0).floor() as i64;
+        let hmxy = (ccy.max(hy1)+ht+1.0).ceil() as i64;
+        for py in hmiy..=hmxy { for px_ in hmix..=hmxx {
+            let fx = px_ as f32+0.5; let fy = py as f32+0.5;
+            let tp = if hlsq>0.0{((fx-ccx)*(hx1-ccx)+(fy-ccy)*(hy1-ccy))/hlsq}else{0.0};
+            let tc = tp.max(0.0).min(1.0);
+            let d = ((fx-(ccx+tc*(hx1-ccx)))*(fx-(ccx+tc*(hx1-ccx)))+(fy-(ccy+tc*(hy1-ccy)))*(fy-(ccy+tc*(hy1-ccy)))).sqrt()-ht;
+            let aa = if d<=-1.0{1.0}else if d>=1.0{0.0}else{0.5-d*0.5};
+            if aa>0.0 { setp!(px_, py, 0x4F,0x46,0xE5, aa*0.9); }
+        }}
+        // Minute hand (~2 o'clock, warm amber accent)
+        let ma_ = std::f32::consts::PI * 2.0/6.0;
+        let mx1 = (cxc+ma_.cos()*7.5)*sc; let my1 = (cyc+ma_.sin()*7.5)*sc;
+        let mt = (2.0*sc).max(1.0)*0.5;
+        let mlsq = (mx1-ccx)*(mx1-ccx)+(my1-ccy)*(my1-ccy);
+        let mmix = (ccx.min(mx1)-mt-1.0).floor() as i64;
+        let mmxx = (ccx.max(mx1)+mt+1.0).ceil() as i64;
+        let mmiy = (ccy.min(my1)-mt-1.0).floor() as i64;
+        let mmxy = (ccy.max(my1)+mt+1.0).ceil() as i64;
+        for py in mmiy..=mmxy { for px_ in mmix..=mmxx {
+            let fx = px_ as f32+0.5; let fy = py as f32+0.5;
+            let tp = if mlsq>0.0{((fx-ccx)*(mx1-ccx)+(fy-ccy)*(my1-ccy))/mlsq}else{0.0};
+            let tc = tp.max(0.0).min(1.0);
+            let d = ((fx-(ccx+tc*(mx1-ccx)))*(fx-(ccx+tc*(mx1-ccx)))+(fy-(ccy+tc*(my1-ccy)))*(fy-(ccy+tc*(my1-ccy)))).sqrt()-mt;
+            let aa = if d<=-1.0{1.0}else if d>=1.0{0.0}else{0.5-d*0.5};
+            if aa>0.0 { setp!(px_, py, 0xF5,0x9E,0x0B, aa*0.9); }
+        }}
+        // Center dot (dark)
+        let dr = 1.5*sc; let dri = dr.ceil() as i64;
+        for dy in -dri..=dri { for dx_ in -dri..=dri {
+            let d = ((dx_*dx_+dy*dy) as f32).sqrt();
+            let dd = d - dr;
+            let aa = if dd<=-1.0{1.0}else if dd>=1.0{0.0}else{0.5-dd*0.5};
+            if aa>0.0 { setp!((ccx+dx_ as f32) as i64, (ccy+dy as f32) as i64, 0x1F,0x29,0x37, aa*0.9); }
+        }}
     }
-
-    // --- White clipboard board (with subtle shadow) ---
-    fill_rounded_rect(&mut pixels, draw_size, s, 16.0, 13.0, 48.0, 53.0, 2.0, 245, 245, 250, 255);
-    fill_rounded_rect(&mut pixels, draw_size, s, 17.0, 12.0, 47.0, 52.0, 2.0, 255, 255, 255, 255);
-
-    // --- Clip top (gradient purple) ---
-    fill_rounded_rect(&mut pixels, draw_size, s, 22.0, 7.0, 42.0, 18.0, 2.0, 0xC7, 0xD2, 0xFE, 255);
-
-    // --- Clip hole (deep purple) ---
-    fill_rounded_rect(&mut pixels, draw_size, s, 27.0, 9.0, 37.0, 15.0, 1.0, 0x5B, 0x21, 0xB6, 255);
-
-    // --- Lines on clipboard (subtle gray) ---
-    for &ly in &[23.0, 29.0, 35.0, 41.0] {
-        fill_rect(&mut pixels, draw_size, s, 21.0, ly - 0.8, 43.0, ly + 0.8, 0xE2, 0xE8, 0xF0, 255);
-    }
-
-    // --- Vibrant teal dot with radial gradient ---
-    fill_circle(
-        &mut pixels, draw_size, s,
-        46.0, 47.0, 9.5,
-        0x2D, 0xD4, 0xBF,
-        0x0D, 0x94, 0x88,
-    );
-
-    // --- Clock circle (white stroke, antialiased) ---
-    let clock_cx = 46.0_f32;
-    let clock_cy = 47.0_f32;
-    let clock_r = 5.0_f32;
-    let clock_ir = (clock_r * s).ceil() as i64;
-    let thickness = 1.8 * s;
-
-    for dy in -clock_ir..=clock_ir {
-        for dx in -clock_ir..=clock_ir {
-            let d = ((dx * dx + dy * dy) as f32).sqrt();
-            let dist_outer = d - clock_r * s;
-            let dist_inner = d - (clock_r * s - thickness);
-
-            // Ring: outside inner circle, inside outer circle
-            if dist_outer <= 1.5 && dist_inner >= -1.5 {
-                let aa_outer = if dist_outer <= -1.5 { 1.0 }
-                    else if dist_outer >= 1.5 { 0.0 }
-                    else { 0.5 - dist_outer * 0.33 };
-                let aa_inner = if dist_inner <= -1.5 { 0.0 }
-                    else if dist_inner >= 1.5 { 1.0 }
-                    else { 0.5 + dist_inner * 0.33 };
-                let aa = aa_outer * aa_inner;
-
-                if aa > 0.0 {
-                    let px = clock_cx * s + dx as f32;
-                    let py = clock_cy * s + dy as f32;
-                    put_pixel(&mut pixels, draw_size, px as i64, py as i64, 255, 255, 255, aa * 0.94);
-                }
-            }
-        }
-    }
-
-    // --- Clock hands (antialiased lines) ---
-    fill_line(&mut pixels, draw_size, s, 46.0, 43.5, 46.0, 47.0, 1.6, 255, 255, 255, 255);
-    fill_line(&mut pixels, draw_size, s, 46.0, 47.0, 49.0, 47.0, 1.6, 255, 255, 255, 255);
-
-    // Downsample from draw_size to size using simple averaging
-    let mut result: Vec<u8> = vec![0; size * size * 4];
+    // Downsample from 2x to final size
+    let mut out = vec![0u8; size*size*4];
     for y in 0..size {
         for x in 0..size {
-            let mut r_sum = 0u32;
-            let mut g_sum = 0u32;
-            let mut b_sum = 0u32;
-            let mut a_sum = 0u32;
-            for sy in 0..ss {
-                for sx in 0..ss {
-                    let src_x = x * ss + sx;
-                    let src_y = y * ss + sy;
-                    let idx = (src_y * draw_size + src_x) * 4;
-                    r_sum += pixels[idx] as u32;
-                    g_sum += pixels[idx + 1] as u32;
-                    b_sum += pixels[idx + 2] as u32;
-                    a_sum += pixels[idx + 3] as u32;
-                }
-            }
-            let count = (ss * ss) as u32;
-            let idx = (y * size + x) * 4;
-            result[idx] = (r_sum / count) as u8;
-            result[idx + 1] = (g_sum / count) as u8;
-            result[idx + 2] = (b_sum / count) as u8;
-            result[idx + 3] = (a_sum / count) as u8;
+            let (mut rs, mut gs, mut bs, mut asum, mut ct) = (0u32,0u32,0u32,0u32,0u32);
+            for sy in 0..ss { for sx in 0..ss {
+                let i = ((y*ss+sy)*ds+(x*ss+sx))*4;
+                rs += px[i] as u32; gs += px[i+1] as u32;
+                bs += px[i+2] as u32; asum += px[i+3] as u32; ct += 1;
+            }}
+            let i = (y*size+x)*4;
+            out[i] = (rs/ct) as u8; out[i+1] = (gs/ct) as u8;
+            out[i+2] = (bs/ct) as u8; out[i+3] = (asum/ct) as u8;
         }
     }
-
-    image::RgbaImage::from_raw(size as u32, size as u32, result)
-        .expect("failed to create RgbaImage")
+    image::RgbaImage::from_raw(size as u32, size as u32, out).expect("create image")
 }
 
-/// Write a modern ICO file embedding PNG data.
-/// Format: ICONDIR header + N × ICONDIRENTRY + N × PNG blob
-fn write_ico(path: &PathBuf, png_buffers: &[Vec<u8>], sizes: &[usize]) -> std::io::Result<()> {
+fn write_ico(path: &PathBuf, pngs: &[Vec<u8>], sizes: &[usize]) -> std::io::Result<()> {
     use byteorder::{LittleEndian, WriteBytesExt};
-
-    let num_images = png_buffers.len() as u16;
-
-    // Header: 6 bytes
-    let header_size = 6;
-    // Each entry: 16 bytes
-    let entry_size = 16 * num_images as usize;
-    // Data starts after header + entries
-    let first_offset = header_size + entry_size;
-
-    let mut file = BufWriter::new(File::create(path)?);
-
-    // --- ICONDIR ---
-    file.write_u16::<LittleEndian>(0)?;        // Reserved (must be 0)
-    file.write_u16::<LittleEndian>(1)?;        // Type: 1 = ICO
-    file.write_u16::<LittleEndian>(num_images)?; // Number of images
-
-    // --- ICONDIRENTRY for each image ---
-    // Collect offsets to fill in later
-    let mut offsets: Vec<u32> = Vec::with_capacity(num_images as usize);
-    let mut current_offset = first_offset as u32;
-
-    for (&size, png) in sizes.iter().zip(png_buffers.iter()) {
-        let w = if size == 256 { 0u8 } else { size as u8 };
-        let h = if size == 256 { 0u8 } else { size as u8 };
-
-        file.write_u8(w)?;                         // Width
-        file.write_u8(h)?;                         // Height
-        file.write_u8(0)?;                         // Color palette (0 = no palette)
-        file.write_u8(0)?;                         // Reserved
-        file.write_u16::<LittleEndian>(1)?;       // Color planes
-        file.write_u16::<LittleEndian>(32)?;      // Bits per pixel
-        file.write_u32::<LittleEndian>(png.len() as u32)?; // Image data size
-        file.write_u32::<LittleEndian>(current_offset)?;  // Offset to image data
-
-        offsets.push(current_offset);
-        current_offset += png.len() as u32;
+    let n = pngs.len() as u16;
+    let off = (6 + n as usize * 16) as u32;
+    let mut f = BufWriter::new(File::create(path)?);
+    f.write_u16::<LittleEndian>(0)?; f.write_u16::<LittleEndian>(1)?;
+    f.write_u16::<LittleEndian>(n)?;
+    let mut o = off;
+    for (&sz, png) in sizes.iter().zip(pngs.iter()) {
+        f.write_u8(if sz==256{0}else{sz as u8})?;
+        f.write_u8(if sz==256{0}else{sz as u8})?;
+        f.write_u8(0)?; f.write_u8(0)?;
+        f.write_u16::<LittleEndian>(1)?; f.write_u16::<LittleEndian>(32)?;
+        f.write_u32::<LittleEndian>(png.len() as u32)?;
+        f.write_u32::<LittleEndian>(o)?;
+        o += png.len() as u32;
     }
-
-    // --- PNG data blobs ---
-    for (png, &offset) in png_buffers.iter().zip(offsets.iter()) {
-        let pos = file.stream_position()?;
-        assert_eq!(pos as u32, offset);
-        file.write_all(png)?;
-    }
-
+    for png in pngs { f.write_all(png)?; }
     Ok(())
 }
