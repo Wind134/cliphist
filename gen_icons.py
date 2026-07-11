@@ -20,8 +20,11 @@ OUT = os.path.join(os.path.dirname(__file__), "src-tauri", "icons")
 
 SIZES = {
     "icon.png": 512,
+    "16x16.png": 16,
+    "24x24.png": 24,
     "32x32.png": 32,
     "48x48.png": 48,
+    "64x64.png": 64,
     "128x128.png": 128,
     "128x128@2x.png": 256,
     "Square30x30Logo.png": 30,
