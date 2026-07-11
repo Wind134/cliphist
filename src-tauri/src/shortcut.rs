@@ -408,8 +408,8 @@ mod windows_impl {
 
                 super::HELPER_CONNECTED.store(false, Ordering::SeqCst);
                 super::LISTENER_RUNNING.store(false, Ordering::SeqCst);
-            })
                 super::EXIT_EPOCH.store(super::STOP_EPOCH.load(Ordering::SeqCst), Ordering::SeqCst);
+            })
             .map_err(|e| format!("Failed to spawn double-tap listener thread: {}", e))?;
 
         Ok(())

@@ -13,7 +13,6 @@ use image::ImageEncoder;
 use settings::Settings;
 use state::AppState;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
 #[tauri::command]
