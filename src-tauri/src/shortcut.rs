@@ -9,6 +9,8 @@ use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut}
 static LISTENER_RUNNING: AtomicBool = AtomicBool::new(false);
 static LISTENER_GENERATION: AtomicU64 = AtomicU64::new(0);
 pub static HELPER_CONNECTED: AtomicBool = AtomicBool::new(false);
+static STOP_EPOCH: AtomicU64 = AtomicU64::new(0);
+static EXIT_EPOCH: AtomicU64 = AtomicU64::new(0);
 
 pub fn parse_shortcut(shortcut_str: &str) -> Option<ParsedShortcut> {
     let parts: Vec<&str> = shortcut_str.split('+').collect();
@@ -161,8 +163,7 @@ mod linux_impl {
         on_trigger: F,
     ) -> Result<(), String> {
         if super::LISTENER_RUNNING.load(Ordering::SeqCst) {
-            super::stop_double_tap_listener();
-            std::thread::sleep(std::time::Duration::from_millis(200));
+            super::stop_and_wait_double_tap_listener(2000);
         }
 
         super::LISTENER_RUNNING.store(true, Ordering::SeqCst);
@@ -286,6 +287,7 @@ mod linux_impl {
                 let _ = child.wait();
                 super::HELPER_CONNECTED.store(false, Ordering::SeqCst);
                 super::LISTENER_RUNNING.store(false, Ordering::SeqCst);
+                super::EXIT_EPOCH.store(super::STOP_EPOCH.load(Ordering::SeqCst), Ordering::SeqCst);
                 crate::log::write_log("Double-tap socket listener stopped");
             })
             .map_err(|e| format!("Failed to spawn socket listener thread: {}", e))?;
@@ -407,6 +409,7 @@ mod windows_impl {
                 super::HELPER_CONNECTED.store(false, Ordering::SeqCst);
                 super::LISTENER_RUNNING.store(false, Ordering::SeqCst);
             })
+                super::EXIT_EPOCH.store(super::STOP_EPOCH.load(Ordering::SeqCst), Ordering::SeqCst);
             .map_err(|e| format!("Failed to spawn double-tap listener thread: {}", e))?;
 
         Ok(())
@@ -467,6 +470,29 @@ pub fn stop_double_tap_listener() {
     HELPER_CONNECTED.store(false, Ordering::SeqCst);
     LISTENER_GENERATION.fetch_add(1, Ordering::SeqCst);
     crate::log::write_log("Double-tap listener stop requested");
+}
+
+/// Stop the listener and wait for the listener thread to actually exit.
+/// Uses an epoch-based acknowledgment instead of a fixed sleep.
+pub fn stop_and_wait_double_tap_listener(timeout_ms: u64) {
+    if !LISTENER_RUNNING.load(Ordering::SeqCst) {
+        return;
+    }
+    let epoch = STOP_EPOCH.fetch_add(1, Ordering::SeqCst) + 1;
+    LISTENER_RUNNING.store(false, Ordering::SeqCst);
+    HELPER_CONNECTED.store(false, Ordering::SeqCst);
+    LISTENER_GENERATION.fetch_add(1, Ordering::SeqCst);
+    crate::log::write_log("Double-tap listener stop requested (wait)");
+
+    let deadline = std::time::Instant::now()
+        + std::time::Duration::from_millis(timeout_ms);
+    while EXIT_EPOCH.load(Ordering::SeqCst) < epoch {
+        if std::time::Instant::now() >= deadline {
+            crate::log::write_log("stop_and_wait timed out, proceeding anyway");
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
 }
 
 pub fn is_helper_connected() -> bool {

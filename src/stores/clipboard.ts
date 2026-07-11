@@ -18,7 +18,7 @@ export const settingsData = writable<Settings>({
   zoom_level: 1.0,
   hotkey: 'Ctrl+Shift+V',
   auto_start: false,
-  silent_start: false,
+  silent_start: true,
   double_tap_key: '',
   retention_days: 3,
   window_width: 400,

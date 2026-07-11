@@ -51,6 +51,3 @@ windows = { version = "0.61", features = ["Win32_Graphics_Dwm"] }
 name = "tauri-app"
 path = "src/main.rs"
 
-[[bin]]
-name = "icon-gen"
-path = "src/icon_gen.rs"

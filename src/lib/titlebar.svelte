@@ -24,7 +24,7 @@
     appWindow.minimize();
   }
 
-  type ResizeDir = 'NorthWest' | 'NorthEast' | 'West' | 'East' | 'North';
+  type ResizeDir = 'NorthWest' | 'NorthEast' | 'SouthWest' | 'SouthEast' | 'West' | 'East' | 'North' | 'South';
 
   function edgeHitTest(el: HTMLElement, e: MouseEvent): ResizeDir | null {
     const rect = el.getBoundingClientRect();
@@ -33,20 +33,27 @@
     const w = rect.width;
     const edge = 8;
 
+    const h = rect.height;
     if (y < edge && x < 16) return 'NorthWest';
     if (y < edge && x > w - 16) return 'NorthEast';
+    if (y > h - edge && x < 16) return 'SouthWest';
+    if (y > h - edge && x > w - 16) return 'SouthEast';
     if (x < 4) return 'West';
     if (x > w - 4) return 'East';
     if (y < edge) return 'North';
+    if (y > h - edge) return 'South';
     return null;
   }
 
   const cursorMap: Record<ResizeDir, string> = {
     NorthWest: 'nw-resize',
     NorthEast: 'ne-resize',
+    SouthWest: 'sw-resize',
+    SouthEast: 'se-resize',
     West: 'w-resize',
     East: 'e-resize',
     North: 'n-resize',
+    South: 's-resize',
   };
 
   function handleMousedown(e: MouseEvent) {

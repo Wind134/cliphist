@@ -12,8 +12,8 @@ use clipboard::ClipboardItem;
 use image::ImageEncoder;
 use settings::Settings;
 use state::AppState;
-use std::cell::Cell;
-use std::time::{Duration, Instant};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
 #[tauri::command]
@@ -103,8 +103,7 @@ fn update_settings(app: tauri::AppHandle, partial: serde_json::Value) -> Result<
             let old = current.double_tap_key.clone();
             current.double_tap_key = v.to_string();
             if old != v {
-                shortcut::stop_double_tap_listener();
-                std::thread::sleep(std::time::Duration::from_millis(200));
+                shortcut::stop_and_wait_double_tap_listener(2000);
                 if !v.is_empty() {
                     let app_clone = app.clone();
                     let key = v.to_string();
@@ -289,10 +288,14 @@ pub fn run() {
                 }
 
                 // Save window size on resize (throttled to 500ms)
-                let last_save = Cell::new(Instant::now());
+                let last_save = AtomicU64::new(0);
                 window.on_window_event(move |event| {
                    if let tauri::WindowEvent::Resized(size) = event {
-                       if last_save.get().elapsed() > Duration::from_millis(500) {
+                       let now = std::time::SystemTime::now()
+                           .duration_since(std::time::UNIX_EPOCH)
+                           .unwrap_or_default()
+                           .as_millis() as u64;
+                       if now.saturating_sub(last_save.load(Ordering::Relaxed)) > 500 {
                            let mut s = settings::load_settings();
                            s.window_width = size.width;
                            s.window_height = size.height;
@@ -300,7 +303,7 @@ pub fn run() {
                            if let Err(e) = settings::save_settings(&s) {
                                log::write_log(&format!("Failed to save window size: {}", e));
                             }
-                            last_save.set(Instant::now());
+                            last_save.store(now, Ordering::Relaxed);
                         }
                     }
                 });
