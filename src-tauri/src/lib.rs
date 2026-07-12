@@ -251,6 +251,18 @@ pub fn run() {
                 log::write_log(&format!("Failed to setup tray: {}", e));
             }
 
+            // Explicitly set the window icon from 256x256 PNG
+            // This bypasses tauri-build default_window_icon() which may not
+            // correctly decode .ico files for the taskbar/alt-tab icon on Windows.
+            if let Some(window) = app.get_webview_window("main") {
+                if let Ok(img) = image::load_from_memory(include_bytes!("../icons/128x128@2x.png")) {
+                    let rgba = img.into_rgba8();
+                    let (w, h) = rgba.dimensions();
+                    let icon = tauri::image::Image::new(&rgba.into_raw(), w, h);
+                    let _ = window.set_icon(icon);
+                }
+            }
+
             let s = settings::load_settings();
             log::write_log(&format!("Startup settings: hotkey={}, retention={}d, double_tap={}, silent={}", s.hotkey, s.retention_days, s.double_tap_key, s.silent_start));
             if let Err(e) = shortcut::register_global_shortcut(app.handle(), &s.hotkey) {
