@@ -258,7 +258,8 @@ pub fn run() {
                 if let Ok(img) = image::load_from_memory(include_bytes!("../icons/128x128@2x.png")) {
                     let rgba = img.into_rgba8();
                     let (w, h) = rgba.dimensions();
-                    let icon = tauri::image::Image::new(&rgba.into_raw(), w, h);
+                    let raw = rgba.into_raw();
+                    let icon = tauri::image::Image::new(&raw, w, h);
                     let _ = window.set_icon(icon);
                 }
             }
