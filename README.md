@@ -16,20 +16,18 @@
 
 从 [Releases](https://github.com/Wind134/cliphist/releases) 下载对应平台的安装包即可。
 
-### 各平台包格式
-
 | 平台 | 格式 |
 |------|------|
-| Windows | .msi / .exe |
-| macOS (Intel) | .dmg |
-| macOS (Apple Silicon) | .dmg |
-| Linux | .deb / .AppImage |
+| Windows | `.msi` / `.exe` |
+| macOS (Intel) | `.dmg` |
+| macOS (Apple Silicon) | `.dmg` |
+| Linux | `.deb` / `.AppImage` |
 
 ## 开发编译
 
 需要 Rust 1.70+ 和 Node.js 22+。
 
-\\ash
+```bash
 # 安装依赖
 npm install
 
@@ -38,7 +36,8 @@ npm run tauri dev
 
 # 编译发布版本
 npm run tauri build
-\
+```
+
 ## 技术架构
 
 - 框架：Tauri 2
@@ -51,8 +50,8 @@ npm run tauri build
 
 | 快捷键 | 动作 |
 |--------|------|
-| \Alt + V\ | 呼出 / 隐藏窗口 |
-| \↑\ / \↓\ | 列表导航 |
-| \Enter\ | 复制选中项到剪贴板 |
-| \Esc\ | 取消搜索 / 关闭窗口 |
+| `Alt + V` | 呼出 / 隐藏窗口 |
+| `↑` / `↓` | 列表导航 |
+| `Enter` | 复制选中项到剪贴板 |
+| `Esc` | 取消搜索 / 关闭窗口 |
 | 鼠标双击 | 复制该项 |
