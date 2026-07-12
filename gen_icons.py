@@ -38,7 +38,7 @@ SIZES = {
     "Square310x310Logo.png": 310,
     "StoreLogo.png": 50,
 }
-ICO_SIZES = [16, 24, 32, 48, 64, 128, 256]
+ICO_SIZES = [256, 128, 64, 48, 32, 24, 16]  # desc first so image crate gets 256x256
 
 
 def find_converter():
