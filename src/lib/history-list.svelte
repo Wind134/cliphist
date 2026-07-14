@@ -7,6 +7,7 @@
   import {
     filteredHistory, selectedIndex, searchQuery, currentCategory,
     history, copyItem, deleteItem, clearHistory, showToast, settingsData,
+    settingsOpen, refreshSettings,
   } from '../stores/clipboard';
   import CategoryTabs from './category-tabs.svelte';
   import HistoryItem from './history-item.svelte';
@@ -128,6 +129,11 @@
     }
   }
 
+  function openSettings() {
+    settingsOpen.set(true);
+    refreshSettings();
+  }
+
   async function handleClear() {
     const ok = await confirm('确定要清空所有历史记录吗？', {
       title: '清空历史',
@@ -184,12 +190,20 @@
 
 <div class="history-toolbar">
   <span class="item-count">{$history.length} 条记录</span>
-  <button class="btn-clear" onclick={handleClear} title="清空历史">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <polyline points="3 6 5 6 21 6"></polyline>
-      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-    </svg>
-  </button>
+  <div class="toolbar-actions">
+    <button class="btn-icon" onclick={openSettings} title="设置">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="3"></circle>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+      </svg>
+    </button>
+    <button class="btn-icon" onclick={handleClear} title="清空历史">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="3 6 5 6 21 6"></polyline>
+        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+      </svg>
+    </button>
+  </div>
 </div>
 
 <main class="content" bind:this={listContainer}>
@@ -289,7 +303,12 @@
     font-size: 11px;
     color: var(--text-tertiary);
   }
-  .btn-clear {
+  .toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .btn-icon {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -302,7 +321,7 @@
     cursor: pointer;
     transition: all 0.15s;
   }
-  .btn-clear:hover {
+  .btn-icon:hover {
     background: var(--bg-hover);
     color: var(--text-primary);
   }
