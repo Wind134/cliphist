@@ -1,6 +1,8 @@
 use arboard::Clipboard;
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
+use std::path::PathBuf;
+use std::sync::OnceLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClipboardItem {
@@ -10,8 +12,11 @@ pub struct ClipboardItem {
     pub timestamp: String,
     pub preview: String,
     pub char_count: usize,
+    /// Path (relative to the ClipHist data dir) of the external PNG file.
+    /// Replaces the old inline base64 `image_data` so the JSON stays small
+    /// and images are loaded on demand. `None` for non-image items.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub image_data: Option<String>,
+    pub image_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image_width: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -20,18 +25,76 @@ pub struct ClipboardItem {
     pub html_content: Option<String>,
 }
 
-pub fn get_storage_path() -> std::path::PathBuf {
-    let data_dir = dirs::data_local_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("ClipHist");
-    std::fs::create_dir_all(&data_dir).ok();
-    data_dir.join("history.json")
+static DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
+static IMAGES_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+/// Root ClipHist data dir (e.g. ~/.local/share/ClipHist).
+/// Cached via `OnceLock` so `create_dir_all` runs only once.
+pub fn data_dir() -> &'static PathBuf {
+    DATA_DIR.get_or_init(|| {
+        let dir = dirs::data_local_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("ClipHist");
+        std::fs::create_dir_all(&dir).ok();
+        dir
+    })
 }
 
+/// Subdir where clipboard images are stored as `<id>.png`.
+/// Cached via `OnceLock` so `create_dir_all` runs only once.
+pub fn images_dir() -> &'static PathBuf {
+    IMAGES_DIR.get_or_init(|| {
+        let dir = data_dir().join("images");
+        std::fs::create_dir_all(&dir).ok();
+        dir
+    })
+}
+
+pub fn get_storage_path() -> PathBuf {
+    data_dir().join("history.json")
+}
+
+/// Write a clipboard image to `<images_dir>/<id>.png` and return its
+/// storage-relative path (`images/<id>.png`) for serialization in the JSON.
+/// Returns `None` if the file could not be written.
+pub fn save_image_file(id: usize, png: &[u8]) -> Option<String> {
+    let abs = images_dir().join(format!("{}.png", id));
+    match std::fs::write(&abs, png) {
+        Ok(()) => Some(format!("images/{}.png", id)),
+        Err(e) => {
+            crate::log::write_log(&format!("Failed to write image file {:?}: {}", abs, e));
+            None
+        }
+    }
+}
+
+/// Read an image file by its storage-relative path (`images/<id>.png`).
+pub fn read_image_file(rel: &str) -> Option<Vec<u8>> {
+    let abs = data_dir().join(rel);
+    std::fs::read(abs).ok()
+}
+
+/// Best-effort removal of an image file referenced by `path`.
+pub fn delete_image_file(path: &Option<String>) {
+    if let Some(rel) = path {
+        let abs = data_dir().join(rel);
+        let _ = std::fs::remove_file(abs);
+    }
+}
+
+/// Atomically persist history: write a temp file, then rename over the
+/// target. Avoids leaving a half-written JSON if the process is interrupted
+/// mid-write. The payload is now small (images are external), so this is cheap.
 pub fn save_history(items: &[ClipboardItem]) {
     if let Ok(json) = serde_json::to_string_pretty(items) {
         let path = get_storage_path();
-        let _ = std::fs::write(path, json);
+        let tmp = path.with_extension("json.tmp");
+        if std::fs::write(&tmp, &json).is_ok() && std::fs::rename(&tmp, &path).is_ok() {
+            return;
+        }
+        // Fallback: write directly if the temp+rename path failed.
+        let _ = std::fs::write(&path, &json);
+        let _ = std::fs::remove_file(&tmp);
     }
 }
 
@@ -91,10 +154,9 @@ pub fn copy_item_to_clipboard(history: &[ClipboardItem], id: usize) -> Result<()
 
     let mut clipboard = Clipboard::new().map_err(|e| e.to_string())?;
 
-    if let Some(ref img_data_b64) = item.image_data {
-        if let Ok(img_bytes) =
-            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, img_data_b64)
-        {
+    // Images are stored as external PNG files; load on demand.
+    if let Some(ref rel) = item.image_path {
+        if let Some(img_bytes) = read_image_file(rel) {
             let decoder = image::codecs::png::PngDecoder::new(Cursor::new(&img_bytes))
                 .map_err(|e| e.to_string())?;
             let img: image::DynamicImage =

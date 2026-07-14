@@ -4,7 +4,6 @@
   import { get } from 'svelte/store';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { initClipboard, settingsOpen, settingsData } from './stores/clipboard';
-  import Titlebar from './lib/titlebar.svelte';
   import HistoryList from './lib/history-list.svelte';
   import SettingsPanel from './lib/settings-panel.svelte';
   import StatusBar from './lib/statusbar.svelte';
@@ -31,31 +30,42 @@
   }
 </script>
 
-<div class="window">
-  <Titlebar />
-  <main class="content-area">
-    {#if $settingsOpen}
-      <div class="settings-wrapper" in:slide={{duration: 150, axis: "x"}} out:slide={{duration: 100, axis: "x"}}>
-        <SettingsPanel />
-      </div>
-    {:else}
-      <HistoryList />
-    {/if}
-  </main>
-  <StatusBar />
+<!-- Native window decorations are provided by the OS (decorations: true in
+     tauri.conf.json); we no longer draw our own title bar. The zoom layer
+     scales the whole UI with transform: scale() so it works cross-platform
+     (the old `zoom` CSS property is Chromium-only and failed on Linux/macOS). -->
+<div class="app-root">
+  <div
+    class="zoom-layer"
+    style="transform: scale({$settingsData.zoom_level}); width: {$settingsData.zoom_level === 1 ? '100%' : (100 / $settingsData.zoom_level) + '%'}; height: {$settingsData.zoom_level === 1 ? '100vh' : (100 / $settingsData.zoom_level) + 'vh'}; transform-origin: top left;"
+  >
+    <main class="content-area">
+      {#if $settingsOpen}
+        <div class="settings-wrapper" in:slide={{duration: 150, axis: "x"}} out:slide={{duration: 100, axis: "x"}}>
+          <SettingsPanel />
+        </div>
+      {:else}
+        <HistoryList />
+      {/if}
+    </main>
+    <StatusBar />
+  </div>
 </div>
 
 <svelte:window onkeydown={handleKeydown} />
 <Toast />
 
 <style>
-  .window {
+  .app-root {
+    width: 100%;
+    height: 100vh;
+    overflow: hidden;
+    background: var(--bg-primary);
+  }
+  .zoom-layer {
     display: flex;
     flex-direction: column;
     height: 100vh;
-    background: var(--bg-primary);
-    overflow: hidden;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
   }
   .content-area {
     flex: 1;

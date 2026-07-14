@@ -1,23 +1,21 @@
 <script lang="ts">
-  import { getCurrentWindow } from '@tauri-apps/api/window';
+  import { getVersion } from '@tauri-apps/api/app';
   import {
     settingsOpen, settingsData, showToast,
-    updateSettings, validateHotkey, toggleAutostart, applyZoom, helperConnected, feLog,
+    updateSettings, validateHotkey, toggleAutostart, helperConnected, feLog,
   } from '../stores/clipboard';
 
-  const settingsWindow = getCurrentWindow();
   let hotkeyInput = $state('');
   let hotkeyError = $state('');
   let retentionSelect: HTMLSelectElement;
   let doubleTapSelect: HTMLSelectElement;
+  let appVersion = $state('…');
 
-  function handleHeaderMousedown(e: MouseEvent) {
-    if (e.button !== 0) return;
-    const target = e.target as HTMLElement;
-    if (target.closest('.btn-close')) return;
-    e.preventDefault();
-    settingsWindow.startDragging();
-  }
+  // Load the real, packaging-derived version (from tauri.conf.json) so the
+  // About section always shows what was actually built — not a hand-maintained constant.
+  $effect(() => {
+    getVersion().then(v => { appVersion = v; }).catch(() => { appVersion = '未知'; });
+  });
 
   function close() {
     settingsOpen.set(false);
@@ -61,7 +59,6 @@
     const current = $settingsData.zoom_level * 100;
     if (current > 50) {
       const newZoom = (current - 10) / 100;
-      applyZoom(newZoom);
       try {
         await updateSettings({ zoom_level: newZoom });
         settingsData.update(s => ({ ...s, zoom_level: newZoom }));
@@ -76,7 +73,6 @@
     const current = $settingsData.zoom_level * 100;
     if (current < 200) {
       const newZoom = (current + 10) / 100;
-      applyZoom(newZoom);
       try {
         await updateSettings({ zoom_level: newZoom });
         settingsData.update(s => ({ ...s, zoom_level: newZoom }));
@@ -157,7 +153,7 @@
 
 
 <div class="settings-panel">
-  <header class="settings-header" onmousedown={handleHeaderMousedown}>
+  <header class="settings-header">
     <span class="settings-title">设置</span>
     <button class="btn-close" onclick={close} aria-label="关闭设置">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -267,8 +263,16 @@
             <option value="0" title="保留全部记录，不自动清理">永久</option>
           </select>
         </div>
+
+      <!-- About: shows the real, packaging-derived version -->
+      <div class="settings-item about">
+        <div class="settings-item-info">
+          <span class="settings-item-label">关于 ClipHist</span>
+          <span class="settings-item-desc">版本 {appVersion} · 剪贴板历史管理器</span>
+        </div>
       </div>
     </div>
+  </div>
 
 <style>
   .settings-panel {
@@ -353,6 +357,10 @@
   }
   .settings-item-note.authorized {
     color: #22c55e;
+  }
+  .about {
+    background: transparent;
+    box-shadow: none;
   }
   .toggle-switch {
     position: relative;

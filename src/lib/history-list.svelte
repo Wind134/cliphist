@@ -3,6 +3,7 @@
   import { get } from 'svelte/store';
   import { invoke } from '@tauri-apps/api/core';
   import { getCurrentWindow } from '@tauri-apps/api/window';
+  import { confirm } from '@tauri-apps/plugin-dialog';
   import {
     filteredHistory, selectedIndex, searchQuery, currentCategory,
     history, copyItem, deleteItem, clearHistory, showToast, settingsData,
@@ -128,7 +129,11 @@
   }
 
   async function handleClear() {
-    if (!confirm('确定要清空所有历史记录吗？')) return;
+    const ok = await confirm('确定要清空所有历史记录吗？', {
+      title: '清空历史',
+      kind: 'warning',
+    });
+    if (!ok) return;
     await clearHistory();
     showToast('已清空');
   }

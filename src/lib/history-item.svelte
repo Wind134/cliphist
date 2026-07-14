@@ -1,12 +1,23 @@
 <script lang="ts">
   import type { ClipboardItem } from '../types';
-  import { getTypeLabel, getTypeClass, escapeHtml, stripScripts } from '../stores/clipboard';
+  import { getTypeLabel, getTypeClass, escapeHtml, stripScripts, getImageData } from '../stores/clipboard';
 
   let { item, index, isSelected }: {
     item: ClipboardItem;
     index: number;
     isSelected: boolean;
   } = $props();
+
+  // Lazily load the image data URL only when this item is actually an image.
+  // Keeps memory low: no base64 lives in the history payload anymore.
+  let imageSrc = $state<string | null>(null);
+  $effect(() => {
+    if (item.content_type === 'image' && item.image_path) {
+      let cancelled = false;
+      getImageData(item.id).then(src => { if (!cancelled) imageSrc = src; }).catch(() => {});
+      return () => { cancelled = true; };
+    }
+  });
 
   const typeIcon: Record<string, string> = {
     link: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>`,
@@ -51,8 +62,12 @@
     </div>
   </div>
   <div class="item-preview">
-    {#if item.content_type === 'image' && item.image_data}
-      <img class="item-image" src="data:image/png;base64,{item.image_data}" alt="clipboard image" />
+    {#if item.content_type === 'image' && item.image_path}
+      {#if imageSrc}
+        <img class="item-image" src={imageSrc} alt="clipboard image" />
+      {:else}
+        <div class="item-image-placeholder">{item.image_width}×{item.image_height}</div>
+      {/if}
     {:else if item.content_type === 'rich' && item.html_content}
       <div class="rich-preview">{@html stripScripts(item.html_content)}</div>
     {:else}
@@ -145,6 +160,16 @@
     border-radius: 4px;
     object-fit: contain;
     display: block;
+  }
+  .item-image-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 60px;
+    border-radius: 4px;
+    background: var(--bg-tertiary);
+    color: var(--text-tertiary);
+    font-size: 11px;
   }
   .rich-preview {
     font-size: 12px;

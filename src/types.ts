@@ -6,7 +6,7 @@ export interface ClipboardItem {
   timestamp: string;
   preview: string;
   char_count: number;
-  image_data: string | null;
+  image_path: string | null;
   image_width: number | null;
   image_height: number | null;
   html_content: string | null;
@@ -23,6 +23,7 @@ export interface Settings {
   retention_days: number;
   window_width: number;
   window_height: number;
+  window_user_resized: boolean;
 }
 
 export type ContentCategory = 'all' | 'image' | 'text' | 'link' | 'short' | 'rich';

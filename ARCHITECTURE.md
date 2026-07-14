@@ -6,28 +6,45 @@ ClipHist 是一个基于 Tauri 2.0 构建的剪贴板历史管理工具，支持
 
 ## 技术栈
 
-- **前端**: HTML + CSS + JavaScript (原生，无框架)
+- **前端**: Svelte 5 (Tauri 集成 UI，窗口装饰由 OS 接管)
 - **后端**: Rust (Tauri 2.0)
 - **构建工具**: Tauri CLI
-- **插件**: 
+- **插件**:
   - `tauri-plugin-global-shortcut` - 全局快捷键
-  - `tauri-plugin-clipboard-manager` - 剪贴板管理
+  - `tauri-plugin-dialog` - 系统原生对话框（清空确认）
   - `tauri-plugin-opener` - 外部链接打开
+  - `tauri-plugin-autostart` - 开机自启
+  - `tauri-plugin-single-instance` - 单例
+- **存储**: JSON 文件（`history.json` + 图片外置 `images/<id>.png`，原子写、按需加载）
+- **剪贴板**: arboard
 
 ## 目录结构
 
 ```
 cliphist/
-├── src/                          # 前端资源
-│   ├── index.html               # 主页面
-│   ├── main.js                  # 前端逻辑
-│   ├── styles.css               # 样式表
-│   └── assets/                  # 静态资源
+├── src/                          # 前端 (Svelte 5)
+│   ├── app.svelte              # 根组件 + 缩放层
+│   ├── lib/                    # UI 组件
+│   │   ├── history-list.svelte
+│   │   ├── history-item.svelte
+│   │   ├── settings-panel.svelte   # 含「关于」展示版本
+│   │   ├── statusbar.svelte
+│   │   ├── category-tabs.svelte
+│   │   └── toast.svelte
+│   ├── stores/clipboard.ts     # 状态 + IPC 封装
+│   └── types.ts
 ├── src-tauri/                    # Rust 后端
 │   ├── src/
 │   │   ├── main.rs              # 程序入口
-│   │   ├── lib.rs               # 核心逻辑
-│   │   └── icon_gen.rs          # 图标生成工具
+│   │   ├── lib.rs               # 核心逻辑 + focus_main_window + 窗口动作 worker
+│   │   ├── clipboard.rs         # 历史加载/保存（原子写）、图片外置
+│   │   ├── shortcut.rs          # 全局快捷键 + 双击监听（channel 驱动）
+│   │   ├── evdev_helper.rs     # Linux evdev 双击辅助进程
+│   │   ├── tray.rs              # 托盘菜单
+│   │   ├── settings.rs         # 设置读写
+│   │   ├── state.rs            # AppState + 共享 DoubleTapState
+│   │   ├── log.rs              # 复用句柄的日志
+│   │   └── consts.rs
 │   ├── Cargo.toml               # Rust 依赖配置
 │   ├── tauri.conf.json          # Tauri 配置
 │   ├── build.rs                 # 构建脚本
@@ -46,7 +63,7 @@ cliphist/
 ```
 ┌─────────────────────────────────────┐
 │           index.html                │
-│  - 标题栏 (titlebar)                │
+│  （窗口装饰由 OS 接管，无自绘标题栏）│
 │  - 搜索区域 (search-container)      │
 │  - 内容区域 (content/history-list)  │
 │  - 状态栏 (statusbar)              │
@@ -56,12 +73,11 @@ cliphist/
 ```
 
 **组件说明**:
-- `titlebar`: 窗口标题栏，包含清空、最小化、关闭按钮
-- `search-container`: 分类标签页 + 搜索输入框
-- `content/history-list`: 剪贴板历史列表
-- `statusbar`: 状态信息显示
-- `settings-panel`: 设置浮层（模态）
-- `toast`: 临时通知消息
+- `history-list.svelte`: 分类标签页 + 搜索 + 历史列表 + 原生清空确认
+- `history-item.svelte`: 单项，图片按需通过 `get_image_data` 加载
+- `settings-panel.svelte`: 设置面板（含「关于」展示 `getVersion()` 真实版本）
+- `statusbar.svelte`: 状态信息显示
+- `toast.svelte`: 临时通知消息
 
 ### 后端层 (src-tauri/src/lib.rs)
 
@@ -76,13 +92,13 @@ cliphist/
 ├──────────────────────────────────────────────────────────────┤
 │  Commands (IPC):                                            │
 │  ├── get_history()      获取历史记录                        │
-│  ├── search_history()   搜索历史                            │
+│  ├── get_image_data()   按需加载条目图片 (data URL)         │
 │  ├── copy_to_clipboard() 复制到剪贴板                       │
 │  ├── delete_item()      删除单条记录                        │
 │  ├── clear_history()    清空历史                            │
 │  ├── get_settings()     获取设置                            │
 │  ├── save_settings_cmd() 保存设置                           │
-│  └── update_settings()  部分更新设置                        │
+│  └── update_settings()  部分更新设置 (反序列化为 SettingsPatch) │
 ├──────────────────────────────────────────────────────────────┤
 │  Data Structures:                                           │
 │  ├── ClipboardItem - 剪贴板条目                             │
@@ -95,7 +111,7 @@ cliphist/
 
 ### 1. 剪贴板监控 (poll_clipboard)
 
-位于 `lib.rs:261-303`
+位于 `lib.rs` (`poll_clipboard`)
 
 - 使用独立线程每 500ms 轮询剪贴板
 - 支持文本和图片两种类型
@@ -121,7 +137,7 @@ fn poll_clipboard(app_handle, state, counter)
 
 ### 3. 系统托盘
 
-位于 `lib.rs:533-603`
+位于 `tray.rs` (`setup`)
 
 - 左键点击: 显示窗口
 - 菜单项:
@@ -132,7 +148,7 @@ fn poll_clipboard(app_handle, state, counter)
 
 ### 4. 全局快捷键
 
-位于 `lib.rs:441-531`
+位于 `shortcut.rs` (`register_global_shortcut`)
 
 - 默认快捷键: `Ctrl+Shift+V`
 - 支持的修饰符: `Ctrl`, `Shift`, `Alt`, `Win/Meta`
@@ -146,6 +162,13 @@ struct Settings {
     close_to_tray: bool,    // 关闭时最小化到托盘
     zoom_level: f32,        // 窗口缩放 (0.5-2.0)
     hotkey: String,         // 全局快捷键
+    auto_start: bool,       // 开机自启
+    silent_start: bool,     // 静默启动 (启动即隐藏到托盘)
+    double_tap_key: String, // 双击唤醒键 ("", Ctrl, Shift, Alt)
+    retention_days: u32,    // 历史保留天数 (0=永久)
+    window_width: u32,      // 窗口宽度 (用户拖动后保存)
+    window_height: u32,     // 窗口高度
+    window_user_resized: bool, // 用户是否手动改过窗口尺寸
 }
 ```
 
@@ -155,7 +178,7 @@ struct Settings {
 用户操作
     │
     ▼
-main.js (事件监听)
+app.svelte (事件监听)
     │
     ├── click/dblclick → copyItem() / deleteItem()
     │
@@ -177,7 +200,7 @@ main.js (事件监听)
 ```
 ┌─────────────┐         clipboard-changed          ┌─────────────┐
 │   Rust      │ ──────────────────────────────────▶ │   Frontend  │
-│  (poll)     │                                    │  (main.js)  │
+│  (poll)     │                                    │  (app.svelte)│
 └─────────────┘                                    └─────────────┘
         │                                                  ▲
         │ invoke()                                          │
@@ -192,7 +215,10 @@ main.js (事件监听)
 Cargo.toml (Rust):
 ├── tauri = "2"                    # 核心框架
 ├── tauri-plugin-global-shortcut   # 全局快捷键
-├── tauri-plugin-clipboard-manager # 剪贴板管理
+├── tauri-plugin-dialog            # 系统原生对话框 (清空确认)
+├── tauri-plugin-opener            # 外部链接打开
+├── tauri-plugin-autostart         # 开机自启
+├── tauri-plugin-single-instance   # 单例
 ├── arboard = "3"                  # 剪贴板访问
 ├── image = "0.25"                 # 图片处理
 ├── chrono = "0.4"                 # 时间处理
@@ -250,7 +276,7 @@ Cargo.toml (Rust):
 ### 1. 自定义缩放
 - 范围: 50% - 200%
 - 步进: 10%
-- 实现: CSS `zoom` 属性
+- 实现: CSS `transform: scale()` + 外层容器尺寸补偿（跨平台一致；原 Chromium 私有 `zoom` 在 Linux/macOS 的 WebKit/WKWebView 上失效）
 - 持久化: 保存到 settings.json
 
 ### 2. 全局快捷键唤醒
