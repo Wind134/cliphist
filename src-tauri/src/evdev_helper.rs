@@ -43,11 +43,6 @@ fn create_persistent_uinput() -> Option<UInputDevice> {
 
 const DOUBLE_TAP_MS: u128 = 300;
 
-struct DoubleTapState {
-    last_press: Option<Instant>,
-    released: bool,
-}
-
 pub fn run(key_name: &str, socket_path: &str, wayland_display: &str, xdg_runtime_dir: &str) -> ! {
     eprintln!("[cliphist-helper] Starting evdev helper");
     eprintln!("[cliphist-helper] Key: {}", key_name);
@@ -152,7 +147,7 @@ pub fn run(key_name: &str, socket_path: &str, wayland_display: &str, xdg_runtime
         unsafe { libc::epoll_ctl(epoll_fd, libc::EPOLL_CTL_ADD, *fd, &mut event); }
     }
 
-    let mut state = DoubleTapState { last_press: None, released: true };
+    let mut state = crate::state::DoubleTapState { last_press: None, released: true };
     let mut epoll_events: Vec<libc::epoll_event> = Vec::with_capacity(devices.len() + 1);
     let mut cmd_buf = [0u8; 1];
 

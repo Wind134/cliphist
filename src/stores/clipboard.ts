@@ -23,6 +23,7 @@ export const settingsData = writable<Settings>({
   retention_days: 3,
   window_width: 400,
   window_height: 600,
+  window_user_resized: false,
 });
 
 // ── Derived: filtered history ──
@@ -56,7 +57,6 @@ export async function initClipboard() {
     feLog("loaded retention_days=" + s.retention_days);
     settingsData.set(s);
     zoomLevel.set(s.zoom_level);
-    applyZoom(s.zoom_level);
   } catch (e) {
     console.error('Failed to load settings:', e);
   }
@@ -92,7 +92,6 @@ export async function refreshSettings() {
       feLog("refreshSettings retention_days=" + s.retention_days);
 settingsData.set(s);
     zoomLevel.set(s.zoom_level);
-    applyZoom(s.zoom_level);
   } catch (e) {
     console.error('Failed to refresh settings:', e);
   }
@@ -103,18 +102,37 @@ export async function copyItem(id: number): Promise<void> {
   return invoke('copy_to_clipboard', { id });
 }
 
+// Simple in-memory cache for loaded image data URLs. Prevents redundant IPC
+// calls when list items are re-mounted during scrolling.
+const imageCache = new Map<number, string>();
+const IMAGE_CACHE_MAX = 50;
+
+// Load an item's image as a base64 data URL on demand (images are stored as
+// external files on the backend, not inlined into history JSON).
+export async function getImageData(id: number): Promise<string | null> {
+  const cached = imageCache.get(id);
+  if (cached !== undefined) return cached;
+  const result = await invoke<string | null>('get_image_data', { id });
+  if (result) {
+    if (imageCache.size >= IMAGE_CACHE_MAX) {
+      const oldest = imageCache.keys().next().value;
+      if (oldest !== undefined) imageCache.delete(oldest);
+    }
+    imageCache.set(id, result);
+  }
+  return result;
+}
+
 export async function deleteItem(id: number): Promise<void> {
   await invoke('delete_item', { id });
   history.update(h => h.filter(i => i.id !== id));
+  imageCache.delete(id);
 }
 
 export async function clearHistory(): Promise<void> {
   await invoke('clear_history');
   history.set([]);
-}
-
-export async function searchHistory(query: string): Promise<ClipboardItem[]> {
-  return invoke('search_history', { query });
+  imageCache.clear();
 }
 
 export async function getSettings(): Promise<Settings> {
@@ -135,11 +153,6 @@ export async function toggleAutostart(enable: boolean): Promise<void> {
 
 export async function simulatePaste(): Promise<void> {
   return invoke('simulate_paste_cmd');
-}
-
-// ── Zoom ──
-export function applyZoom(zoom: number) {
-  document.documentElement.style.zoom = String(zoom);
 }
 
 // ── Type helpers ──

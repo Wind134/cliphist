@@ -57,21 +57,18 @@ pub fn setup(app: &App) -> Result<(), Box<dyn std::error::Error>> {
                 app.exit(0);
             }
             "show" => {
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
+                crate::focus_main_window(app);
             }
             "settings" => {
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                    let _ = window.emit("open-settings", ());
-                }
+                crate::focus_main_window(app);
+                let _ = app.emit("open-settings", ());
             }
             "clear" => {
                 let state = app.state::<crate::state::AppState>();
                 let mut history = state.history.lock();
+                for item in history.iter() {
+                    crate::clipboard::delete_image_file(&item.image_path);
+                }
                 history.clear();
                 save_history(&history);
                 drop(history);

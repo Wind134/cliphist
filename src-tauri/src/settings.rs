@@ -15,6 +15,25 @@ pub struct Settings {
     pub window_user_resized: bool,
 }
 
+/// A partial update to [`Settings`]. Every field is optional so the frontend
+/// can send only the keys it wants to change. The `update_settings` command
+/// deserializes its payload directly into this struct, which makes field
+/// extraction type-safe — no manual `serde_json::Value::get` + `as_*` casting
+/// in the command body.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SettingsPatch {
+    pub close_to_tray: Option<bool>,
+    pub zoom_level: Option<f32>,
+    pub hotkey: Option<String>,
+    pub auto_start: Option<bool>,
+    pub silent_start: Option<bool>,
+    pub double_tap_key: Option<String>,
+    pub retention_days: Option<u32>,
+    pub window_width: Option<u32>,
+    pub window_height: Option<u32>,
+    pub window_user_resized: Option<bool>,
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Settings {

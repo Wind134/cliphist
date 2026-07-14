@@ -8,9 +8,10 @@ mod shortcut;
 mod state;
 mod tray;
 
+use base64::Engine;
 use clipboard::ClipboardItem;
 use image::ImageEncoder;
-use settings::Settings;
+use settings::{Settings, SettingsPatch};
 use state::AppState;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::{AppHandle, Emitter, Manager};
@@ -18,17 +19,6 @@ use tauri::{AppHandle, Emitter, Manager};
 #[tauri::command]
 fn get_history(state: tauri::State<'_, AppState>) -> Vec<ClipboardItem> {
     state.history.lock().clone()
-}
-
-#[tauri::command]
-fn search_history(state: tauri::State<'_, AppState>, query: String) -> Vec<ClipboardItem> {
-    let history = state.history.lock();
-    let query_lower = query.to_lowercase();
-    history
-        .iter()
-        .filter(|item| item.content.to_lowercase().contains(&query_lower))
-        .cloned()
-        .collect()
 }
 
 #[tauri::command]
@@ -40,20 +30,37 @@ fn copy_to_clipboard(state: tauri::State<'_, AppState>, id: usize) -> Result<(),
 #[tauri::command]
 fn delete_item(state: tauri::State<'_, AppState>, id: usize) {
     let mut history = state.history.lock();
-    history.retain(|item| item.id != id);
+    if let Some(pos) = history.iter().position(|item| item.id == id) {
+        let removed = history.remove(pos);
+        clipboard::delete_image_file(&removed.image_path);
+    }
     clipboard::save_history(&history);
 }
 
 #[tauri::command]
 fn clear_history(state: tauri::State<'_, AppState>) {
     let mut history = state.history.lock();
+    for item in history.iter() {
+        clipboard::delete_image_file(&item.image_path);
+    }
     history.clear();
     clipboard::save_history(&history);
 }
 
+/// Load an item's image as a `data:image/png;base64,...` URL, on demand.
+/// Only the currently visible images are fetched, keeping memory low.
 #[tauri::command]
-fn get_item_count(state: tauri::State<'_, AppState>) -> usize {
-    state.history.lock().len()
+fn get_image_data(state: tauri::State<'_, AppState>, id: usize) -> Option<String> {
+    let rel = {
+        let history = state.history.lock();
+        history
+            .iter()
+            .find(|i| i.id == id)
+            .and_then(|i| i.image_path.clone())
+    }?;
+    let bytes = clipboard::read_image_file(&rel)?;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Some(format!("data:image/png;base64,{}", b64))
 }
 
 #[tauri::command]
@@ -70,97 +77,83 @@ fn save_settings_cmd(settings: Settings) {
 
 #[tauri::command]
 fn update_settings(app: tauri::AppHandle, partial: serde_json::Value) -> Result<Settings, String> {
+    // Single type-safe extraction step: deserialize the payload into a patch
+    // struct instead of hand-peeling each key out of the JSON `Value`.
+    let patch: SettingsPatch = serde_json::from_value(partial)
+        .map_err(|e| format!("无效的设置格式: {}", e))?;
     let mut current = settings::load_settings();
 
-    if let Some(v) = partial.get("close_to_tray").and_then(|v| v.as_bool()) {
+    // Plain fields: apply directly, no validation needed.
+    if let Some(v) = patch.close_to_tray {
         current.close_to_tray = v;
     }
-    if let Some(v) = partial.get("zoom_level").and_then(|v| v.as_f64()) {
-        let zoom = v as f32;
-        if zoom >= consts::MIN_ZOOM_LEVEL && zoom <= consts::MAX_ZOOM_LEVEL {
-            current.zoom_level = zoom;
+    if let Some(v) = patch.auto_start {
+        current.auto_start = v;
+    }
+    if let Some(v) = patch.silent_start {
+        current.silent_start = v;
+    }
+    if let Some(v) = patch.window_user_resized {
+        current.window_user_resized = v;
+    }
+
+    // Bounded numeric fields: clamp to their allowed ranges.
+    if let Some(v) = patch.zoom_level {
+        if v >= consts::MIN_ZOOM_LEVEL && v <= consts::MAX_ZOOM_LEVEL {
+            current.zoom_level = v;
         }
     }
-    if let Some(v) = partial.get("hotkey").and_then(|v| v.as_str()) {
-        if shortcut::validate_shortcut(v) {
-            current.hotkey = v.to_string();
+    if let Some(v) = patch.retention_days {
+        if v <= 365 {
+            current.retention_days = v;
+        }
+    }
+    if let Some(v) = patch.window_width {
+        if v >= 320 && v <= 9999 {
+            current.window_width = v;
+        }
+    }
+    if let Some(v) = patch.window_height {
+        if v >= 400 && v <= 9999 {
+            current.window_height = v;
+        }
+    }
+
+    // Side-effecting fields: validate, then fire the OS-level effect.
+    if let Some(v) = patch.hotkey {
+        if shortcut::validate_shortcut(&v) {
+            current.hotkey = v.clone();
             // Register new shortcut immediately
-            let _ = shortcut::register_global_shortcut(&app, v);
+            let _ = shortcut::register_global_shortcut(&app, &v);
         } else {
             return Err(format!("无效的快捷键格式: {}", v));
         }
     }
-    if let Some(v) = partial.get("auto_start").and_then(|v| v.as_bool()) {
-        current.auto_start = v;
-    }
-    if let Some(v) = partial.get("silent_start").and_then(|v| v.as_bool()) {
-        current.silent_start = v;
-    }
-    if let Some(v) = partial.get("double_tap_key").and_then(|v| v.as_str()) {
+    if let Some(v) = patch.double_tap_key {
         let valid_keys = ["", "Ctrl", "Shift", "Alt"];
-        if valid_keys.contains(&v) {
-            let old = current.double_tap_key.clone();
-            current.double_tap_key = v.to_string();
-            if old != v {
-                shortcut::stop_and_wait_double_tap_listener(2000);
-                if !v.is_empty() {
-                    let app_clone = app.clone();
-                    let key = v.to_string();
-                    std::thread::spawn(move || {
-                        if let Err(e) = shortcut::start_double_tap_listener(&key, move || {
-                            let h = app_clone.clone();
-                            std::thread::spawn(move || {
-                                if let Some(w) = h.get_webview_window("main") {
-                                    let _ = w.set_always_on_top(true);
-                                    let _ = w.hide();
-                                    std::thread::sleep(std::time::Duration::from_millis(30));
-                                    let _ = w.show();
-                                    let _ = w.set_focus();
-                                }
-                                std::thread::sleep(std::time::Duration::from_millis(500));
-                                if let Some(w) = h.get_webview_window("main") {
-                                    let _ = w.set_always_on_top(false);
-                                }
-                            });
-                        }) {
-                            log::write_log(&format!("Failed to restart double tap listener: {}", e));
-                        }
-                    });
-                    let mon = app.clone();
-                    std::thread::spawn(move || {
-                        let mut was = false;
-                        let my_gen = shortcut::listener_generation();
-                        loop {
-                            std::thread::sleep(std::time::Duration::from_millis(200));
-                            if shortcut::listener_generation() != my_gen {
-                                break;
-                            }
-                            let now = shortcut::is_helper_connected();
-                            if now != was {
-                                was = now;
-                                let _ = mon.emit("helper-status", now);
-                            }
-                        }
-                    });
-                }
-            }
-        } else {
+        if !valid_keys.contains(&v.as_str()) {
             return Err(format!("无效的双击键: {}", v));
         }
-    }
-    if let Some(v) = partial.get("retention_days").and_then(|v| v.as_u64()) {
-        if v <= 365 {
-            current.retention_days = v as u32;
-        }
-    }
-    if let Some(v) = partial.get("window_width").and_then(|v| v.as_u64()) {
-        if v >= 320 && v <= 9999 {
-            current.window_width = v as u32;
-        }
-    }
-    if let Some(v) = partial.get("window_height").and_then(|v| v.as_u64()) {
-        if v >= 400 && v <= 9999 {
-            current.window_height = v as u32;
+        let old = current.double_tap_key.clone();
+        current.double_tap_key = v.clone();
+        if old != v {
+            shortcut::stop_and_wait_double_tap_listener(2000);
+            if !v.is_empty() {
+                // The listener callback only sends `()` over the channel;
+                // the resident worker thread (spawned at startup) performs
+                // the actual window raise. No thread per double-tap.
+                let key = v.clone();
+                let tx = app.state::<AppState>().window_action_tx.clone();
+                let app_clone = app.clone();
+                std::thread::spawn(move || {
+                    if let Err(e) = shortcut::start_double_tap_listener(&key, move || {
+                        let _ = tx.send(());
+                    }) {
+                        log::write_log(&format!("Failed to restart double tap listener: {}", e));
+                    }
+                });
+                spawn_helper_status_monitor(app_clone);
+            }
         }
     }
 
@@ -210,6 +203,64 @@ fn simulate_paste_cmd() -> Result<(), String> {
     shortcut::simulate_paste()
 }
 
+/// Show and focus the main window (used by tray, single-instance, and the
+/// global shortcut). Sends a request to the resident window-action worker
+/// which performs the always-on-top restack dance — single source of truth
+/// for "bring window to front".
+pub fn focus_main_window(app: &AppHandle) {
+    let _ = app.state::<AppState>().window_action_tx.send(());
+}
+
+/// Resident worker: drains window-action requests and performs the
+/// (slightly heavy, because it must bounce always_on_top + hide/show)
+/// window raise. Triggers only send `()` over the channel, so no thread
+/// is spawned per double-tap / shortcut.
+fn spawn_window_action_worker(app: AppHandle, rx: std::sync::mpsc::Receiver<()>) {
+    std::thread::Builder::new()
+        .name("window-action-worker".into())
+        .spawn(move || {
+            for _ in rx {
+                if let Some(w) = app.get_webview_window("main") {
+                    // Force a restack on compositors that ignore set_focus:
+                    // pin on top, hide, then show + focus.
+                    let _ = w.set_always_on_top(true);
+                    let _ = w.hide();
+                    std::thread::sleep(std::time::Duration::from_millis(30));
+                    let _ = w.show();
+                    let _ = w.set_focus();
+                }
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.set_always_on_top(false);
+                }
+            }
+        })
+        .ok();
+}
+
+/// Monitor the evdev helper connection and emit `helper-status` so the UI
+/// can show whether Linux double-tap is authorized.
+fn spawn_helper_status_monitor(app: AppHandle) {
+    std::thread::Builder::new()
+        .name("helper-status-monitor".into())
+        .spawn(move || {
+            let mut was = false;
+            let my_gen = shortcut::listener_generation();
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                if shortcut::listener_generation() != my_gen {
+                    break;
+                }
+                let now = shortcut::is_helper_connected();
+                if now != was {
+                    was = now;
+                    let _ = app.emit("helper-status", now);
+                }
+            }
+        })
+        .ok();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     std::panic::set_hook(Box::new(|panic_info| {
@@ -223,28 +274,34 @@ pub fn run() {
     let counter = history.iter().map(|i| i.id).max().unwrap_or(0);
     log::write_log("counter computed");
 
+    // Channel feeding the single resident window-action worker (see
+    // `spawn_window_action_worker`). Triggers push `()` instead of
+    // spawning their own thread.
+    let (window_action_tx, window_action_rx) = std::sync::mpsc::channel::<()>();
+
     let state = AppState {
         history: std::sync::Arc::new(parking_lot::Mutex::new(history)),
         counter: std::sync::Arc::new(parking_lot::Mutex::new(counter)),
+        window_action_tx,
     };
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            let _ = app.get_webview_window("main").map(|w| {
-                let _ = w.show();
-                let _ = w.set_focus();
-            });
+            crate::focus_main_window(app);
         }))
         .manage(state)
-        .setup(|app| {
+        .setup(move |app| {
             log::write_log("setup start");
+
+            // Spawn the single resident window-action worker once.
+            crate::spawn_window_action_worker(app.handle().clone(), window_action_rx);
 
             log::write_log("building tray icon");
             if let Err(e) = tray::setup(app) {
@@ -287,17 +344,20 @@ pub fn run() {
                    let _ = window.set_size(tauri::PhysicalSize::new(s.window_width, s.window_height));
                }
 
-                if s.close_to_tray {
-                    let app_handle = app.handle().clone();
-                    window.on_window_event(move |event| {
-                        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                // Always handle CloseRequested so the native close button
+                // respects the (possibly changed) "close to tray" setting.
+                let app_handle = app.handle().clone();
+                window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        let close_to_tray = settings::load_settings().close_to_tray;
+                        if close_to_tray {
                             api.prevent_close();
                             if let Some(win) = app_handle.get_webview_window("main") {
                                 let _ = win.hide();
                             }
                         }
-                    });
-                }
+                    }
+                });
 
                 // Save window size on resize (throttled to 500ms)
                 let last_save = AtomicU64::new(0);
@@ -358,32 +418,18 @@ pub fn run() {
                 poll_clipboard(app_handle, hist, cnt);
             });
 
-            // Start double-tap listener if configured
+            // Start double-tap listener if configured. Its callback only
+            // sends a `()` over the channel; the resident worker thread
+            // (spawned above) performs the actual window raise. Avoids
+            // spawning a thread per double-tap.
             if !s.double_tap_key.is_empty() {
-                let app_handle = app.handle().clone();
                 let key = s.double_tap_key.clone();
+                // `state` was already moved into `.manage(state)` above, so
+                // fetch the sender through the app handle instead.
+                let tx = app.state::<AppState>().window_action_tx.clone();
                 std::thread::spawn(move || {
                     if let Err(e) = shortcut::start_double_tap_listener(&key, move || {
-                        // IMPORTANT: This callback runs inside the low-level keyboard hook
-                        // thread (rdev::grab / WH_KEYBOARD_LL). Offload all window operations
-                        // to a separate thread so the hook returns immediately — blocking the
-                        // hook can cause Windows to skip subsequent key events.
-                        let app_handle = app_handle.clone();
-                        std::thread::spawn(move || {
-                            if let Some(window) = app_handle.get_webview_window("main") {
-                                // Set always_on_top and hide-then-show to force restack
-                                let _ = window.set_always_on_top(true);
-                                let _ = window.hide();
-                                std::thread::sleep(std::time::Duration::from_millis(30));
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
-                            // Release always_on_top after 500ms so the window doesn't stay pinned
-                            std::thread::sleep(std::time::Duration::from_millis(500));
-                            if let Some(window) = app_handle.get_webview_window("main") {
-                                let _ = window.set_always_on_top(false);
-                            }
-                        });
+                        let _ = tx.send(());
                     }) {
                         log::write_log(&format!("Failed to start double tap listener: {}", e));
                     }
@@ -395,11 +441,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_history,
-            search_history,
             copy_to_clipboard,
             delete_item,
             clear_history,
-            get_item_count,
             get_settings,
             save_settings_cmd,
             update_settings,
@@ -407,6 +451,7 @@ pub fn run() {
             toggle_autostart,
             fe_log,
             simulate_paste_cmd,
+            get_image_data,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -425,9 +470,22 @@ fn poll_clipboard(
     let mut last_text_hash: u64 = 0;
     let mut last_image_hash: u64 = 0;
     let mut last_clean_time = std::time::Instant::now();
+    let mut last_save = std::time::Instant::now();
+    let save_interval = std::time::Duration::from_millis(400);
+    let mut pending_save = false;
 
     loop {
         std::thread::sleep(std::time::Duration::from_millis(500));
+
+        // Flush any pending debounced save once the interval has elapsed.
+        if pending_save && last_save.elapsed() >= save_interval {
+            {
+                let h = state.lock();
+                clipboard::save_history(&h);
+            }
+            last_save = std::time::Instant::now();
+            pending_save = false;
+        }
 
         // 每小时清理一次过期记录
         if last_clean_time.elapsed().as_secs() >= 3600 {
@@ -463,8 +521,8 @@ fn poll_clipboard(
                         content_type,
                         timestamp: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
                         preview: clipboard::make_preview(&text),
-                        char_count: text.len(),
-                        image_data: None,
+                        char_count: text.chars().count(),
+                        image_path: None,
                         image_width: None,
                         image_height: None,
                         html_content,
@@ -474,9 +532,22 @@ fn poll_clipboard(
                         let mut history = state.lock();
                         history.insert(0, item);
                         if history.len() > consts::MAX_HISTORY {
-                            history.truncate(consts::MAX_HISTORY);
+                            // Drop the tail beyond the cap and delete their image files.
+                            let excess = history.split_off(consts::MAX_HISTORY);
+                            for it in &excess {
+                                clipboard::delete_image_file(&it.image_path);
+                            }
                         }
-                        clipboard::save_history(&history);
+                        // Debounced persist: flush immediately if the interval has
+                        // elapsed, otherwise mark pending for the loop-top flush.
+                        let now = std::time::Instant::now();
+                        if now.duration_since(last_save) >= save_interval {
+                            clipboard::save_history(&history);
+                            last_save = now;
+                            pending_save = false;
+                        } else {
+                            pending_save = true;
+                        }
                         let _ = app_handle.emit(
                             "clipboard-changed",
                             &history[..std::cmp::min(5, history.len())],
@@ -525,9 +596,6 @@ fn poll_clipboard(
                     continue;
                 }
 
-                let b64 =
-                    base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &png_bytes);
-
                 let id = {
                     let mut c = counter.lock();
                     *c += 1;
@@ -536,6 +604,9 @@ fn poll_clipboard(
 
                 let preview = format!("图片 {}x{}", img.width, img.height);
 
+                // Externalize the image: write a PNG file and store only the path.
+                let image_path = clipboard::save_image_file(id, &png_bytes);
+
                 let item = ClipboardItem {
                     id,
                     content: preview.clone(),
@@ -543,7 +614,7 @@ fn poll_clipboard(
                     timestamp: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
                     preview,
                     char_count: png_bytes.len(),
-                    image_data: Some(b64),
+                    image_path,
                     image_width: Some(img.width as u32),
                     image_height: Some(img.height as u32),
                     html_content: None,
@@ -553,9 +624,22 @@ fn poll_clipboard(
                     let mut history = state.lock();
                     history.insert(0, item);
                     if history.len() > consts::MAX_HISTORY {
-                        history.truncate(consts::MAX_HISTORY);
+                        // Drop the tail beyond the cap and delete their image files.
+                        let excess = history.split_off(consts::MAX_HISTORY);
+                        for it in &excess {
+                            clipboard::delete_image_file(&it.image_path);
+                        }
                     }
-                    clipboard::save_history(&history);
+                    // Debounced persist: flush immediately if the interval has
+                    // elapsed, otherwise mark pending for the loop-top flush.
+                    let now = std::time::Instant::now();
+                    if now.duration_since(last_save) >= save_interval {
+                        clipboard::save_history(&history);
+                        last_save = now;
+                        pending_save = false;
+                    } else {
+                        pending_save = true;
+                    }
                     let _ = app_handle.emit(
                         "clipboard-changed",
                         &history[..std::cmp::min(5, history.len())],
@@ -596,18 +680,25 @@ fn clean_expired_history(
 
     let mut history = state.lock();
     let before = history.len();
+    let mut removed_images: Vec<Option<String>> = Vec::new();
     history.retain(|item| {
-        if let Some(dt) = clipboard::parse_timestamp(&item.timestamp) {
+        let keep = if let Some(dt) = clipboard::parse_timestamp(&item.timestamp) {
             dt >= cutoff.naive_local()
         } else {
             true
+        };
+        if !keep {
+            removed_images.push(item.image_path.clone());
         }
+        keep
     });
     if history.len() != before {
         clipboard::save_history(&history);
-        log::write_log(&format!(
-            "Cleaned {} expired history items",
-            before - history.len()
-        ));
+        let cleaned = before - history.len();
+        drop(history);
+        for path in &removed_images {
+            clipboard::delete_image_file(path);
+        }
+        log::write_log(&format!("Cleaned {} expired history items", cleaned));
     }
 }

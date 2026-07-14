@@ -1,5 +1,4 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use tauri::Manager;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
 
 // ============================================================================
@@ -107,10 +106,7 @@ pub fn register_global_shortcut(app: &tauri::AppHandle, shortcut_str: &str) -> R
         app.global_shortcut()
             .on_shortcut(shortcut, move |_app, _shortcut, _event| {
                 crate::log::write_log("Global shortcut triggered");
-                if let Some(window) = app_handle.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
+                crate::focus_main_window(&app_handle);
             })
             .map_err(|e| e.to_string())?;
         crate::log::write_log(&format!("Registered global shortcut: {}", shortcut_str));
@@ -125,13 +121,8 @@ pub fn register_global_shortcut(app: &tauri::AppHandle, shortcut_str: &str) -> R
 #[cfg_attr(target_os = "linux", allow(dead_code))]
 const DOUBLE_TAP_MS: u128 = 300;
 
-#[cfg_attr(target_os = "linux", allow(dead_code))]
-struct DoubleTapState {
-    last_press: Option<std::time::Instant>,
-    /// Whether the key has been released since the last press.
-    /// This prevents key-repeat (long-press) from being treated as a double-tap.
-    released: bool,
-}
+// `DoubleTapState` is defined once in `crate::state` and re-used by the
+// platform-specific listeners below (each module has its own `use`).
 
 // ============================================================================
 // Platform-specific: Linux — evdev-based double-tap + uinput simulate_paste
@@ -320,7 +311,7 @@ mod linux_impl {
 
 #[cfg(target_os = "windows")]
 mod windows_impl {
-    use super::DoubleTapState;
+    use crate::state::DoubleTapState;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
     use std::time::Instant;
@@ -465,6 +456,7 @@ pub fn start_double_tap_listener<F: Fn() + Send + Sync + 'static>(
     Err("Double-tap listener is not supported on macOS".into())
 }
 
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 pub fn stop_double_tap_listener() {
     LISTENER_RUNNING.store(false, Ordering::SeqCst);
     HELPER_CONNECTED.store(false, Ordering::SeqCst);
@@ -499,6 +491,7 @@ pub fn is_helper_connected() -> bool {
     HELPER_CONNECTED.load(Ordering::SeqCst)
 }
 
+#[allow(dead_code)]
 pub fn is_listener_running() -> bool {
     LISTENER_RUNNING.load(Ordering::SeqCst)
 }
