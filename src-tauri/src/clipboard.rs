@@ -134,11 +134,16 @@ pub fn make_preview(content: &str) -> String {
 }
 
 pub fn get_content_type(content: &str) -> String {
-    if content.contains("http://") || content.contains("https://") || content.contains("www.") {
+    let t = content.trim();
+    // A link is a single bare token that starts with a scheme or "www."
+    // (no embedded spaces). The old `contains("www.")` check misclassified any
+    // text merely mentioning "www." as a link.
+    let is_link = t.starts_with("http://")
+        || t.starts_with("https://")
+        || (t.starts_with("www.") && t.contains('.') && !t.contains(' '));
+    if is_link {
         "link".to_string()
-    } else if content.len() > 100 && content.contains('\n') {
-        "text".to_string()
-    } else if content.len() > 50 {
+    } else if t.chars().count() > 50 {
         "text".to_string()
     } else {
         "short".to_string()

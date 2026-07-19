@@ -27,10 +27,6 @@ use evdev_rs::enums::{EventCode, EV_KEY, EV_SYN};
 use evdev_rs::uinput::UInputDevice;
 use evdev_rs::{Device, InputEvent, ReadFlag, ReadStatus, TimeVal};
 
-/// Persistent uinput device, created once and reused for all paste operations.
-/// Must stay alive: transient devices are never registered by libinput/KWin.
-static mut PERSISTENT_UINPUT: Option<UInputDevice> = None;
-
 fn create_persistent_uinput() -> Option<UInputDevice> {
     let dev = Device::new()?;
     dev.set_name("ClipHist Virtual Keyboard");
@@ -148,6 +144,12 @@ pub fn run(key_name: &str, socket_path: &str, wayland_display: &str, xdg_runtime
     }
 
     let mut state = crate::state::DoubleTapState { last_press: None, released: true };
+    // Persistent uinput device, created once on first paste and reused for all
+    // subsequent ones. Must stay alive: transient devices are never registered
+    // by libinput/KWin. Kept as a local instead of a `static mut` — the helper
+    // is single-threaded, so a local passed by reference is both safe and
+    // avoids the `static_mut_refs` warnings a mutable static would emit.
+    let mut persistent_uinput: Option<UInputDevice> = None;
     let mut epoll_events: Vec<libc::epoll_event> = Vec::with_capacity(devices.len() + 1);
     let mut cmd_buf = [0u8; 1];
 
@@ -170,7 +172,7 @@ pub fn run(key_name: &str, socket_path: &str, wayland_display: &str, xdg_runtime
                     match stream.read(&mut cmd_buf) {
                         Ok(1) if cmd_buf[0] == b'P' => {
                             eprintln!("[cliphist-helper] Paste command received");
-                            simulate_paste_injection(&wayland_display, &xdg_runtime_dir);
+                            simulate_paste_injection(&mut persistent_uinput, &wayland_display, &xdg_runtime_dir);
                         }
                         Ok(0) => {
                             eprintln!("[cliphist-helper] Main process closed socket, exiting");
@@ -240,19 +242,21 @@ pub fn run(key_name: &str, socket_path: &str, wayland_display: &str, xdg_runtime
     std::process::exit(0);
 }
 
-fn simulate_paste_injection(wayland_display: &str, xdg_runtime_dir: &str) {
+fn simulate_paste_injection(
+    uinput: &mut Option<UInputDevice>,
+    wayland_display: &str,
+    xdg_runtime_dir: &str,
+) {
     // Ensure persistent uinput device is alive (created once, reused forever).
-    unsafe {
-        if PERSISTENT_UINPUT.is_none() {
-            PERSISTENT_UINPUT = create_persistent_uinput();
-            if PERSISTENT_UINPUT.is_some() {
-                eprintln!("[cliphist-helper] Persistent uinput created, waiting 500ms for libinput...");
-                std::thread::sleep(std::time::Duration::from_millis(500));
-            }
+    if uinput.is_none() {
+        *uinput = create_persistent_uinput();
+        if uinput.is_some() {
+            eprintln!("[cliphist-helper] Persistent uinput created, waiting 500ms for libinput...");
+            std::thread::sleep(std::time::Duration::from_millis(500));
         }
     }
 
-    if try_uinput_paste() {
+    if try_uinput_paste(uinput) {
         eprintln!("[cliphist-helper] Paste succeeded via uinput");
         return;
     }
@@ -265,12 +269,10 @@ fn simulate_paste_injection(wayland_display: &str, xdg_runtime_dir: &str) {
     eprintln!("[cliphist-helper] All paste strategies failed; clipboard is populated, user can paste manually");
 }
 
-fn try_uinput_paste() -> bool {
-    unsafe {
-        match &PERSISTENT_UINPUT {
-            Some(uidev) => { inject_ctrl_v_uinput(uidev); true }
-            None => false
-        }
+fn try_uinput_paste(uinput: &mut Option<UInputDevice>) -> bool {
+    match uinput {
+        Some(uidev) => { inject_ctrl_v_uinput(uidev); true }
+        None => false
     }
 }
 

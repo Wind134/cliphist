@@ -483,10 +483,10 @@ fn poll_clipboard(
 
         // Flush any pending debounced save once the interval has elapsed.
         if pending_save && last_save.elapsed() >= save_interval {
-            {
-                let h = state.lock();
-                clipboard::save_history(&h);
-            }
+            // Clone under the lock, persist outside it so get_history/copy aren't
+            // blocked while the JSON is serialized and written to disk.
+            let snapshot = state.lock().clone();
+            clipboard::save_history(&snapshot);
             last_save = std::time::Instant::now();
             pending_save = false;
         }
@@ -540,29 +540,40 @@ fn poll_clipboard(
                     };
 
                     {
-                        let mut history = state.lock();
-                        history.insert(0, item);
-                        if history.len() > consts::MAX_HISTORY {
-                            // Drop the tail beyond the cap and delete their image files.
-                            let excess = history.split_off(consts::MAX_HISTORY);
-                            for it in &excess {
-                                clipboard::delete_image_file(&it.image_path);
-                            }
+                        // Hold the lock only for the mutation + cheap snapshots;
+                        // serialize/write/emit afterwards so get_history/copy aren't
+                        // blocked on disk I/O or IPC.
+                        let (top, save_snapshot, excess_images) = {
+                            let mut history = state.lock();
+                            history.insert(0, item);
+                            let excess_images: Vec<Option<String>> =
+                                if history.len() > consts::MAX_HISTORY {
+                                    let excess = history.split_off(consts::MAX_HISTORY);
+                                    excess.iter().map(|it| it.image_path.clone()).collect()
+                                } else {
+                                    Vec::new()
+                                };
+                            let top: Vec<ClipboardItem> =
+                                history[..std::cmp::min(5, history.len())].to_vec();
+                            let now = std::time::Instant::now();
+                            let save_snapshot = if now.duration_since(last_save) >= save_interval {
+                                pending_save = false;
+                                Some(history.clone())
+                            } else {
+                                pending_save = true;
+                                None
+                            };
+                            (top, save_snapshot, excess_images)
+                        };
+
+                        if let Some(snap) = save_snapshot {
+                            clipboard::save_history(&snap);
+                            last_save = std::time::Instant::now();
                         }
-                        // Debounced persist: flush immediately if the interval has
-                        // elapsed, otherwise mark pending for the loop-top flush.
-                        let now = std::time::Instant::now();
-                        if now.duration_since(last_save) >= save_interval {
-                            clipboard::save_history(&history);
-                            last_save = now;
-                            pending_save = false;
-                        } else {
-                            pending_save = true;
+                        for img in &excess_images {
+                            clipboard::delete_image_file(img);
                         }
-                        let _ = app_handle.emit(
-                            "clipboard-changed",
-                            &history[..std::cmp::min(5, history.len())],
-                        );
+                        let _ = app_handle.emit("clipboard-changed", &top);
                     }
                 }
             }
@@ -638,29 +649,40 @@ fn poll_clipboard(
                 };
 
                 {
-                    let mut history = state.lock();
-                    history.insert(0, item);
-                    if history.len() > consts::MAX_HISTORY {
-                        // Drop the tail beyond the cap and delete their image files.
-                        let excess = history.split_off(consts::MAX_HISTORY);
-                        for it in &excess {
-                            clipboard::delete_image_file(&it.image_path);
-                        }
+                    // Hold the lock only for the mutation + cheap snapshots;
+                    // serialize/write/emit afterwards so get_history/copy aren't
+                    // blocked on disk I/O or IPC.
+                    let (top, save_snapshot, excess_images) = {
+                        let mut history = state.lock();
+                        history.insert(0, item);
+                        let excess_images: Vec<Option<String>> =
+                            if history.len() > consts::MAX_HISTORY {
+                                let excess = history.split_off(consts::MAX_HISTORY);
+                                excess.iter().map(|it| it.image_path.clone()).collect()
+                            } else {
+                                Vec::new()
+                            };
+                        let top: Vec<ClipboardItem> =
+                            history[..std::cmp::min(5, history.len())].to_vec();
+                        let now = std::time::Instant::now();
+                        let save_snapshot = if now.duration_since(last_save) >= save_interval {
+                            pending_save = false;
+                            Some(history.clone())
+                        } else {
+                            pending_save = true;
+                            None
+                        };
+                        (top, save_snapshot, excess_images)
+                    };
+
+                    if let Some(snap) = save_snapshot {
+                        clipboard::save_history(&snap);
+                        last_save = std::time::Instant::now();
                     }
-                    // Debounced persist: flush immediately if the interval has
-                    // elapsed, otherwise mark pending for the loop-top flush.
-                    let now = std::time::Instant::now();
-                    if now.duration_since(last_save) >= save_interval {
-                        clipboard::save_history(&history);
-                        last_save = now;
-                        pending_save = false;
-                    } else {
-                        pending_save = true;
+                    for img in &excess_images {
+                        clipboard::delete_image_file(img);
                     }
-                    let _ = app_handle.emit(
-                        "clipboard-changed",
-                        &history[..std::cmp::min(5, history.len())],
-                    );
+                    let _ = app_handle.emit("clipboard-changed", &top);
                 }
             }
         }
