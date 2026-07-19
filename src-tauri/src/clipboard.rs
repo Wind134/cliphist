@@ -2,6 +2,7 @@ use arboard::Clipboard;
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -146,6 +147,49 @@ pub fn parse_timestamp(ts: &str) -> Option<chrono::NaiveDateTime> {
     None
 }
 
+// ── Self-write tracking ──────────────────────────────────────────────────────
+//
+// When the user copies an item *from this manager*, we write to the OS
+// clipboard. The poll loop would otherwise read that content back and record
+// it as a brand-new history entry — duplicating the item. To prevent that,
+// `copy_item_to_clipboard` stores the hash of whatever it just wrote here,
+// and the poll loop consumes the marker: if the polled content's hash matches,
+// the poll updates its "last seen" hash and skips the insert.
+
+static LAST_SELF_SET_HASH: AtomicU64 = AtomicU64::new(0);
+
+/// Stable hash over a text payload. Must match the hash used by the poll loop
+/// so a self-write marker is recognized.
+pub(crate) fn simple_hash(s: &str) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut h = DefaultHasher::new();
+    s.hash(&mut h);
+    h.finish()
+}
+
+/// Stable hash over an `arboard` image payload. Must match the hash used by
+/// the poll loop.
+pub(crate) fn img_hash(img: &arboard::ImageData) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut h = DefaultHasher::new();
+    img.bytes.hash(&mut h);
+    h.finish()
+}
+
+/// Record the hash of content we just wrote to the OS clipboard, so the poll
+/// loop can recognize and skip re-recording it.
+pub(crate) fn mark_self_set(hash: u64) {
+    LAST_SELF_SET_HASH.store(hash, Ordering::SeqCst);
+}
+
+/// Atomically read and clear the pending self-write marker. Returns 0 if none
+/// is pending. The marker is consumed even on mismatch (it is then stale).
+pub(crate) fn take_self_set_hash() -> u64 {
+    LAST_SELF_SET_HASH.swap(0, Ordering::SeqCst)
+}
+
 pub fn copy_item_to_clipboard(history: &[ClipboardItem], id: usize) -> Result<(), String> {
     let item = history
         .iter()
@@ -168,6 +212,9 @@ pub fn copy_item_to_clipboard(history: &[ClipboardItem], id: usize) -> Result<()
                 height: h as usize,
                 bytes: rgba.into_raw().into(),
             };
+            // Mark this exact image as self-written so the poll loop doesn't
+            // re-record it as a new history entry.
+            mark_self_set(img_hash(&img_data));
             clipboard.set_image(img_data).map_err(|e| e.to_string())?;
             return Ok(());
         }
@@ -175,11 +222,16 @@ pub fn copy_item_to_clipboard(history: &[ClipboardItem], id: usize) -> Result<()
 
     if let Some(ref html) = item.html_content {
         let _ = clipboard.set().html(html, Some(&item.content));
+        // The poll loop reads back the plain-text alt (`item.content`), so mark
+        // that hash to suppress the duplicate.
+        mark_self_set(simple_hash(&item.content));
         return Ok(());
     }
 
     clipboard
         .set_text(&item.content)
         .map_err(|e| e.to_string())?;
+    // Suppress the poll loop re-recording what we just wrote.
+    mark_self_set(simple_hash(&item.content));
     Ok(())
 }

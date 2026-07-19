@@ -34,6 +34,12 @@ pub fn parse_shortcut(shortcut_str: &str) -> Option<ParsedShortcut> {
         }
     }
 
+    // Require at least one modifier. A bare key (e.g. "V") would register as a
+    // global shortcut and hijack that key system-wide, breaking normal typing.
+    if modifiers.is_empty() {
+        return None;
+    }
+
     code.map(|c| ParsedShortcut { modifiers, code: c })
 }
 

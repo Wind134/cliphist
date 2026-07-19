@@ -72,7 +72,11 @@ pub fn setup(app: &App) -> Result<(), Box<dyn std::error::Error>> {
                 history.clear();
                 save_history(&history);
                 drop(history);
-                let _ = app.emit("clipboard-changed", Vec::<ClipboardItem>::new());
+                // Tell the frontend to replace its whole list with the (now
+                // empty) history. The `clipboard-changed` event is incremental
+                // (top-5 merge) and silently no-ops on an empty payload, so a
+                // distinct full-replace event is needed to actually clear the UI.
+                let _ = app.emit("history-replace", Vec::<ClipboardItem>::new());
                 log::write_log("History cleared from tray menu");
             }
             _ => {}

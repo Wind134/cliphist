@@ -76,6 +76,15 @@ export async function initClipboard() {
     });
   });
 
+  // Full-list replacement: used by tray "clear" (empty payload) and by the
+  // hourly retention cleanup (full remaining list). The incremental
+  // `clipboard-changed` event only carries the top 5, so it can neither clear
+  // the view nor convey deletions beyond the head — hence this separate event.
+  await listen<ClipboardItem[]>('history-replace', (event) => {
+    history.set(event.payload);
+    imageCache.clear();
+  });
+
   await listen<boolean>('helper-status', (event) => {
     helperConnected.set(event.payload);
   });
