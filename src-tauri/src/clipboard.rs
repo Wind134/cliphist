@@ -58,14 +58,26 @@ pub fn get_storage_path() -> PathBuf {
 /// Write a clipboard image to `<images_dir>/<id>.png` and return its
 /// storage-relative path (`images/<id>.png`) for serialization in the JSON.
 /// Returns `None` if the file could not be written.
+///
+/// Atomic: write to a temp sibling then rename, so a crash mid-write cannot
+/// leave a half-decoded PNG that the frontend would later fail to load.
 pub fn save_image_file(id: usize, png: &[u8]) -> Option<String> {
     let abs = images_dir().join(format!("{}.png", id));
-    match std::fs::write(&abs, png) {
-        Ok(()) => Some(format!("images/{}.png", id)),
-        Err(e) => {
-            crate::log::write_log(&format!("Failed to write image file {:?}: {}", abs, e));
-            None
-        }
+    let tmp = images_dir().join(format!("{}.png.tmp", id));
+    let wrote = if std::fs::write(&tmp, png).is_ok()
+        && std::fs::rename(&tmp, &abs).is_ok()
+    {
+        true
+    } else {
+        // Fallback: direct write if the temp+rename path failed.
+        let _ = std::fs::remove_file(&tmp);
+        std::fs::write(&abs, png).is_ok()
+    };
+    if wrote {
+        Some(format!("images/{}.png", id))
+    } else {
+        crate::log::write_log(&format!("Failed to write image file {:?}", abs));
+        None
     }
 }
 

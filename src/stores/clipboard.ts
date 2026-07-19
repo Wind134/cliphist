@@ -185,37 +185,17 @@ export function escapeHtml(text: string): string {
   return div.innerHTML;
 }
 
-export function stripScripts(html: string): string {
-  const div = document.createElement('div');
-  div.innerHTML = html;
-  const dangerous = div.querySelectorAll(
-    'script, style, iframe, object, embed, form, input, button, select, textarea, link, meta, base'
-  );
-  dangerous.forEach(el => el.remove());
-  // Strip every inline event handler (on*) so no clipboard-sourced HTML can
-  // run scripts in the Tauri webview. A blocklist of specific on* names is
-  // unsafe because there are dozens of valid event-handler attributes.
-  const SAFE_URL_ATTRS: Record<string, string[]> = {
-    a: ['href'],
-    img: ['src'],
-  };
-  div.querySelectorAll('*').forEach(el => {
-    // remove all on* attributes
-    Array.from(el.attributes).forEach(attr => {
-      if (/^on/i.test(attr.name)) el.removeAttribute(attr.name);
-    });
-    // sanitize url-bearing attributes: drop javascript:/data:script, keep safe ones
-    const allow = SAFE_URL_ATTRS[el.tagName.toLowerCase()] ?? [];
-    Array.from(el.attributes).forEach(attr => {
-      if ((attr.name === 'src' || attr.name === 'href' || attr.name === 'xlink:href') && !allow.includes(attr.name)) {
-        el.removeAttribute(attr.name);
-      } else if (allow.includes(attr.name)) {
-        const v = (el.getAttribute(attr.name) || '').trim().toLowerCase();
-        if (v.startsWith('javascript:') || v.startsWith('data:text/html') || v.startsWith('vbscript:')) {
-          el.removeAttribute(attr.name);
-        }
-      }
-    });
+import DOMPurify from 'dompurify';
+
+// Sanitize clipboard-sourced HTML before rendering it in the Tauri webview.
+// DOMPurify strips scripts, inline event handlers (on*), and javascript:/
+// data:script/vbscript: URLs by default — the same surface the old hand-rolled
+// sanitizer tried to cover, but robust against mXSS bypasses that a blocklist
+// approach misses. The CSP (default-src 'self', no unsafe-inline scripts) is a
+// second layer; this is the first.
+export function sanitizeHtml(html: string): string {
+  return DOMPurify.sanitize(html, {
+    FORBID_TAGS: ['style', 'iframe', 'object', 'embed', 'form', 'input', 'button', 'select', 'textarea', 'link', 'meta', 'base'],
+    FORBID_ATTR: ['style'],
   });
-  return div.innerHTML;
 }

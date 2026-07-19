@@ -167,9 +167,20 @@ mod linux_impl {
 
         let key_name = key_name.to_string();
 
-        // Create a Unix socket for the helper to notify us
+        // Resolve the user-private runtime dir first so the socket can live in
+        // it. /tmp is world-writable and predictable, which invites a
+        // symlink/race attack against the root helper; $XDG_RUNTIME_DIR is
+        // per-user (0700) and not accessible to other users, so the socket is
+        // only reachable by us and by the root helper (which bypasses perms).
+        let xdg_runtime_dir = std::env::var("XDG_RUNTIME_DIR")
+            .unwrap_or_else(|_| format!("/run/user/{}", unsafe { libc::getuid() }));
+
+        // Create a Unix socket for the helper to notify us. Place it in the
+        // user-private runtime dir instead of /tmp to avoid a predictable
+        // world-writable-path symlink race.
         let socket_path = format!(
-            "/tmp/cliphist-dtap-{}.sock",
+            "{}/cliphist-dtap-{}.sock",
+            xdg_runtime_dir,
             std::process::id()
         );
         // Clean up any stale socket
@@ -189,7 +200,6 @@ mod linux_impl {
 
         // Spawn the helper via pkexec
         let wayland_display = std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "wayland-0".to_string());
-        let xdg_runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| format!("/run/user/{}", unsafe { libc::getuid() }));
 
         let mut child = std::process::Command::new("pkexec")
             .arg(&exe)

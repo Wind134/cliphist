@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { ClipboardItem } from '../types';
-  import { getTypeLabel, getTypeClass, escapeHtml, stripScripts, getImageData } from '../stores/clipboard';
+  import { getTypeLabel, getTypeClass, escapeHtml, sanitizeHtml, getImageData } from '../stores/clipboard';
 
   let { item, index, isSelected }: {
     item: ClipboardItem;
@@ -69,7 +69,7 @@
         <div class="item-image-placeholder">{item.image_width}×{item.image_height}</div>
       {/if}
     {:else if item.content_type === 'rich' && item.html_content}
-      <div class="rich-preview">{@html stripScripts(item.html_content)}</div>
+      <div class="rich-preview">{@html sanitizeHtml(item.html_content)}</div>
     {:else}
       {escapeHtml(item.preview)}
     {/if}
