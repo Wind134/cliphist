@@ -6,7 +6,7 @@
   import { confirm } from '@tauri-apps/plugin-dialog';
   import {
     filteredHistory, selectedIndex, searchQuery, currentCategory,
-    history, copyItem, deleteItem, clearHistory, showToast, settingsData,
+    history, copyItem, moveToTop, deleteItem, clearHistory, showToast, settingsData,
     settingsOpen, refreshSettings,
   } from '../stores/clipboard';
   import CategoryTabs from './category-tabs.svelte';
@@ -104,7 +104,10 @@
     const idx = num - 1;
     if (idx < filtered.length) {
       try {
-        await copyItem(filtered[idx].id);
+        const id = filtered[idx].id;
+        await copyItem(id);
+        // 数字键快速粘贴：把这条浮到列表最前（其它复制动作不调整顺序）
+        await moveToTop(id);
         await getCurrentWindow().hide();
         await new Promise(r => setTimeout(r, 200));
         await invoke('simulate_paste_cmd');

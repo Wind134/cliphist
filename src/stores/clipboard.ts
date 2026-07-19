@@ -85,6 +85,21 @@ export async function initClipboard() {
     imageCache.clear();
   });
 
+  // A number-key quick-paste (1-9) asked the backend to float the just-used
+  // item to the top. Reorder the local store to match — single source of truth
+  // lives in the backend (persisted order), this just mirrors it.
+  await listen<number>('item-moved-to-top', (event) => {
+    const id = event.payload;
+    history.update(h => {
+      const i = h.findIndex(x => x.id === id);
+      if (i <= 0) return h;
+      const nh = h.slice();
+      const [it] = nh.splice(i, 1);
+      nh.unshift(it);
+      return nh;
+    });
+  });
+
   await listen<boolean>('helper-status', (event) => {
     helperConnected.set(event.payload);
   });
@@ -109,6 +124,12 @@ settingsData.set(s);
 // ── IPC wrappers ──
 export async function copyItem(id: number): Promise<void> {
   return invoke('copy_to_clipboard', { id });
+}
+
+// Float an item to the top of the list. Only the number-key quick-paste path
+// calls this; other copy actions intentionally leave order unchanged.
+export async function moveToTop(id: number): Promise<void> {
+  return invoke('move_to_top', { id });
 }
 
 // Simple in-memory cache for loaded image data URLs. Prevents redundant IPC
