@@ -27,6 +27,28 @@ fn copy_to_clipboard(state: tauri::State<'_, AppState>, id: usize) -> Result<(),
     clipboard::copy_item_to_clipboard(&history, id)
 }
 
+/// Move an existing history item to the front of the list (most-recently-used
+/// first) and persist the new order. Triggered by the frontend's number-key
+/// quick-paste (1-9) so the just-used entry floats to the top. Other copy
+/// actions (double-click, copy button, Enter) intentionally do NOT reorder.
+#[tauri::command]
+fn move_to_top(app: tauri::AppHandle, state: tauri::State<'_, AppState>, id: usize) {
+    let snapshot = {
+        let mut history = state.history.lock();
+        let Some(pos) = history.iter().position(|i| i.id == id) else {
+            return;
+        };
+        if pos == 0 {
+            return;
+        }
+        let it = history.remove(pos);
+        history.insert(0, it);
+        history.clone()
+    };
+    clipboard::save_history(&snapshot);
+    let _ = app.emit("item-moved-to-top", id);
+}
+
 #[tauri::command]
 fn delete_item(state: tauri::State<'_, AppState>, id: usize) {
     let mut history = state.history.lock();
@@ -456,6 +478,7 @@ pub fn run() {
             fe_log,
             simulate_paste_cmd,
             get_image_data,
+            move_to_top,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
