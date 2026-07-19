@@ -2,6 +2,7 @@ use arboard::Clipboard;
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,14 +58,26 @@ pub fn get_storage_path() -> PathBuf {
 /// Write a clipboard image to `<images_dir>/<id>.png` and return its
 /// storage-relative path (`images/<id>.png`) for serialization in the JSON.
 /// Returns `None` if the file could not be written.
+///
+/// Atomic: write to a temp sibling then rename, so a crash mid-write cannot
+/// leave a half-decoded PNG that the frontend would later fail to load.
 pub fn save_image_file(id: usize, png: &[u8]) -> Option<String> {
     let abs = images_dir().join(format!("{}.png", id));
-    match std::fs::write(&abs, png) {
-        Ok(()) => Some(format!("images/{}.png", id)),
-        Err(e) => {
-            crate::log::write_log(&format!("Failed to write image file {:?}: {}", abs, e));
-            None
-        }
+    let tmp = images_dir().join(format!("{}.png.tmp", id));
+    let wrote = if std::fs::write(&tmp, png).is_ok()
+        && std::fs::rename(&tmp, &abs).is_ok()
+    {
+        true
+    } else {
+        // Fallback: direct write if the temp+rename path failed.
+        let _ = std::fs::remove_file(&tmp);
+        std::fs::write(&abs, png).is_ok()
+    };
+    if wrote {
+        Some(format!("images/{}.png", id))
+    } else {
+        crate::log::write_log(&format!("Failed to write image file {:?}", abs));
+        None
     }
 }
 
@@ -121,11 +134,16 @@ pub fn make_preview(content: &str) -> String {
 }
 
 pub fn get_content_type(content: &str) -> String {
-    if content.contains("http://") || content.contains("https://") || content.contains("www.") {
+    let t = content.trim();
+    // A link is a single bare token that starts with a scheme or "www."
+    // (no embedded spaces). The old `contains("www.")` check misclassified any
+    // text merely mentioning "www." as a link.
+    let is_link = t.starts_with("http://")
+        || t.starts_with("https://")
+        || (t.starts_with("www.") && t.contains('.') && !t.contains(' '));
+    if is_link {
         "link".to_string()
-    } else if content.len() > 100 && content.contains('\n') {
-        "text".to_string()
-    } else if content.len() > 50 {
+    } else if t.chars().count() > 50 {
         "text".to_string()
     } else {
         "short".to_string()
@@ -144,6 +162,49 @@ pub fn parse_timestamp(ts: &str) -> Option<chrono::NaiveDateTime> {
         return Some(today.and_time(time));
     }
     None
+}
+
+// ── Self-write tracking ──────────────────────────────────────────────────────
+//
+// When the user copies an item *from this manager*, we write to the OS
+// clipboard. The poll loop would otherwise read that content back and record
+// it as a brand-new history entry — duplicating the item. To prevent that,
+// `copy_item_to_clipboard` stores the hash of whatever it just wrote here,
+// and the poll loop consumes the marker: if the polled content's hash matches,
+// the poll updates its "last seen" hash and skips the insert.
+
+static LAST_SELF_SET_HASH: AtomicU64 = AtomicU64::new(0);
+
+/// Stable hash over a text payload. Must match the hash used by the poll loop
+/// so a self-write marker is recognized.
+pub(crate) fn simple_hash(s: &str) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut h = DefaultHasher::new();
+    s.hash(&mut h);
+    h.finish()
+}
+
+/// Stable hash over an `arboard` image payload. Must match the hash used by
+/// the poll loop.
+pub(crate) fn img_hash(img: &arboard::ImageData) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut h = DefaultHasher::new();
+    img.bytes.hash(&mut h);
+    h.finish()
+}
+
+/// Record the hash of content we just wrote to the OS clipboard, so the poll
+/// loop can recognize and skip re-recording it.
+pub(crate) fn mark_self_set(hash: u64) {
+    LAST_SELF_SET_HASH.store(hash, Ordering::SeqCst);
+}
+
+/// Atomically read and clear the pending self-write marker. Returns 0 if none
+/// is pending. The marker is consumed even on mismatch (it is then stale).
+pub(crate) fn take_self_set_hash() -> u64 {
+    LAST_SELF_SET_HASH.swap(0, Ordering::SeqCst)
 }
 
 pub fn copy_item_to_clipboard(history: &[ClipboardItem], id: usize) -> Result<(), String> {
@@ -168,6 +229,9 @@ pub fn copy_item_to_clipboard(history: &[ClipboardItem], id: usize) -> Result<()
                 height: h as usize,
                 bytes: rgba.into_raw().into(),
             };
+            // Mark this exact image as self-written so the poll loop doesn't
+            // re-record it as a new history entry.
+            mark_self_set(img_hash(&img_data));
             clipboard.set_image(img_data).map_err(|e| e.to_string())?;
             return Ok(());
         }
@@ -175,11 +239,16 @@ pub fn copy_item_to_clipboard(history: &[ClipboardItem], id: usize) -> Result<()
 
     if let Some(ref html) = item.html_content {
         let _ = clipboard.set().html(html, Some(&item.content));
+        // The poll loop reads back the plain-text alt (`item.content`), so mark
+        // that hash to suppress the duplicate.
+        mark_self_set(simple_hash(&item.content));
         return Ok(());
     }
 
     clipboard
         .set_text(&item.content)
         .map_err(|e| e.to_string())?;
+    // Suppress the poll loop re-recording what we just wrote.
+    mark_self_set(simple_hash(&item.content));
     Ok(())
 }

@@ -76,7 +76,15 @@ pub fn save_settings(settings: &Settings) -> Result<(), String> {
     let json = serde_json::to_string_pretty(settings)
         .map_err(|e| format!("Failed to serialize settings: {}", e))?;
     let path = get_settings_path();
-    std::fs::write(&path, json)
+    // Atomic: temp sibling + rename, so a crash mid-write cannot leave a
+    // corrupt settings.json (which would silently fall back to defaults).
+    let tmp = path.with_extension("json.tmp");
+    if std::fs::write(&tmp, &json).is_ok() && std::fs::rename(&tmp, &path).is_ok() {
+        return Ok(());
+    }
+    // Fallback: direct write if the temp+rename path failed.
+    let _ = std::fs::remove_file(&tmp);
+    std::fs::write(&path, &json)
         .map_err(|e| format!("Failed to save settings to {:?}: {}", path, e))?;
     Ok(())
 }
