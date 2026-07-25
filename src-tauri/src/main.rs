@@ -33,12 +33,7 @@ fn main() {
             let wayland_display = get_arg("--wayland-display");
             let xdg_runtime_dir = get_arg("--xdg-runtime-dir");
 
-            tauri_app_lib::evdev_helper::run(
-                &key,
-                &socket,
-                &wayland_display,
-                &xdg_runtime_dir,
-            );
+            tauri_app_lib::evdev_helper::run(&key, &socket, &wayland_display, &xdg_runtime_dir);
             // run() never returns
         }
     }

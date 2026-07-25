@@ -65,7 +65,10 @@ pub fn run(key_name: &str, socket_path: &str, wayland_display: &str, xdg_runtime
             s
         }
         Err(e) => {
-            eprintln!("[cliphist-helper] Failed to connect to socket {}: {}", socket_path, e);
+            eprintln!(
+                "[cliphist-helper] Failed to connect to socket {}: {}",
+                socket_path, e
+            );
             std::process::exit(1);
         }
     };
@@ -106,7 +109,11 @@ pub fn run(key_name: &str, socket_path: &str, wayland_display: &str, xdg_runtime
                         devices.push((dev, fd));
                     }
                     Err(e) => {
-                        eprintln!("[cliphist-helper] Cannot create device from {}: {}", path.display(), e);
+                        eprintln!(
+                            "[cliphist-helper] Cannot create device from {}: {}",
+                            path.display(),
+                            e
+                        );
                     }
                 }
             }
@@ -132,7 +139,9 @@ pub fn run(key_name: &str, socket_path: &str, wayland_display: &str, xdg_runtime
             events: libc::EPOLLIN as u32,
             u64: sock_fd as u64,
         };
-        unsafe { libc::epoll_ctl(epoll_fd, libc::EPOLL_CTL_ADD, sock_fd, &mut event); }
+        unsafe {
+            libc::epoll_ctl(epoll_fd, libc::EPOLL_CTL_ADD, sock_fd, &mut event);
+        }
     }
 
     for (_dev, fd) in &devices {
@@ -140,10 +149,15 @@ pub fn run(key_name: &str, socket_path: &str, wayland_display: &str, xdg_runtime
             events: libc::EPOLLIN as u32,
             u64: *fd as u64,
         };
-        unsafe { libc::epoll_ctl(epoll_fd, libc::EPOLL_CTL_ADD, *fd, &mut event); }
+        unsafe {
+            libc::epoll_ctl(epoll_fd, libc::EPOLL_CTL_ADD, *fd, &mut event);
+        }
     }
 
-    let mut state = crate::state::DoubleTapState { last_press: None, released: true };
+    let mut state = crate::state::DoubleTapState {
+        last_press: None,
+        released: true,
+    };
     // Persistent uinput device, created once on first paste and reused for all
     // subsequent ones. Must stay alive: transient devices are never registered
     // by libinput/KWin. Kept as a local instead of a `static mut` — the helper
@@ -156,7 +170,12 @@ pub fn run(key_name: &str, socket_path: &str, wayland_display: &str, xdg_runtime
     loop {
         epoll_events.resize(devices.len() + 1, libc::epoll_event { events: 0, u64: 0 });
         let nfds = unsafe {
-            libc::epoll_wait(epoll_fd, epoll_events.as_mut_ptr(), epoll_events.len() as i32, 100)
+            libc::epoll_wait(
+                epoll_fd,
+                epoll_events.as_mut_ptr(),
+                epoll_events.len() as i32,
+                100,
+            )
         };
 
         if nfds < 0 {
@@ -164,26 +183,34 @@ pub fn run(key_name: &str, socket_path: &str, wayland_display: &str, xdg_runtime
             break;
         }
 
-        for i in 0..nfds as usize {
-            let ready_fd = epoll_events[i].u64 as i32;
+        for event in epoll_events.iter().take(nfds as usize) {
+            let ready_fd = event.u64 as i32;
 
             if ready_fd == sock_fd {
                 loop {
                     match stream.read(&mut cmd_buf) {
                         Ok(1) if cmd_buf[0] == b'P' => {
                             eprintln!("[cliphist-helper] Paste command received");
-                            simulate_paste_injection(&mut persistent_uinput, &wayland_display, &xdg_runtime_dir);
+                            simulate_paste_injection(
+                                &mut persistent_uinput,
+                                &wayland_display,
+                                &xdg_runtime_dir,
+                            );
                         }
                         Ok(0) => {
                             eprintln!("[cliphist-helper] Main process closed socket, exiting");
-                            unsafe { libc::close(epoll_fd); }
+                            unsafe {
+                                libc::close(epoll_fd);
+                            }
                             std::process::exit(0);
                         }
                         Ok(_) => {}
                         Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
                         Err(e) => {
                             eprintln!("[cliphist-helper] Socket read error: {}, exiting", e);
-                            unsafe { libc::close(epoll_fd); }
+                            unsafe {
+                                libc::close(epoll_fd);
+                            }
                             std::process::exit(0);
                         }
                     }
@@ -192,43 +219,50 @@ pub fn run(key_name: &str, socket_path: &str, wayland_display: &str, xdg_runtime
             }
 
             for (dev, _fd) in &devices {
-                if _fd != &ready_fd { continue; }
+                if _fd != &ready_fd {
+                    continue;
+                }
 
                 loop {
                     match dev.next_event(ReadFlag::NORMAL) {
-                        Ok((ReadStatus::Success, ev)) => {
-                            match ev.event_code {
-                                EventCode::EV_KEY(kc) => {
-                                    if !key_codes_set.contains(&(kc as u32)) { continue; }
-                                    if ev.value == 1 {
-                                        let now = Instant::now();
-                                        if state.released {
-                                            if let Some(prev) = state.last_press {
-                                                if now.duration_since(prev).as_millis() < DOUBLE_TAP_MS {
-                                                    state.last_press = None;
-                                                    state.released = false;
-                                                    if stream.write_all(&[1]).is_err() {
-                                                        unsafe { libc::close(epoll_fd); }
-                                                        std::process::exit(0);
-                                                    }
-                                                    let _ = stream.flush();
-                                                    continue;
-                                                }
-                                            }
-                                            state.last_press = Some(now);
-                                            state.released = false;
-                                        }
-                                    } else if ev.value == 0 {
-                                        state.released = true;
-                                    }
+                        Ok((ReadStatus::Success, ev)) => match ev.event_code {
+                            EventCode::EV_KEY(kc) => {
+                                if !key_codes_set.contains(&(kc as u32)) {
+                                    continue;
                                 }
-                                EventCode::EV_SYN(EV_SYN::SYN_DROPPED) => {}
-                                _ => {}
+                                if ev.value == 1 {
+                                    let now = Instant::now();
+                                    if state.released {
+                                        if let Some(prev) = state.last_press {
+                                            if now.duration_since(prev).as_millis() < DOUBLE_TAP_MS
+                                            {
+                                                state.last_press = None;
+                                                state.released = false;
+                                                if stream.write_all(&[1]).is_err() {
+                                                    unsafe {
+                                                        libc::close(epoll_fd);
+                                                    }
+                                                    std::process::exit(0);
+                                                }
+                                                let _ = stream.flush();
+                                                continue;
+                                            }
+                                        }
+                                        state.last_press = Some(now);
+                                        state.released = false;
+                                    }
+                                } else if ev.value == 0 {
+                                    state.released = true;
+                                }
                             }
-                        }
+                            EventCode::EV_SYN(EV_SYN::SYN_DROPPED) => {}
+                            _ => {}
+                        },
                         Ok((ReadStatus::Sync, _ev)) => continue,
                         Err(e) => {
-                            if e.raw_os_error() == Some(libc::EAGAIN) { break; }
+                            if e.raw_os_error() == Some(libc::EAGAIN) {
+                                break;
+                            }
                             break;
                         }
                     }
@@ -237,8 +271,12 @@ pub fn run(key_name: &str, socket_path: &str, wayland_display: &str, xdg_runtime
         }
     }
 
-    for (dev, _) in devices { drop(dev); }
-    unsafe { libc::close(epoll_fd); }
+    for (dev, _) in devices {
+        drop(dev);
+    }
+    unsafe {
+        libc::close(epoll_fd);
+    }
     std::process::exit(0);
 }
 
@@ -271,8 +309,11 @@ fn simulate_paste_injection(
 
 fn try_uinput_paste(uinput: &mut Option<UInputDevice>) -> bool {
     match uinput {
-        Some(uidev) => { inject_ctrl_v_uinput(uidev); true }
-        None => false
+        Some(uidev) => {
+            inject_ctrl_v_uinput(uidev);
+            true
+        }
+        None => false,
     }
 }
 
@@ -284,15 +325,12 @@ fn try_wtype_paste(wayland_display: &str, xdg_runtime_dir: &str) -> bool {
     match std::process::Command::new("wtype")
         .env("WAYLAND_DISPLAY", wayland_display)
         .env("XDG_RUNTIME_DIR", xdg_runtime_dir)
-        .arg("-M").arg("ctrl").arg("v")
+        .arg("-M")
+        .arg("ctrl")
+        .arg("v")
         .spawn()
     {
-        Ok(mut c) => {
-            match c.wait() {
-                Ok(s) if s.success() => true,
-                _ => false,
-            }
-        }
+        Ok(mut c) => matches!(c.wait(), Ok(s) if s.success()),
         Err(_) => false,
     }
 }
@@ -301,24 +339,38 @@ fn inject_ctrl_v_uinput(uidev: &UInputDevice) {
     use evdev_rs::enums::*;
     let ts = TimeVal::new(0, 0);
     let send = |code: EV_KEY, value: i32| {
-        uidev.write_event(&InputEvent {
-            time: ts.clone(), event_type: EventType::EV_KEY,
-            event_code: EventCode::EV_KEY(code), value,
-        }).map_err(|e| eprintln!("[cliphist-helper] uinput write error: {:?}", e)).ok();
+        uidev
+            .write_event(&InputEvent {
+                time: ts.clone(),
+                event_type: EventType::EV_KEY,
+                event_code: EventCode::EV_KEY(code),
+                value,
+            })
+            .map_err(|e| eprintln!("[cliphist-helper] uinput write error: {:?}", e))
+            .ok();
     };
     let syn = || {
-        uidev.write_event(&InputEvent {
-            time: ts.clone(), event_type: EventType::EV_SYN,
-            event_code: EventCode::EV_SYN(EV_SYN::SYN_REPORT), value: 0,
-        }).map_err(|e| eprintln!("[cliphist-helper] uinput syn error: {:?}", e)).ok();
+        uidev
+            .write_event(&InputEvent {
+                time: ts.clone(),
+                event_type: EventType::EV_SYN,
+                event_code: EventCode::EV_SYN(EV_SYN::SYN_REPORT),
+                value: 0,
+            })
+            .map_err(|e| eprintln!("[cliphist-helper] uinput syn error: {:?}", e))
+            .ok();
     };
 
-    send(EV_KEY::KEY_LEFTCTRL, 1); syn();
+    send(EV_KEY::KEY_LEFTCTRL, 1);
+    syn();
     std::thread::sleep(std::time::Duration::from_millis(30));
-    send(EV_KEY::KEY_V, 1); syn();
+    send(EV_KEY::KEY_V, 1);
+    syn();
     std::thread::sleep(std::time::Duration::from_millis(30));
-    send(EV_KEY::KEY_V, 0); syn();
+    send(EV_KEY::KEY_V, 0);
+    syn();
     std::thread::sleep(std::time::Duration::from_millis(30));
-    send(EV_KEY::KEY_LEFTCTRL, 0); syn();
+    send(EV_KEY::KEY_LEFTCTRL, 0);
+    syn();
     std::thread::sleep(std::time::Duration::from_millis(30));
 }
