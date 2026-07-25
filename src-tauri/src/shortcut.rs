@@ -120,6 +120,29 @@ pub fn register_global_shortcut(app: &tauri::AppHandle, shortcut_str: &str) -> R
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shortcut_requires_a_modifier() {
+        assert!(!validate_shortcut("V"));
+        assert!(!validate_shortcut(""));
+        assert!(validate_shortcut("Ctrl+Shift+V"));
+    }
+
+    #[test]
+    fn shortcut_rejects_unknown_keys() {
+        assert!(!validate_shortcut("Ctrl+DefinitelyNotAKey"));
+    }
+
+    #[test]
+    fn shortcut_accepts_supported_aliases() {
+        assert!(validate_shortcut("CmdOrCtrl+Space"));
+        assert!(validate_shortcut("Meta+Enter"));
+    }
+}
+
 // ============================================================================
 // Double-tap state (shared between platforms)
 // ============================================================================
@@ -199,7 +222,8 @@ mod linux_impl {
             .map_err(|e| format!("Failed to get current exe path: {}", e))?;
 
         // Spawn the helper via pkexec
-        let wayland_display = std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "wayland-0".to_string());
+        let wayland_display =
+            std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "wayland-0".to_string());
 
         let mut child = std::process::Command::new("pkexec")
             .arg(&exe)
@@ -215,10 +239,7 @@ mod linux_impl {
             .spawn()
             .map_err(|e| format!("Failed to spawn pkexec: {}", e))?;
 
-        crate::log::write_log(&format!(
-            "pkexec helper spawned, pid: {}",
-            child.id()
-        ));
+        crate::log::write_log(&format!("pkexec helper spawned, pid: {}", child.id()));
 
         // Spawn a thread to wait for the helper to connect and send notifications
         std::thread::Builder::new()
@@ -239,10 +260,7 @@ mod linux_impl {
                         return;
                     }
                 };
-                crate::log::write_log(&format!(
-                    "Evdev helper connected from {:?}",
-                    addr
-                ));
+                crate::log::write_log(&format!("Evdev helper connected from {:?}", addr));
                 super::HELPER_CONNECTED.store(true, Ordering::SeqCst);
 
                 // Clone the stream for paste commands
@@ -267,16 +285,10 @@ mod linux_impl {
                             break;
                         }
                         Ok(n) => {
-                            crate::log::write_log(&format!(
-                                "Unexpected read size: {}",
-                                n
-                            ));
+                            crate::log::write_log(&format!("Unexpected read size: {}", n));
                         }
                         Err(e) => {
-                            crate::log::write_log(&format!(
-                                "Socket read error: {}",
-                                e
-                            ));
+                            crate::log::write_log(&format!("Socket read error: {}", e));
                             break;
                         }
                     }
@@ -315,7 +327,9 @@ mod linux_impl {
                 .map_err(|e| format!("Failed to send paste command to helper: {}", e))?;
             crate::log::write_log("Sent paste command to evdev helper");
         } else {
-            crate::log::write_log("No evdev helper connected; clipboard populated, user can paste manually");
+            crate::log::write_log(
+                "No evdev helper connected; clipboard populated, user can paste manually",
+            );
         }
         Ok(())
     }
@@ -407,10 +421,9 @@ mod windows_impl {
 
                 match result {
                     Ok(()) => crate::log::write_log("Windows double-tap listener stopped normally"),
-                    Err(e) => crate::log::write_log(&format!(
-                        "Windows double-tap grab error: {:?}",
-                        e
-                    )),
+                    Err(e) => {
+                        crate::log::write_log(&format!("Windows double-tap grab error: {:?}", e))
+                    }
                 }
 
                 super::HELPER_CONNECTED.store(false, Ordering::SeqCst);
@@ -492,8 +505,7 @@ pub fn stop_and_wait_double_tap_listener(timeout_ms: u64) {
     LISTENER_GENERATION.fetch_add(1, Ordering::SeqCst);
     crate::log::write_log("Double-tap listener stop requested (wait)");
 
-    let deadline = std::time::Instant::now()
-        + std::time::Duration::from_millis(timeout_ms);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
     while EXIT_EPOCH.load(Ordering::SeqCst) < epoch {
         if std::time::Instant::now() >= deadline {
             crate::log::write_log("stop_and_wait timed out, proceeding anyway");

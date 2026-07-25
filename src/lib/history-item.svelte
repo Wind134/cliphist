@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { ClipboardItem } from '../types';
-  import { getTypeLabel, getTypeClass, escapeHtml, sanitizeHtml, getImageData } from '../stores/clipboard';
+  import { getTypeLabel, getTypeClass, sanitizeHtml, getImageData } from '../stores/clipboard';
 
   let { item, index, isSelected }: {
     item: ClipboardItem;
@@ -71,7 +71,7 @@
     {:else if item.content_type === 'rich' && item.html_content}
       <div class="rich-preview">{@html sanitizeHtml(item.html_content)}</div>
     {:else}
-      {escapeHtml(item.preview)}
+      {item.preview}
     {/if}
   </div>
   <div class="item-meta">

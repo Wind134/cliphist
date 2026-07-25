@@ -64,9 +64,7 @@ pub fn get_storage_path() -> PathBuf {
 pub fn save_image_file(id: usize, png: &[u8]) -> Option<String> {
     let abs = images_dir().join(format!("{}.png", id));
     let tmp = images_dir().join(format!("{}.png.tmp", id));
-    let wrote = if std::fs::write(&tmp, png).is_ok()
-        && std::fs::rename(&tmp, &abs).is_ok()
-    {
+    let wrote = if std::fs::write(&tmp, png).is_ok() && std::fs::rename(&tmp, &abs).is_ok() {
         true
     } else {
         // Fallback: direct write if the temp+rename path failed.
@@ -83,14 +81,31 @@ pub fn save_image_file(id: usize, png: &[u8]) -> Option<String> {
 
 /// Read an image file by its storage-relative path (`images/<id>.png`).
 pub fn read_image_file(rel: &str) -> Option<Vec<u8>> {
-    let abs = data_dir().join(rel);
+    let safe_rel = safe_image_path(rel)?;
+    let abs = data_dir().join(safe_rel);
     std::fs::read(abs).ok()
+}
+
+fn safe_image_path(rel: &str) -> Option<&std::path::Path> {
+    let path = std::path::Path::new(rel);
+    let mut components = path.components();
+    match (components.next(), components.next(), components.next()) {
+        (
+            Some(std::path::Component::Normal(dir)),
+            Some(std::path::Component::Normal(file)),
+            None,
+        ) if dir == "images" && file.to_string_lossy().ends_with(".png") => Some(path),
+        _ => None,
+    }
 }
 
 /// Best-effort removal of an image file referenced by `path`.
 pub fn delete_image_file(path: &Option<String>) {
     if let Some(rel) = path {
-        let abs = data_dir().join(rel);
+        let Some(safe_rel) = safe_image_path(rel) else {
+            return;
+        };
+        let abs = data_dir().join(safe_rel);
         let _ = std::fs::remove_file(abs);
     }
 }
@@ -238,7 +253,10 @@ pub fn copy_item_to_clipboard(history: &[ClipboardItem], id: usize) -> Result<()
     }
 
     if let Some(ref html) = item.html_content {
-        let _ = clipboard.set().html(html, Some(&item.content));
+        clipboard
+            .set()
+            .html(html, Some(&item.content))
+            .map_err(|e| e.to_string())?;
         // The poll loop reads back the plain-text alt (`item.content`), so mark
         // that hash to suppress the duplicate.
         mark_self_set(simple_hash(&item.content));
@@ -251,4 +269,43 @@ pub fn copy_item_to_clipboard(history: &[ClipboardItem], id: usize) -> Result<()
     // Suppress the poll loop re-recording what we just wrote.
     mark_self_set(simple_hash(&item.content));
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preview_uses_unicode_characters_and_truncates() {
+        assert_eq!(make_preview("  你好  "), "你好");
+        let long = "界".repeat(81);
+        let preview = make_preview(&long);
+        assert_eq!(preview.chars().count(), 83);
+        assert!(preview.ends_with("..."));
+    }
+
+    #[test]
+    fn content_type_only_marks_bare_urls_as_links() {
+        assert_eq!(get_content_type("https://example.com/a"), "link");
+        assert_eq!(get_content_type("see https://example.com"), "short");
+        assert_eq!(get_content_type("www.example.com"), "link");
+    }
+
+    #[test]
+    fn image_paths_cannot_escape_storage() {
+        assert_eq!(
+            safe_image_path("images/42.png"),
+            Some(std::path::Path::new("images/42.png"))
+        );
+        assert_eq!(safe_image_path("../settings.json"), None);
+        assert_eq!(safe_image_path("images/../settings.json"), None);
+        assert_eq!(safe_image_path("/tmp/a.png"), None);
+        assert_eq!(safe_image_path("other/a.png"), None);
+    }
+
+    #[test]
+    fn parses_current_timestamp_format() {
+        assert!(parse_timestamp("2026-07-25 12:34:56").is_some());
+        assert!(parse_timestamp("not a timestamp").is_none());
+    }
 }

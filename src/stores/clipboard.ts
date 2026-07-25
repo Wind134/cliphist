@@ -177,10 +177,6 @@ export async function validateHotkey(hotkey: string): Promise<boolean> {
   return invoke('validate_hotkey', { hotkey });
 }
 
-export async function toggleAutostart(enable: boolean): Promise<void> {
-  return invoke('toggle_autostart', { enable });
-}
-
 export async function simulatePaste(): Promise<void> {
   return invoke('simulate_paste_cmd');
 }
@@ -198,12 +194,6 @@ export function getTypeClass(type: string): string {
     link: 'type-link', text: 'type-text', short: 'type-short', image: 'type-image', rich: 'type-rich',
   };
   return classes[type] || '';
-}
-
-export function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
 }
 
 import DOMPurify from 'dompurify';

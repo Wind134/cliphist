@@ -2,7 +2,7 @@
   import { getVersion } from '@tauri-apps/api/app';
   import {
     settingsOpen, settingsData, showToast,
-    updateSettings, validateHotkey, toggleAutostart, helperConnected, feLog,
+    updateSettings, validateHotkey, helperConnected, feLog,
   } from '../stores/clipboard';
 
   let hotkeyInput = $state('');
@@ -35,11 +35,11 @@
   async function onToggleAutoStart(e: Event) {
     const checked = (e.target as HTMLInputElement).checked;
     try {
-      await updateSettings({ auto_start: checked });
-      await toggleAutostart(checked);
-      settingsData.update(s => ({ ...s, auto_start: checked }));
+      const saved = await updateSettings({ auto_start: checked });
+      settingsData.set(saved);
       showToast('设置已保存');
     } catch (err) {
+      (e.target as HTMLInputElement).checked = !checked;
       showToast('保存失败: ' + String(err));
     }
   }

@@ -1,8 +1,8 @@
-pub(crate) mod log;
 mod clipboard;
 mod consts;
 #[cfg(target_os = "linux")]
 pub mod evdev_helper;
+pub(crate) mod log;
 mod settings;
 mod shortcut;
 mod state;
@@ -33,7 +33,7 @@ fn copy_to_clipboard(state: tauri::State<'_, AppState>, id: usize) -> Result<(),
 /// actions (double-click, copy button, Enter) intentionally do NOT reorder.
 #[tauri::command]
 fn move_to_top(app: tauri::AppHandle, state: tauri::State<'_, AppState>, id: usize) {
-    let snapshot = {
+    {
         let mut history = state.history.lock();
         let Some(pos) = history.iter().position(|i| i.id == id) else {
             return;
@@ -43,9 +43,9 @@ fn move_to_top(app: tauri::AppHandle, state: tauri::State<'_, AppState>, id: usi
         }
         let it = history.remove(pos);
         history.insert(0, it);
-        history.clone()
-    };
-    clipboard::save_history(&snapshot);
+        // Keep persistence ordered with every other history mutation.
+        clipboard::save_history(&history);
+    }
     let _ = app.emit("item-moved-to-top", id);
 }
 
@@ -86,30 +86,38 @@ fn get_image_data(state: tauri::State<'_, AppState>, id: usize) -> Option<String
 }
 
 #[tauri::command]
-fn get_settings() -> Settings {
-    settings::load_settings()
+fn get_settings(state: tauri::State<'_, AppState>) -> Settings {
+    state.settings.lock().clone()
 }
 
 #[tauri::command]
-fn save_settings_cmd(settings: Settings) {
-    if let Err(e) = settings::save_settings(&settings) {
-        log::write_log(&format!("save_settings_cmd failed: {}", e));
-    }
-}
-
-#[tauri::command]
-fn update_settings(app: tauri::AppHandle, partial: serde_json::Value) -> Result<Settings, String> {
+fn update_settings(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    partial: serde_json::Value,
+) -> Result<Settings, String> {
     // Single type-safe extraction step: deserialize the payload into a patch
     // struct instead of hand-peeling each key out of the JSON `Value`.
-    let patch: SettingsPatch = serde_json::from_value(partial)
-        .map_err(|e| format!("无效的设置格式: {}", e))?;
-    let mut current = settings::load_settings();
+    let patch: SettingsPatch =
+        serde_json::from_value(partial).map_err(|e| format!("无效的设置格式: {}", e))?;
+    let mut current = state.settings.lock();
 
     // Plain fields: apply directly, no validation needed.
     if let Some(v) = patch.close_to_tray {
         current.close_to_tray = v;
     }
     if let Some(v) = patch.auto_start {
+        use tauri_plugin_autostart::ManagerExt;
+        let manager = app.autolaunch();
+        if v {
+            manager
+                .enable()
+                .map_err(|e| format!("启用开机启动失败: {}", e))?;
+        } else {
+            manager
+                .disable()
+                .map_err(|e| format!("禁用开机启动失败: {}", e))?;
+        }
         current.auto_start = v;
     }
     if let Some(v) = patch.silent_start {
@@ -121,7 +129,7 @@ fn update_settings(app: tauri::AppHandle, partial: serde_json::Value) -> Result<
 
     // Bounded numeric fields: clamp to their allowed ranges.
     if let Some(v) = patch.zoom_level {
-        if v >= consts::MIN_ZOOM_LEVEL && v <= consts::MAX_ZOOM_LEVEL {
+        if (consts::MIN_ZOOM_LEVEL..=consts::MAX_ZOOM_LEVEL).contains(&v) {
             current.zoom_level = v;
         }
     }
@@ -131,12 +139,12 @@ fn update_settings(app: tauri::AppHandle, partial: serde_json::Value) -> Result<
         }
     }
     if let Some(v) = patch.window_width {
-        if v >= 320 && v <= 9999 {
+        if (320..=9999).contains(&v) {
             current.window_width = v;
         }
     }
     if let Some(v) = patch.window_height {
-        if v >= 400 && v <= 9999 {
+        if (400..=9999).contains(&v) {
             current.window_height = v;
         }
     }
@@ -144,9 +152,20 @@ fn update_settings(app: tauri::AppHandle, partial: serde_json::Value) -> Result<
     // Side-effecting fields: validate, then fire the OS-level effect.
     if let Some(v) = patch.hotkey {
         if shortcut::validate_shortcut(&v) {
-            current.hotkey = v.clone();
-            // Register new shortcut immediately
-            let _ = shortcut::register_global_shortcut(&app, &v);
+            let old = current.hotkey.clone();
+            if v != old {
+                if let Err(register_error) = shortcut::register_global_shortcut(&app, &v) {
+                    let rollback = shortcut::register_global_shortcut(&app, &old);
+                    return Err(match rollback {
+                        Ok(()) => format!("快捷键注册失败，已恢复原快捷键: {}", register_error),
+                        Err(rollback_error) => format!(
+                            "快捷键注册失败，且恢复原快捷键失败: {}; {}",
+                            register_error, rollback_error
+                        ),
+                    });
+                }
+                current.hotkey = v;
+            }
         } else {
             return Err(format!("无效的快捷键格式: {}", v));
         }
@@ -180,25 +199,12 @@ fn update_settings(app: tauri::AppHandle, partial: serde_json::Value) -> Result<
     }
 
     settings::save_settings(&current).map_err(|e| format!("保存设置失败: {}", e))?;
-    Ok(current)
+    Ok(current.clone())
 }
 
 #[tauri::command]
 fn validate_hotkey(hotkey: String) -> bool {
     shortcut::validate_shortcut(&hotkey)
-}
-
-#[tauri::command]
-fn toggle_autostart(
-    enable: bool,
-    manager: tauri::State<'_, tauri_plugin_autostart::AutoLaunchManager>,
-) -> Result<(), String> {
-    if enable {
-        manager.enable().map_err(|e| e.to_string())?;
-    } else {
-        manager.disable().map_err(|e| e.to_string())?;
-    }
-    Ok(())
 }
 
 #[tauri::command]
@@ -292,6 +298,7 @@ pub fn run() {
     log::write_log("ClipHist starting...");
 
     let history = clipboard::load_history();
+    let startup_settings = settings::load_settings();
     log::write_log("load_history done");
     let counter = history.iter().map(|i| i.id).max().unwrap_or(0);
     log::write_log("counter computed");
@@ -305,6 +312,7 @@ pub fn run() {
         history: std::sync::Arc::new(parking_lot::Mutex::new(history)),
         counter: std::sync::Arc::new(parking_lot::Mutex::new(counter)),
         window_action_tx,
+        settings: std::sync::Arc::new(parking_lot::Mutex::new(startup_settings.clone())),
     };
 
     tauri::Builder::default()
@@ -334,7 +342,8 @@ pub fn run() {
             // This bypasses tauri-build default_window_icon() which may not
             // correctly decode .ico files for the taskbar/alt-tab icon on Windows.
             if let Some(window) = app.get_webview_window("main") {
-                if let Ok(img) = image::load_from_memory(include_bytes!("../icons/128x128@2x.png")) {
+                if let Ok(img) = image::load_from_memory(include_bytes!("../icons/128x128@2x.png"))
+                {
                     let rgba = img.into_rgba8();
                     let (w, h) = rgba.dimensions();
                     let raw = rgba.into_raw();
@@ -343,8 +352,11 @@ pub fn run() {
                 }
             }
 
-            let s = settings::load_settings();
-            log::write_log(&format!("Startup settings: hotkey={}, retention={}d, double_tap={}, silent={}", s.hotkey, s.retention_days, s.double_tap_key, s.silent_start));
+            let s = startup_settings;
+            log::write_log(&format!(
+                "Startup settings: hotkey={}, retention={}d, double_tap={}, silent={}",
+                s.hotkey, s.retention_days, s.double_tap_key, s.silent_start
+            ));
             if let Err(e) = shortcut::register_global_shortcut(app.handle(), &s.hotkey) {
                 log::write_log(&format!("Failed to register global shortcut: {}", e));
             }
@@ -359,19 +371,21 @@ pub fn run() {
             }
 
             if let Some(window) = app.get_webview_window("main") {
-               // Restore saved window size only if user had previously resized it.
-               // Resize event saves physical size, so restore with PhysicalSize
-               // to avoid compounding growth from logical↔physical mismatch.
+                // Restore saved window size only if user had previously resized it.
+                // Resize event saves physical size, so restore with PhysicalSize
+                // to avoid compounding growth from logical↔physical mismatch.
                 if s.window_user_resized {
-                   let _ = window.set_size(tauri::PhysicalSize::new(s.window_width, s.window_height));
-               }
+                    let _ =
+                        window.set_size(tauri::PhysicalSize::new(s.window_width, s.window_height));
+                }
 
                 // Always handle CloseRequested so the native close button
                 // respects the (possibly changed) "close to tray" setting.
                 let app_handle = app.handle().clone();
+                let close_settings = app.state::<AppState>().settings.clone();
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                        let close_to_tray = settings::load_settings().close_to_tray;
+                        let close_to_tray = close_settings.lock().close_to_tray;
                         if close_to_tray {
                             api.prevent_close();
                             if let Some(win) = app_handle.get_webview_window("main") {
@@ -383,19 +397,20 @@ pub fn run() {
 
                 // Save window size on resize (throttled to 500ms)
                 let last_save = AtomicU64::new(0);
+                let resize_settings = app.state::<AppState>().settings.clone();
                 window.on_window_event(move |event| {
-                   if let tauri::WindowEvent::Resized(size) = event {
-                       let now = std::time::SystemTime::now()
-                           .duration_since(std::time::UNIX_EPOCH)
-                           .unwrap_or_default()
-                           .as_millis() as u64;
-                       if now.saturating_sub(last_save.load(Ordering::Relaxed)) > 500 {
-                           let mut s = settings::load_settings();
-                           s.window_width = size.width;
-                           s.window_height = size.height;
+                    if let tauri::WindowEvent::Resized(size) = event {
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as u64;
+                        if now.saturating_sub(last_save.load(Ordering::Relaxed)) > 500 {
+                            let mut s = resize_settings.lock();
+                            s.window_width = size.width;
+                            s.window_height = size.height;
                             s.window_user_resized = true;
-                           if let Err(e) = settings::save_settings(&s) {
-                               log::write_log(&format!("Failed to save window size: {}", e));
+                            if let Err(e) = settings::save_settings(&s) {
+                                log::write_log(&format!("Failed to save window size: {}", e));
                             }
                             last_save.store(now, Ordering::Relaxed);
                         }
@@ -424,7 +439,8 @@ pub fn run() {
                             windows::Win32::Graphics::Dwm::DWMWA_WINDOW_CORNER_PREFERENCE,
                             &corner_pref as *const _ as *const std::ffi::c_void,
                             std::mem::size_of_val(&corner_pref) as u32,
-                        ).ok();
+                        )
+                        .ok();
                     }
                 }
             }
@@ -471,10 +487,8 @@ pub fn run() {
             delete_item,
             clear_history,
             get_settings,
-            save_settings_cmd,
             update_settings,
             validate_hotkey,
-            toggle_autostart,
             fe_log,
             simulate_paste_cmd,
             get_image_data,
@@ -506,13 +520,17 @@ fn poll_clipboard(
 
         // Flush any pending debounced save once the interval has elapsed.
         if pending_save && last_save.elapsed() >= save_interval {
-            // Clone under the lock, persist outside it so get_history/copy aren't
-            // blocked while the JSON is serialized and written to disk.
-            let snapshot = state.lock().clone();
-            clipboard::save_history(&snapshot);
+            // Persist while holding the state lock so an older snapshot can
+            // never overwrite a newer delete/clear operation.
+            clipboard::save_history(&state.lock());
             last_save = std::time::Instant::now();
             pending_save = false;
         }
+
+        // Some applications publish both bitmap and text representations for
+        // one clipboard operation. Treat the bitmap as the primary format so a
+        // single copy produces exactly one history entry.
+        let current_image = clipboard.get_image().ok();
 
         // 每小时清理一次过期记录
         if last_clean_time.elapsed().as_secs() >= 3600 {
@@ -523,12 +541,11 @@ fn poll_clipboard(
 
         if let Ok(text) = clipboard.get_text() {
             let text = text.trim().to_string();
-            if !text.is_empty() {
+            if !text.is_empty() && current_image.is_none() {
                 let html_content = clipboard.get().html().ok();
                 let hash = clipboard::simple_hash(&text);
                 if hash != last_text_hash {
                     last_text_hash = hash;
-                    last_image_hash = 0;
 
                     // If we just wrote this to the clipboard ourselves (the user
                     // clicked "copy" on an existing item), don't re-record it.
@@ -563,10 +580,7 @@ fn poll_clipboard(
                     };
 
                     {
-                        // Hold the lock only for the mutation + cheap snapshots;
-                        // serialize/write/emit afterwards so get_history/copy aren't
-                        // blocked on disk I/O or IPC.
-                        let (top, save_snapshot, excess_images) = {
+                        let (top, excess_images) = {
                             let mut history = state.lock();
                             history.insert(0, item);
                             let excess_images: Vec<Option<String>> =
@@ -576,23 +590,18 @@ fn poll_clipboard(
                                 } else {
                                     Vec::new()
                                 };
-                            let top: Vec<ClipboardItem> =
-                                history[..std::cmp::min(5, history.len())].to_vec();
+                            let top = history[..std::cmp::min(5, history.len())].to_vec();
                             let now = std::time::Instant::now();
-                            let save_snapshot = if now.duration_since(last_save) >= save_interval {
+                            if now.duration_since(last_save) >= save_interval {
+                                // Serialize while the lock is held to preserve mutation order.
+                                clipboard::save_history(&history);
+                                last_save = now;
                                 pending_save = false;
-                                Some(history.clone())
                             } else {
                                 pending_save = true;
-                                None
-                            };
-                            (top, save_snapshot, excess_images)
+                            }
+                            (top, excess_images)
                         };
-
-                        if let Some(snap) = save_snapshot {
-                            clipboard::save_history(&snap);
-                            last_save = std::time::Instant::now();
-                        }
                         for img in &excess_images {
                             clipboard::delete_image_file(img);
                         }
@@ -602,11 +611,10 @@ fn poll_clipboard(
             }
         }
 
-        if let Ok(img) = clipboard.get_image() {
+        if let Some(img) = current_image {
             let img_hash_value = clipboard::img_hash(&img);
             if img_hash_value != last_image_hash {
                 last_image_hash = img_hash_value;
-                last_text_hash = 0;
 
                 // If we just wrote this image ourselves, don't re-record it.
                 let self_hash = clipboard::take_self_set_hash();
@@ -672,10 +680,7 @@ fn poll_clipboard(
                 };
 
                 {
-                    // Hold the lock only for the mutation + cheap snapshots;
-                    // serialize/write/emit afterwards so get_history/copy aren't
-                    // blocked on disk I/O or IPC.
-                    let (top, save_snapshot, excess_images) = {
+                    let (top, excess_images) = {
                         let mut history = state.lock();
                         history.insert(0, item);
                         let excess_images: Vec<Option<String>> =
@@ -685,23 +690,17 @@ fn poll_clipboard(
                             } else {
                                 Vec::new()
                             };
-                        let top: Vec<ClipboardItem> =
-                            history[..std::cmp::min(5, history.len())].to_vec();
+                        let top = history[..std::cmp::min(5, history.len())].to_vec();
                         let now = std::time::Instant::now();
-                        let save_snapshot = if now.duration_since(last_save) >= save_interval {
+                        if now.duration_since(last_save) >= save_interval {
+                            clipboard::save_history(&history);
+                            last_save = now;
                             pending_save = false;
-                            Some(history.clone())
                         } else {
                             pending_save = true;
-                            None
-                        };
-                        (top, save_snapshot, excess_images)
+                        }
+                        (top, excess_images)
                     };
-
-                    if let Some(snap) = save_snapshot {
-                        clipboard::save_history(&snap);
-                        last_save = std::time::Instant::now();
-                    }
                     for img in &excess_images {
                         clipboard::delete_image_file(img);
                     }
