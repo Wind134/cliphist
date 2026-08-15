@@ -7,8 +7,6 @@ import 'api/clipboard.dart';
 import 'api/history.dart';
 import 'api/init.dart';
 import 'api/settings.dart';
-import 'api/simple.dart';
-import 'api/spike.dart';
 import 'api/stream.dart';
 import 'core/clipboard_engine.dart';
 import 'core/events.dart';
@@ -29,9 +27,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   AnyhowException dco_decode_AnyhowException(dynamic raw);
-
-  @protected
-  RustStreamSink<String> dco_decode_StreamSink_String_Sse(dynamic raw);
 
   @protected
   RustStreamSink<bool> dco_decode_StreamSink_bool_Sse(dynamic raw);
@@ -74,9 +69,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   int dco_decode_i_32(dynamic raw);
-
-  @protected
-  List<String> dco_decode_list_String(dynamic raw);
 
   @protected
   List<ClipboardItem> dco_decode_list_clipboard_item(dynamic raw);
@@ -122,11 +114,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
-
-  @protected
-  RustStreamSink<String> sse_decode_StreamSink_String_Sse(
-    SseDeserializer deserializer,
-  );
 
   @protected
   RustStreamSink<bool> sse_decode_StreamSink_bool_Sse(
@@ -177,9 +164,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int sse_decode_i_32(SseDeserializer deserializer);
 
   @protected
-  List<String> sse_decode_list_String(SseDeserializer deserializer);
-
-  @protected
   List<ClipboardItem> sse_decode_list_clipboard_item(
     SseDeserializer deserializer,
   );
@@ -226,12 +210,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_AnyhowException(
     AnyhowException self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_StreamSink_String_Sse(
-    RustStreamSink<String> self,
     SseSerializer serializer,
   );
 
@@ -288,9 +266,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_i_32(int self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_list_String(List<String> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_clipboard_item(

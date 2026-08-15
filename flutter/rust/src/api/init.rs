@@ -9,6 +9,13 @@ use parking_lot::Mutex;
 use std::sync::mpsc;
 use std::sync::Arc;
 
+/// FRB init hook — invoked by `RustLib.init()` on the Dart side before any
+/// other `#[frb]` call. Sets up the default user utils.
+#[flutter_rust_bridge::frb(init)]
+pub fn init_app() {
+    flutter_rust_bridge::setup_default_user_utils();
+}
+
 /// Initialize the Rust core: load history + settings, install the panic hook,
 /// stash the global [`AppState`], and spawn the four background tasks
 /// (clipboard poll, window-action worker, helper-status monitor, expired-item
