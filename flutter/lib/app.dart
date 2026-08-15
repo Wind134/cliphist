@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app_controller.dart';
 import 'state/providers.dart';
+import 'ui/history_view.dart';
 import 'ui/theme.dart';
 
 class ClipHistApp extends ConsumerWidget {
@@ -29,7 +30,7 @@ class MainScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final settingsOpen = ref.watch(settingsOpenProvider);
     final settings = ref.watch(settingsProvider);
-    final helper = ref.watch(helperConnectedProvider);
+    final toast = ref.watch(toastMessageProvider);
 
     return Shortcuts(
       shortcuts: {
@@ -46,21 +47,26 @@ class MainScreen extends ConsumerWidget {
           child: Scaffold(
             backgroundColor: CliphistColors.bgPrimary,
             body: SafeArea(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+              child: Stack(
                 children: [
-                  _TopBar(
-                    title: settingsOpen ? '设置' : 'ClipHist',
-                    onSettingsTap: () {
-                      ref.read(settingsOpenProvider.notifier).state =
-                          !settingsOpen;
-                    },
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _TopBar(
+                        title: settingsOpen ? '设置' : 'ClipHist',
+                        onSettingsTap: () {
+                          ref.read(settingsOpenProvider.notifier).state =
+                              !settingsOpen;
+                        },
+                      ),
+                      Expanded(
+                        child: settingsOpen
+                            ? _SettingsPlaceholder(settings: settings)
+                            : const HistoryView(),
+                      ),
+                    ],
                   ),
-                  Expanded(
-                    child: settingsOpen
-                        ? _SettingsPlaceholder(settings: settings)
-                        : _HistoryPlaceholder(helperConnected: helper),
-                  ),
+                  if (toast.isNotEmpty) _ToastOverlay(message: toast),
                 ],
               ),
             ),
@@ -110,39 +116,6 @@ class _TopBar extends StatelessWidget {
   }
 }
 
-class _HistoryPlaceholder extends StatelessWidget {
-  const _HistoryPlaceholder({required this.helperConnected});
-  final bool helperConnected;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.history, size: 40, color: CliphistColors.textTertiary),
-            const SizedBox(height: 12),
-            const Text(
-              'M4 历史 UI 待移植',
-              style: TextStyle(color: CliphistColors.textSecondary, fontSize: 13),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              helperConnected ? 'evdev 双击: 已授权' : 'evdev 双击: 未连接',
-              style: const TextStyle(
-                color: CliphistColors.textTertiary,
-                fontSize: 11,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _SettingsPlaceholder extends StatelessWidget {
   const _SettingsPlaceholder({required this.settings});
   final dynamic settings;
@@ -170,4 +143,31 @@ class _SettingsPlaceholder extends StatelessWidget {
 
 class _EscapeIntent extends Intent {
   const _EscapeIntent();
+}
+
+class _ToastOverlay extends StatelessWidget {
+  const _ToastOverlay({required this.message});
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 40,
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: CliphistColors.textPrimary.withOpacity(0.9),
+            borderRadius: BorderRadius.circular(CliphistColors.radius),
+          ),
+          child: Text(
+            message,
+            style: const TextStyle(color: Colors.white, fontSize: 12),
+          ),
+        ),
+      ),
+    );
+  }
 }

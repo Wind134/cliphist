@@ -13,7 +13,9 @@ import '../src/rust/api/settings.dart' as api_settings;
 import '../src/rust/api/stream.dart' as api_stream;
 import '../src/rust/core/events.dart' show WindowActionKind;
 import '../src/rust/core/settings_store.dart' show SettingsPatch;
+import 'bridge/streams.dart';
 import 'state/providers.dart';
+import 'util/toast.dart';
 
 /// Process-singleton owning the native window + tray lifecycle and the
 /// Rust→Dart stream subscriptions. Replaces the old Tauri `tray.rs` + the
@@ -32,6 +34,7 @@ class ClipHistController with WindowListener, TrayListener {
 
   StreamSubscription<WindowActionKind>? _windowActionSub;
   StreamSubscription<bool>? _helperStatusSub;
+  List<StreamSubscription> _clipboardSubs = const [];
   int _lastResizeSave = 0;
 
   Future<void> start(ProviderContainer c) async {
@@ -82,6 +85,9 @@ class ClipHistController with WindowListener, TrayListener {
     _helperStatusSub = api_stream.streamHelperStatus().listen((connected) {
       container.read(helperConnectedProvider.notifier).state = connected;
     });
+
+    // History-bearing streams → history provider.
+    _clipboardSubs = subscribeClipboardStreams(container);
   }
 
   /// The "pop to top" window-action dance, ported from the old Tauri worker:
@@ -96,6 +102,40 @@ class ClipHistController with WindowListener, TrayListener {
     await windowManager.focus();
     await Future<void>.delayed(const Duration(milliseconds: 500));
     await windowManager.setAlwaysOnTop(false);
+  }
+
+  /// Hide the window to the tray (no quit). Used after a copy when
+  /// `closeToTray` is on.
+  Future<void> hideWindow() async {
+    await windowManager.hide();
+  }
+
+  /// Quick-paste path (ported from `handleQuickPaste`): copy the item, float
+  /// it to the top, hide the window, wait 200ms for the target app to regain
+  /// focus, then simulate Ctrl+V. The window is hidden unconditionally
+  /// (paste is meaningless with the history window in the way). The
+  /// `simulatePasteCmd` Rust call is an M7 stub that returns `Err` until the
+  /// platform paste injection lands — surface that as a toast rather than a
+  /// silent no-op.
+  Future<void> quickPaste(BigInt id) async {
+    try {
+      await api_clipboard.copyToClipboard(id: id);
+    } catch (e) {
+      showToast(container, '复制失败: $e');
+      return;
+    }
+    try {
+      await api_history.moveToTop(id: id);
+    } catch (_) {
+      // Non-fatal — the copy already succeeded.
+    }
+    await windowManager.hide();
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    try {
+      await api_clipboard.simulatePasteCmd();
+    } catch (e) {
+      showToast(container, '自动粘贴暂不可用: $e');
+    }
   }
 
   Future<void> _setupTray() async {
@@ -191,6 +231,9 @@ class ClipHistController with WindowListener, TrayListener {
   Future<void> quit() async {
     await _windowActionSub?.cancel();
     await _helperStatusSub?.cancel();
+    for (final s in _clipboardSubs) {
+      await s.cancel();
+    }
     trayManager.removeListener(this);
     windowManager.removeListener(this);
     await trayManager.destroy();
