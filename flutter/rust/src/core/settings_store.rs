@@ -93,6 +93,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(clippy::field_reassign_with_default)]
     fn patch_merges_into_settings() {
         let mut s = Settings::default();
         s.zoom_level = 1.5;

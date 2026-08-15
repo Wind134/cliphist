@@ -221,19 +221,20 @@ pub fn start_double_tap_listener(key_name: &str) -> Result<(), String> {
         stop_double_tap_listener();
         return Ok(());
     }
-    #[cfg(target_os = "windows")]
-    {
-        return windows_impl::start_double_tap_listener(key_name);
-    }
-    #[cfg(target_os = "linux")]
-    {
-        return linux_impl::start_linux_double_tap_listener(key_name);
-    }
-    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
-    {
-        let _ = key_name;
-        Ok(())
-    }
+    start_double_tap_listener_platform(key_name)
+}
+
+#[cfg(target_os = "windows")]
+fn start_double_tap_listener_platform(key_name: &str) -> Result<(), String> {
+    windows_impl::start_double_tap_listener(key_name)
+}
+#[cfg(target_os = "linux")]
+fn start_double_tap_listener_platform(key_name: &str) -> Result<(), String> {
+    linux_impl::start_linux_double_tap_listener(key_name)
+}
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+fn start_double_tap_listener_platform(_key_name: &str) -> Result<(), String> {
+    Ok(())
 }
 
 pub fn stop_double_tap_listener() {
@@ -250,18 +251,20 @@ pub fn stop_double_tap_listener() {
 }
 
 pub fn simulate_paste() -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        return windows_impl::simulate_paste();
-    }
-    #[cfg(target_os = "linux")]
-    {
-        return linux_impl::linux_simulate_paste();
-    }
-    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
-    {
-        Err("Paste simulation is not supported on this platform".into())
-    }
+    simulate_paste_platform()
+}
+
+#[cfg(target_os = "windows")]
+fn simulate_paste_platform() -> Result<(), String> {
+    windows_impl::simulate_paste()
+}
+#[cfg(target_os = "linux")]
+fn simulate_paste_platform() -> Result<(), String> {
+    linux_impl::linux_simulate_paste()
+}
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+fn simulate_paste_platform() -> Result<(), String> {
+    Err("Paste simulation is not supported on this platform".into())
 }
 
 #[cfg(target_os = "windows")]
@@ -299,8 +302,10 @@ mod windows_impl {
         LISTENER_RUNNING.store(true, Ordering::SeqCst);
         HELPER_CONNECTED.store(true, Ordering::SeqCst);
 
-        let state: Arc<Mutex<DoubleTapState>> =
-            Arc::new(Mutex::new(DoubleTapState { last_press: None, released: true }));
+        let state: Arc<Mutex<DoubleTapState>> = Arc::new(Mutex::new(DoubleTapState {
+            last_press: None,
+            released: true,
+        }));
 
         std::thread::Builder::new()
             .name("double-tap-listener".to_string())
@@ -319,9 +324,7 @@ mod windows_impl {
                             let mut s = state.lock();
                             if s.released {
                                 if let Some(prev) = s.last_press {
-                                    if now.duration_since(prev).as_millis()
-                                        < DOUBLE_TAP_MS
-                                    {
+                                    if now.duration_since(prev).as_millis() < DOUBLE_TAP_MS {
                                         s.last_press = None;
                                         s.released = false;
                                         drop(s);

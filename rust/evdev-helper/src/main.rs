@@ -72,12 +72,7 @@ fn main() {
         std::process::exit(1);
     }
 
-    run(
-        &key_name,
-        &socket_path,
-        &wayland_display,
-        &xdg_runtime_dir,
-    );
+    run(&key_name, &socket_path, &wayland_display, &xdg_runtime_dir);
 }
 
 fn run(key_name: &str, socket_path: &str, wayland_display: &str, xdg_runtime_dir: &str) -> ! {
@@ -204,10 +199,7 @@ fn run(key_name: &str, socket_path: &str, wayland_display: &str, xdg_runtime_dir
     let mut cmd_buf = [0u8; 1];
 
     loop {
-        epoll_events.resize(
-            devices.len() + 1,
-            libc::epoll_event { events: 0, u64: 0 },
-        );
+        epoll_events.resize(devices.len() + 1, libc::epoll_event { events: 0, u64: 0 });
         let nfds = unsafe {
             libc::epoll_wait(
                 epoll_fd,
@@ -246,10 +238,7 @@ fn run(key_name: &str, socket_path: &str, wayland_display: &str, xdg_runtime_dir
                         Ok(_) => {}
                         Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
                         Err(e) => {
-                            eprintln!(
-                                "[cliphist-helper] Socket read error: {}, exiting",
-                                e
-                            );
+                            eprintln!("[cliphist-helper] Socket read error: {}, exiting", e);
                             unsafe {
                                 libc::close(epoll_fd);
                             }
@@ -276,8 +265,7 @@ fn run(key_name: &str, socket_path: &str, wayland_display: &str, xdg_runtime_dir
                                     let now = Instant::now();
                                     if state.released {
                                         if let Some(prev) = state.last_press {
-                                            if now.duration_since(prev).as_millis()
-                                                < DOUBLE_TAP_MS
+                                            if now.duration_since(prev).as_millis() < DOUBLE_TAP_MS
                                             {
                                                 state.last_press = None;
                                                 state.released = false;
@@ -331,9 +319,7 @@ fn simulate_paste_injection(
     if uinput.is_none() {
         *uinput = create_persistent_uinput();
         if uinput.is_some() {
-            eprintln!(
-                "[cliphist-helper] Persistent uinput created, waiting 500ms for libinput..."
-            );
+            eprintln!("[cliphist-helper] Persistent uinput created, waiting 500ms for libinput...");
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
     }

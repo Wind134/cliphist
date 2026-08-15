@@ -48,9 +48,9 @@ pub fn init_app_state() -> Result<(), String> {
     // settings. Wayland skips the hotkey (logged inside).
     let startup_settings = settings_store::load_settings();
     if !startup_settings.hotkey.is_empty() {
-        if let Err(e) = crate::core::shortcut_engine::register_global_hotkey(
-            &startup_settings.hotkey,
-        ) {
+        if let Err(e) =
+            crate::core::shortcut_engine::register_global_hotkey(&startup_settings.hotkey)
+        {
             log::write_log(&format!("Startup hotkey register failed: {}", e));
         }
     }
@@ -58,10 +58,7 @@ pub fn init_app_state() -> Result<(), String> {
         if let Err(e) = crate::core::shortcut_engine::start_double_tap_listener(
             &startup_settings.double_tap_key,
         ) {
-            log::write_log(&format!(
-                "Startup double-tap listener failed: {}",
-                e
-            ));
+            log::write_log(&format!("Startup double-tap listener failed: {}", e));
         }
     }
 
