@@ -1,0 +1,14 @@
+[package]
+name = "cliphist-evdev-helper"
+version = "0.1.0"
+edition = "2021"
+description = "ClipHist Linux evdev double-tap helper (runs as root via pkexec)"
+license = "MIT"
+
+[[bin]]
+name = "cliphist-evdev-helper"
+path = "src/main.rs"
+
+[dependencies]
+evdev-rs = "0.4"
+libc = "0.2"
