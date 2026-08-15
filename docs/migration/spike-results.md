@@ -28,6 +28,30 @@
 
 ## 结论：go。进入 M2（Rust 核心全量移植）。
 
+## M2 完成记录（2026-08-15）
+
+Rust 核心全量移植进 `flutter/rust/`（crate `rust_lib_cliphist`，crate 位置不变——Cargokit 在 4 个平台文件硬编码 `../../rust` + crate 名，移动高摩擦低价值，workspace 归并推到 M8）。
+
+**门禁全绿**：`cargo test` 16 绿（clipboard_engine 4 / hotkey_parse 5 / sanitize 5 / settings 2，与旧栈同用例）；`cargo clippy` 净；`cargo fmt --check` 净；`flutter build linux --debug` 绿。spike 的 `simple.rs`/`spike.rs`/`main.dart` 保留（Dart UI 是 M4–M6）。
+
+**结构**：
+- `src/core/`：`log` `consts` `state`(OnceLock AppState + `st()`) `settings_store` `clipboard_engine`(逐字移植 clipboard.rs) `sanitize`(ammonia) `hotkey_parse`(纯字符串 validate，去 tauri 插件类型，last-key-wins 语义) `events`(5 StreamSink 静态 + emit/register) `background`(4 线程)。
+- `src/api/`：`init` `history` `settings` `clipboard` `stream`。
+
+**11 `#[frb]` + initAppState**：getHistory(sync) / copyToClipboard / moveToTop / deleteItem / clearHistory / getImageData(→`Option<Vec<u8>>`即 `Uint8List?`，去 base64) / getSettings(sync) / updateSettings(入参改 `SettingsPatch` 结构而非 `serde_json::Value`，FRB 直接反序列化) / validateHotkey(sync) / feLog / simulatePasteCmd(M7 桩，返 Err)。
+
+**5 StreamSink**（`crate::frb_generated::StreamSink`，存 `parking_lot::Mutex<Option<StreamSink<T>>>` 静态，emit 无订阅者时 no-op，headless 测试不阻塞）：streamClipboardChanged / streamHistoryReplace / streamItemMovedToTop(usize→Dart `BigInt`) / streamHelperStatus / streamWindowAction(`enum WindowActionKind{ShowAndRaise}`)。
+
+**4 后台线程**（`std::thread`，**未用 tokio**——旧栈即纯 std 线程+mpsc+sleep，faithful 移植照搬；计划里写的 tokio 是务实偏离）：clipboard-poll 500ms / window-action-worker(消费 mpsc 发流，舞步本身 Dart 端 M3) / helper-status-monitor 200ms(`is_helper_connected` M8 前 stub false) / clean-expired(独立线程，启动即跑+每小时，从旧 poll 内联拆出)。
+
+**消毒落点**：ammonia 在 add 阶段消毒后存 `html_content`（空结果回落为 None，content_type 回退）。
+
+**副作用延后**：update_settings 的 auto_start(M5 launch_at_startup)/hotkey 注册(M7 global-hotkey)/double_tap_key 监听(M7/M8) 只校验+存+打日志，不触发 OS 效果。
+
+**FRB 新踩坑**：`StreamSink::add` 要求 `T: SseEncode`（本 crate 默认 SseCodec），新类型在 codegen 前 `cargo check` 报 4 条 "unsatisfied trait bounds" 属正常，`flutter_rust_bridge_codegen generate` 生成 SseEncode impl 后即解。
+
+**待办（M3 起）**：M3 窗口与托盘（window-action 舞步迁 Dart 监听器、tray 4 菜单）、M4 历史 UI、M5 设置 UI+自启、M6 富文本/图片/缩放、M7 热键与双击真监听、M8 evdev helper 拆 bin+polkit+workspace 归并、M9 CI、M10 打包。runtime e2e（真机剪贴板/双击/热键）待 M3 后手测矩阵。
+
 ## 已知后续动作（M2 起）
 - 目录归并：spike 用了 FRB 默认的 `flutter/rust/`（crate `rust_lib_cliphist`）；M2 需与 repo 根 `rust/evdev-helper/` 合并为 `rust/Cargo.toml` workspace（`rust-core` + `evdev-helper`），并更新 `flutter_rust_bridge.yaml` 的 `rust_root` 与 Cargokit 路径。
 - 真实 `init_app_state` + tokio runtime + 4 类后台任务（poll_clipboard / window-action 发流 / helper-status / clean_expired）。

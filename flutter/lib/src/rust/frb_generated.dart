@@ -3,8 +3,16 @@
 
 // ignore_for_file: unused_import, unused_element, unnecessary_import, duplicate_ignore, invalid_use_of_internal_member, annotate_overrides, non_constant_identifier_names, curly_braces_in_flow_control_structures, prefer_const_literals_to_create_immutables, unused_field
 
+import 'api/clipboard.dart';
+import 'api/history.dart';
+import 'api/init.dart';
+import 'api/settings.dart';
 import 'api/simple.dart';
 import 'api/spike.dart';
+import 'api/stream.dart';
+import 'core/clipboard_engine.dart';
+import 'core/events.dart';
+import 'core/settings_store.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'frb_generated.dart';
@@ -68,7 +76,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 753689458;
+  int get rustContentHash => -1964331886;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -80,9 +88,23 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
 }
 
 abstract class RustLibApi extends BaseApi {
+  Future<void> crateApiHistoryClearHistory();
+
+  Future<void> crateApiClipboardCopyToClipboard({required BigInt id});
+
   Future<void> crateApiSpikeCopyToClipboard({required String id});
 
+  Future<void> crateApiHistoryDeleteItem({required BigInt id});
+
+  Future<void> crateApiClipboardFeLog({required String message});
+
+  List<ClipboardItem> crateApiHistoryGetHistory();
+
   List<String> crateApiSpikeGetHistory();
+
+  Future<Uint8List?> crateApiHistoryGetImageData({required BigInt id});
+
+  Settings crateApiSettingsGetSettings();
 
   String crateApiSimpleGreet({required String name});
 
@@ -90,9 +112,31 @@ abstract class RustLibApi extends BaseApi {
 
   Future<void> crateApiSpikeInitApp();
 
+  Future<void> crateApiInitInitAppState();
+
+  Future<void> crateApiHistoryMoveToTop({required BigInt id});
+
+  Future<void> crateApiClipboardSimulatePasteCmd();
+
   Stream<String> crateApiSpikeStreamClipboardChanged();
 
+  Stream<List<ClipboardItem>> crateApiStreamStreamClipboardChanged();
+
+  Stream<bool> crateApiStreamStreamHelperStatus();
+
+  Stream<List<ClipboardItem>> crateApiStreamStreamHistoryReplace();
+
+  Stream<BigInt> crateApiStreamStreamItemMovedToTop();
+
+  Stream<WindowActionKind> crateApiStreamStreamWindowAction();
+
+  Future<Settings> crateApiSettingsUpdateSettings({
+    required SettingsPatch patch,
+  });
+
   Future<String> crateApiSpikeUpdateSettings({required String patch});
+
+  bool crateApiSettingsValidateHotkey({required String hotkey});
 }
 
 class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
@@ -104,6 +148,61 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   });
 
   @override
+  Future<void> crateApiHistoryClearHistory() {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 1,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiHistoryClearHistoryConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiHistoryClearHistoryConstMeta =>
+      const TaskConstMeta(debugName: "clear_history", argNames: []);
+
+  @override
+  Future<void> crateApiClipboardCopyToClipboard({required BigInt id}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_usize(id, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 2,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiClipboardCopyToClipboardConstMeta,
+        argValues: [id],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiClipboardCopyToClipboardConstMeta =>
+      const TaskConstMeta(debugName: "copy_to_clipboard", argNames: ["id"]);
+
+  @override
   Future<void> crateApiSpikeCopyToClipboard({required String id}) {
     return handler.executeNormal(
       NormalTask(
@@ -113,7 +212,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 1,
+            funcId: 3,
             port: port_,
           );
         },
@@ -132,12 +231,90 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "copy_to_clipboard", argNames: ["id"]);
 
   @override
+  Future<void> crateApiHistoryDeleteItem({required BigInt id}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_usize(id, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 4,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiHistoryDeleteItemConstMeta,
+        argValues: [id],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiHistoryDeleteItemConstMeta =>
+      const TaskConstMeta(debugName: "delete_item", argNames: ["id"]);
+
+  @override
+  Future<void> crateApiClipboardFeLog({required String message}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(message, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 5,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiClipboardFeLogConstMeta,
+        argValues: [message],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiClipboardFeLogConstMeta =>
+      const TaskConstMeta(debugName: "fe_log", argNames: ["message"]);
+
+  @override
+  List<ClipboardItem> crateApiHistoryGetHistory() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 6)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_clipboard_item,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiHistoryGetHistoryConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiHistoryGetHistoryConstMeta =>
+      const TaskConstMeta(debugName: "get_history", argNames: []);
+
+  @override
   List<String> crateApiSpikeGetHistory() {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 2)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 7)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_String,
@@ -154,13 +331,63 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "get_history", argNames: []);
 
   @override
+  Future<Uint8List?> crateApiHistoryGetImageData({required BigInt id}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_usize(id, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 8,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_opt_list_prim_u_8_strict,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiHistoryGetImageDataConstMeta,
+        argValues: [id],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiHistoryGetImageDataConstMeta =>
+      const TaskConstMeta(debugName: "get_image_data", argNames: ["id"]);
+
+  @override
+  Settings crateApiSettingsGetSettings() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 9)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_settings,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiSettingsGetSettingsConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSettingsGetSettingsConstMeta =>
+      const TaskConstMeta(debugName: "get_settings", argNames: []);
+
+  @override
   String crateApiSimpleGreet({required String name}) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(name, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 3)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 10)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -185,7 +412,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 4,
+            funcId: 11,
             port: port_,
           );
         },
@@ -212,7 +439,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 5,
+            funcId: 12,
             port: port_,
           );
         },
@@ -231,6 +458,88 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "init_app", argNames: []);
 
   @override
+  Future<void> crateApiInitInitAppState() {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 13,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiInitInitAppStateConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiInitInitAppStateConstMeta =>
+      const TaskConstMeta(debugName: "init_app_state", argNames: []);
+
+  @override
+  Future<void> crateApiHistoryMoveToTop({required BigInt id}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_usize(id, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 14,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiHistoryMoveToTopConstMeta,
+        argValues: [id],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiHistoryMoveToTopConstMeta =>
+      const TaskConstMeta(debugName: "move_to_top", argNames: ["id"]);
+
+  @override
+  Future<void> crateApiClipboardSimulatePasteCmd() {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 15,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiClipboardSimulatePasteCmdConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiClipboardSimulatePasteCmdConstMeta =>
+      const TaskConstMeta(debugName: "simulate_paste_cmd", argNames: []);
+
+  @override
   Stream<String> crateApiSpikeStreamClipboardChanged() {
     final sink = RustStreamSink<String>();
     unawaited(
@@ -242,7 +551,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 6,
+              funcId: 16,
               port: port_,
             );
           },
@@ -266,6 +575,211 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Stream<List<ClipboardItem>> crateApiStreamStreamClipboardChanged() {
+    final sink = RustStreamSink<List<ClipboardItem>>();
+    unawaited(
+      handler.executeNormal(
+        NormalTask(
+          callFfi: (port_) {
+            final serializer = SseSerializer(generalizedFrbRustBinding);
+            sse_encode_StreamSink_list_clipboard_item_Sse(sink, serializer);
+            pdeCallFfi(
+              generalizedFrbRustBinding,
+              serializer,
+              funcId: 17,
+              port: port_,
+            );
+          },
+          codec: SseCodec(
+            decodeSuccessData: sse_decode_unit,
+            decodeErrorData: sse_decode_String,
+          ),
+          constMeta: kCrateApiStreamStreamClipboardChangedConstMeta,
+          argValues: [sink],
+          apiImpl: this,
+        ),
+      ),
+    );
+    return sink.stream;
+  }
+
+  TaskConstMeta get kCrateApiStreamStreamClipboardChangedConstMeta =>
+      const TaskConstMeta(
+        debugName: "stream_clipboard_changed",
+        argNames: ["sink"],
+      );
+
+  @override
+  Stream<bool> crateApiStreamStreamHelperStatus() {
+    final sink = RustStreamSink<bool>();
+    unawaited(
+      handler.executeNormal(
+        NormalTask(
+          callFfi: (port_) {
+            final serializer = SseSerializer(generalizedFrbRustBinding);
+            sse_encode_StreamSink_bool_Sse(sink, serializer);
+            pdeCallFfi(
+              generalizedFrbRustBinding,
+              serializer,
+              funcId: 18,
+              port: port_,
+            );
+          },
+          codec: SseCodec(
+            decodeSuccessData: sse_decode_unit,
+            decodeErrorData: sse_decode_String,
+          ),
+          constMeta: kCrateApiStreamStreamHelperStatusConstMeta,
+          argValues: [sink],
+          apiImpl: this,
+        ),
+      ),
+    );
+    return sink.stream;
+  }
+
+  TaskConstMeta get kCrateApiStreamStreamHelperStatusConstMeta =>
+      const TaskConstMeta(
+        debugName: "stream_helper_status",
+        argNames: ["sink"],
+      );
+
+  @override
+  Stream<List<ClipboardItem>> crateApiStreamStreamHistoryReplace() {
+    final sink = RustStreamSink<List<ClipboardItem>>();
+    unawaited(
+      handler.executeNormal(
+        NormalTask(
+          callFfi: (port_) {
+            final serializer = SseSerializer(generalizedFrbRustBinding);
+            sse_encode_StreamSink_list_clipboard_item_Sse(sink, serializer);
+            pdeCallFfi(
+              generalizedFrbRustBinding,
+              serializer,
+              funcId: 19,
+              port: port_,
+            );
+          },
+          codec: SseCodec(
+            decodeSuccessData: sse_decode_unit,
+            decodeErrorData: sse_decode_String,
+          ),
+          constMeta: kCrateApiStreamStreamHistoryReplaceConstMeta,
+          argValues: [sink],
+          apiImpl: this,
+        ),
+      ),
+    );
+    return sink.stream;
+  }
+
+  TaskConstMeta get kCrateApiStreamStreamHistoryReplaceConstMeta =>
+      const TaskConstMeta(
+        debugName: "stream_history_replace",
+        argNames: ["sink"],
+      );
+
+  @override
+  Stream<BigInt> crateApiStreamStreamItemMovedToTop() {
+    final sink = RustStreamSink<BigInt>();
+    unawaited(
+      handler.executeNormal(
+        NormalTask(
+          callFfi: (port_) {
+            final serializer = SseSerializer(generalizedFrbRustBinding);
+            sse_encode_StreamSink_usize_Sse(sink, serializer);
+            pdeCallFfi(
+              generalizedFrbRustBinding,
+              serializer,
+              funcId: 20,
+              port: port_,
+            );
+          },
+          codec: SseCodec(
+            decodeSuccessData: sse_decode_unit,
+            decodeErrorData: sse_decode_String,
+          ),
+          constMeta: kCrateApiStreamStreamItemMovedToTopConstMeta,
+          argValues: [sink],
+          apiImpl: this,
+        ),
+      ),
+    );
+    return sink.stream;
+  }
+
+  TaskConstMeta get kCrateApiStreamStreamItemMovedToTopConstMeta =>
+      const TaskConstMeta(
+        debugName: "stream_item_moved_to_top",
+        argNames: ["sink"],
+      );
+
+  @override
+  Stream<WindowActionKind> crateApiStreamStreamWindowAction() {
+    final sink = RustStreamSink<WindowActionKind>();
+    unawaited(
+      handler.executeNormal(
+        NormalTask(
+          callFfi: (port_) {
+            final serializer = SseSerializer(generalizedFrbRustBinding);
+            sse_encode_StreamSink_window_action_kind_Sse(sink, serializer);
+            pdeCallFfi(
+              generalizedFrbRustBinding,
+              serializer,
+              funcId: 21,
+              port: port_,
+            );
+          },
+          codec: SseCodec(
+            decodeSuccessData: sse_decode_unit,
+            decodeErrorData: sse_decode_String,
+          ),
+          constMeta: kCrateApiStreamStreamWindowActionConstMeta,
+          argValues: [sink],
+          apiImpl: this,
+        ),
+      ),
+    );
+    return sink.stream;
+  }
+
+  TaskConstMeta get kCrateApiStreamStreamWindowActionConstMeta =>
+      const TaskConstMeta(
+        debugName: "stream_window_action",
+        argNames: ["sink"],
+      );
+
+  @override
+  Future<Settings> crateApiSettingsUpdateSettings({
+    required SettingsPatch patch,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_settings_patch(patch, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 22,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_settings,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSettingsUpdateSettingsConstMeta,
+        argValues: [patch],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSettingsUpdateSettingsConstMeta =>
+      const TaskConstMeta(debugName: "update_settings", argNames: ["patch"]);
+
+  @override
   Future<String> crateApiSpikeUpdateSettings({required String patch}) {
     return handler.executeNormal(
       NormalTask(
@@ -275,7 +789,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 7,
+            funcId: 23,
             port: port_,
           );
         },
@@ -293,6 +807,29 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiSpikeUpdateSettingsConstMeta =>
       const TaskConstMeta(debugName: "update_settings", argNames: ["patch"]);
 
+  @override
+  bool crateApiSettingsValidateHotkey({required String hotkey}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(hotkey, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 24)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiSettingsValidateHotkeyConstMeta,
+        argValues: [hotkey],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSettingsValidateHotkeyConstMeta =>
+      const TaskConstMeta(debugName: "validate_hotkey", argNames: ["hotkey"]);
+
   @protected
   AnyhowException dco_decode_AnyhowException(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -306,9 +843,98 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RustStreamSink<bool> dco_decode_StreamSink_bool_Sse(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    throw UnimplementedError();
+  }
+
+  @protected
+  RustStreamSink<List<ClipboardItem>>
+  dco_decode_StreamSink_list_clipboard_item_Sse(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    throw UnimplementedError();
+  }
+
+  @protected
+  RustStreamSink<BigInt> dco_decode_StreamSink_usize_Sse(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    throw UnimplementedError();
+  }
+
+  @protected
+  RustStreamSink<WindowActionKind> dco_decode_StreamSink_window_action_kind_Sse(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    throw UnimplementedError();
+  }
+
+  @protected
   String dco_decode_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as String;
+  }
+
+  @protected
+  bool dco_decode_bool(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as bool;
+  }
+
+  @protected
+  bool dco_decode_box_autoadd_bool(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as bool;
+  }
+
+  @protected
+  double dco_decode_box_autoadd_f_32(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as double;
+  }
+
+  @protected
+  SettingsPatch dco_decode_box_autoadd_settings_patch(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_settings_patch(raw);
+  }
+
+  @protected
+  int dco_decode_box_autoadd_u_32(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as int;
+  }
+
+  @protected
+  ClipboardItem dco_decode_clipboard_item(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 10)
+      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
+    return ClipboardItem(
+      id: dco_decode_usize(arr[0]),
+      content: dco_decode_String(arr[1]),
+      contentType: dco_decode_String(arr[2]),
+      timestamp: dco_decode_String(arr[3]),
+      preview: dco_decode_String(arr[4]),
+      charCount: dco_decode_usize(arr[5]),
+      imagePath: dco_decode_opt_String(arr[6]),
+      imageWidth: dco_decode_opt_box_autoadd_u_32(arr[7]),
+      imageHeight: dco_decode_opt_box_autoadd_u_32(arr[8]),
+      htmlContent: dco_decode_opt_String(arr[9]),
+    );
+  }
+
+  @protected
+  double dco_decode_f_32(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as double;
+  }
+
+  @protected
+  int dco_decode_i_32(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as int;
   }
 
   @protected
@@ -318,9 +944,91 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<ClipboardItem> dco_decode_list_clipboard_item(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_clipboard_item).toList();
+  }
+
+  @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as Uint8List;
+  }
+
+  @protected
+  String? dco_decode_opt_String(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_String(raw);
+  }
+
+  @protected
+  bool? dco_decode_opt_box_autoadd_bool(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_bool(raw);
+  }
+
+  @protected
+  double? dco_decode_opt_box_autoadd_f_32(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_f_32(raw);
+  }
+
+  @protected
+  int? dco_decode_opt_box_autoadd_u_32(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_u_32(raw);
+  }
+
+  @protected
+  Uint8List? dco_decode_opt_list_prim_u_8_strict(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_list_prim_u_8_strict(raw);
+  }
+
+  @protected
+  Settings dco_decode_settings(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 10)
+      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
+    return Settings(
+      closeToTray: dco_decode_bool(arr[0]),
+      zoomLevel: dco_decode_f_32(arr[1]),
+      hotkey: dco_decode_String(arr[2]),
+      autoStart: dco_decode_bool(arr[3]),
+      silentStart: dco_decode_bool(arr[4]),
+      doubleTapKey: dco_decode_String(arr[5]),
+      retentionDays: dco_decode_u_32(arr[6]),
+      windowWidth: dco_decode_u_32(arr[7]),
+      windowHeight: dco_decode_u_32(arr[8]),
+      windowUserResized: dco_decode_bool(arr[9]),
+    );
+  }
+
+  @protected
+  SettingsPatch dco_decode_settings_patch(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 10)
+      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
+    return SettingsPatch(
+      closeToTray: dco_decode_opt_box_autoadd_bool(arr[0]),
+      zoomLevel: dco_decode_opt_box_autoadd_f_32(arr[1]),
+      hotkey: dco_decode_opt_String(arr[2]),
+      autoStart: dco_decode_opt_box_autoadd_bool(arr[3]),
+      silentStart: dco_decode_opt_box_autoadd_bool(arr[4]),
+      doubleTapKey: dco_decode_opt_String(arr[5]),
+      retentionDays: dco_decode_opt_box_autoadd_u_32(arr[6]),
+      windowWidth: dco_decode_opt_box_autoadd_u_32(arr[7]),
+      windowHeight: dco_decode_opt_box_autoadd_u_32(arr[8]),
+      windowUserResized: dco_decode_opt_box_autoadd_bool(arr[9]),
+    );
+  }
+
+  @protected
+  int dco_decode_u_32(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as int;
   }
 
   @protected
@@ -333,6 +1041,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void dco_decode_unit(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return;
+  }
+
+  @protected
+  BigInt dco_decode_usize(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dcoDecodeU64(raw);
+  }
+
+  @protected
+  WindowActionKind dco_decode_window_action_kind(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return WindowActionKind.values[raw as int];
   }
 
   @protected
@@ -351,10 +1071,112 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RustStreamSink<bool> sse_decode_StreamSink_bool_Sse(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    throw UnimplementedError('Unreachable ()');
+  }
+
+  @protected
+  RustStreamSink<List<ClipboardItem>>
+  sse_decode_StreamSink_list_clipboard_item_Sse(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    throw UnimplementedError('Unreachable ()');
+  }
+
+  @protected
+  RustStreamSink<BigInt> sse_decode_StreamSink_usize_Sse(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    throw UnimplementedError('Unreachable ()');
+  }
+
+  @protected
+  RustStreamSink<WindowActionKind> sse_decode_StreamSink_window_action_kind_Sse(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    throw UnimplementedError('Unreachable ()');
+  }
+
+  @protected
   String sse_decode_String(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_list_prim_u_8_strict(deserializer);
     return utf8.decoder.convert(inner);
+  }
+
+  @protected
+  bool sse_decode_bool(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return deserializer.buffer.getUint8() != 0;
+  }
+
+  @protected
+  bool sse_decode_box_autoadd_bool(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_bool(deserializer));
+  }
+
+  @protected
+  double sse_decode_box_autoadd_f_32(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_f_32(deserializer));
+  }
+
+  @protected
+  SettingsPatch sse_decode_box_autoadd_settings_patch(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_settings_patch(deserializer));
+  }
+
+  @protected
+  int sse_decode_box_autoadd_u_32(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_u_32(deserializer));
+  }
+
+  @protected
+  ClipboardItem sse_decode_clipboard_item(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_id = sse_decode_usize(deserializer);
+    var var_content = sse_decode_String(deserializer);
+    var var_contentType = sse_decode_String(deserializer);
+    var var_timestamp = sse_decode_String(deserializer);
+    var var_preview = sse_decode_String(deserializer);
+    var var_charCount = sse_decode_usize(deserializer);
+    var var_imagePath = sse_decode_opt_String(deserializer);
+    var var_imageWidth = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_imageHeight = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_htmlContent = sse_decode_opt_String(deserializer);
+    return ClipboardItem(
+      id: var_id,
+      content: var_content,
+      contentType: var_contentType,
+      timestamp: var_timestamp,
+      preview: var_preview,
+      charCount: var_charCount,
+      imagePath: var_imagePath,
+      imageWidth: var_imageWidth,
+      imageHeight: var_imageHeight,
+      htmlContent: var_htmlContent,
+    );
+  }
+
+  @protected
+  double sse_decode_f_32(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return deserializer.buffer.getFloat32();
+  }
+
+  @protected
+  int sse_decode_i_32(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return deserializer.buffer.getInt32();
   }
 
   @protected
@@ -370,10 +1192,139 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<ClipboardItem> sse_decode_list_clipboard_item(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <ClipboardItem>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_clipboard_item(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var len_ = sse_decode_i_32(deserializer);
     return deserializer.buffer.getUint8List(len_);
+  }
+
+  @protected
+  String? sse_decode_opt_String(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_String(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  bool? sse_decode_opt_box_autoadd_bool(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_bool(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  double? sse_decode_opt_box_autoadd_f_32(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_f_32(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  int? sse_decode_opt_box_autoadd_u_32(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_u_32(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  Uint8List? sse_decode_opt_list_prim_u_8_strict(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_list_prim_u_8_strict(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  Settings sse_decode_settings(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_closeToTray = sse_decode_bool(deserializer);
+    var var_zoomLevel = sse_decode_f_32(deserializer);
+    var var_hotkey = sse_decode_String(deserializer);
+    var var_autoStart = sse_decode_bool(deserializer);
+    var var_silentStart = sse_decode_bool(deserializer);
+    var var_doubleTapKey = sse_decode_String(deserializer);
+    var var_retentionDays = sse_decode_u_32(deserializer);
+    var var_windowWidth = sse_decode_u_32(deserializer);
+    var var_windowHeight = sse_decode_u_32(deserializer);
+    var var_windowUserResized = sse_decode_bool(deserializer);
+    return Settings(
+      closeToTray: var_closeToTray,
+      zoomLevel: var_zoomLevel,
+      hotkey: var_hotkey,
+      autoStart: var_autoStart,
+      silentStart: var_silentStart,
+      doubleTapKey: var_doubleTapKey,
+      retentionDays: var_retentionDays,
+      windowWidth: var_windowWidth,
+      windowHeight: var_windowHeight,
+      windowUserResized: var_windowUserResized,
+    );
+  }
+
+  @protected
+  SettingsPatch sse_decode_settings_patch(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_closeToTray = sse_decode_opt_box_autoadd_bool(deserializer);
+    var var_zoomLevel = sse_decode_opt_box_autoadd_f_32(deserializer);
+    var var_hotkey = sse_decode_opt_String(deserializer);
+    var var_autoStart = sse_decode_opt_box_autoadd_bool(deserializer);
+    var var_silentStart = sse_decode_opt_box_autoadd_bool(deserializer);
+    var var_doubleTapKey = sse_decode_opt_String(deserializer);
+    var var_retentionDays = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_windowWidth = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_windowHeight = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_windowUserResized = sse_decode_opt_box_autoadd_bool(deserializer);
+    return SettingsPatch(
+      closeToTray: var_closeToTray,
+      zoomLevel: var_zoomLevel,
+      hotkey: var_hotkey,
+      autoStart: var_autoStart,
+      silentStart: var_silentStart,
+      doubleTapKey: var_doubleTapKey,
+      retentionDays: var_retentionDays,
+      windowWidth: var_windowWidth,
+      windowHeight: var_windowHeight,
+      windowUserResized: var_windowUserResized,
+    );
+  }
+
+  @protected
+  int sse_decode_u_32(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return deserializer.buffer.getUint32();
   }
 
   @protected
@@ -388,15 +1339,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  int sse_decode_i_32(SseDeserializer deserializer) {
+  BigInt sse_decode_usize(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    return deserializer.buffer.getInt32();
+    return deserializer.buffer.getBigUint64();
   }
 
   @protected
-  bool sse_decode_bool(SseDeserializer deserializer) {
+  WindowActionKind sse_decode_window_action_kind(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    return deserializer.buffer.getUint8() != 0;
+    var inner = sse_decode_i_32(deserializer);
+    return WindowActionKind.values[inner];
   }
 
   @protected
@@ -426,9 +1378,137 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_StreamSink_bool_Sse(
+    RustStreamSink<bool> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(
+      self.setupAndSerialize(
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+      ),
+      serializer,
+    );
+  }
+
+  @protected
+  void sse_encode_StreamSink_list_clipboard_item_Sse(
+    RustStreamSink<List<ClipboardItem>> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(
+      self.setupAndSerialize(
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_clipboard_item,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+      ),
+      serializer,
+    );
+  }
+
+  @protected
+  void sse_encode_StreamSink_usize_Sse(
+    RustStreamSink<BigInt> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(
+      self.setupAndSerialize(
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_usize,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+      ),
+      serializer,
+    );
+  }
+
+  @protected
+  void sse_encode_StreamSink_window_action_kind_Sse(
+    RustStreamSink<WindowActionKind> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(
+      self.setupAndSerialize(
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_window_action_kind,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+      ),
+      serializer,
+    );
+  }
+
+  @protected
   void sse_encode_String(String self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_list_prim_u_8_strict(utf8.encoder.convert(self), serializer);
+  }
+
+  @protected
+  void sse_encode_bool(bool self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    serializer.buffer.putUint8(self ? 1 : 0);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_bool(bool self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_bool(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_f_32(double self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_f_32(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_settings_patch(
+    SettingsPatch self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_settings_patch(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_u_32(int self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self, serializer);
+  }
+
+  @protected
+  void sse_encode_clipboard_item(ClipboardItem self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_usize(self.id, serializer);
+    sse_encode_String(self.content, serializer);
+    sse_encode_String(self.contentType, serializer);
+    sse_encode_String(self.timestamp, serializer);
+    sse_encode_String(self.preview, serializer);
+    sse_encode_usize(self.charCount, serializer);
+    sse_encode_opt_String(self.imagePath, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.imageWidth, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.imageHeight, serializer);
+    sse_encode_opt_String(self.htmlContent, serializer);
+  }
+
+  @protected
+  void sse_encode_f_32(double self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    serializer.buffer.putFloat32(self);
+  }
+
+  @protected
+  void sse_encode_i_32(int self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    serializer.buffer.putInt32(self);
   }
 
   @protected
@@ -437,6 +1517,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_String(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_clipboard_item(
+    List<ClipboardItem> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_clipboard_item(item, serializer);
     }
   }
 
@@ -451,6 +1543,95 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_String(String? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_String(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_bool(bool? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_bool(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_f_32(double? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_f_32(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_u_32(int? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_u_32(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_list_prim_u_8_strict(
+    Uint8List? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_list_prim_u_8_strict(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_settings(Settings self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_bool(self.closeToTray, serializer);
+    sse_encode_f_32(self.zoomLevel, serializer);
+    sse_encode_String(self.hotkey, serializer);
+    sse_encode_bool(self.autoStart, serializer);
+    sse_encode_bool(self.silentStart, serializer);
+    sse_encode_String(self.doubleTapKey, serializer);
+    sse_encode_u_32(self.retentionDays, serializer);
+    sse_encode_u_32(self.windowWidth, serializer);
+    sse_encode_u_32(self.windowHeight, serializer);
+    sse_encode_bool(self.windowUserResized, serializer);
+  }
+
+  @protected
+  void sse_encode_settings_patch(SettingsPatch self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_opt_box_autoadd_bool(self.closeToTray, serializer);
+    sse_encode_opt_box_autoadd_f_32(self.zoomLevel, serializer);
+    sse_encode_opt_String(self.hotkey, serializer);
+    sse_encode_opt_box_autoadd_bool(self.autoStart, serializer);
+    sse_encode_opt_box_autoadd_bool(self.silentStart, serializer);
+    sse_encode_opt_String(self.doubleTapKey, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.retentionDays, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.windowWidth, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.windowHeight, serializer);
+    sse_encode_opt_box_autoadd_bool(self.windowUserResized, serializer);
+  }
+
+  @protected
+  void sse_encode_u_32(int self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    serializer.buffer.putUint32(self);
+  }
+
+  @protected
   void sse_encode_u_8(int self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putUint8(self);
@@ -462,14 +1643,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_i_32(int self, SseSerializer serializer) {
+  void sse_encode_usize(BigInt self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    serializer.buffer.putInt32(self);
+    serializer.buffer.putBigUint64(self);
   }
 
   @protected
-  void sse_encode_bool(bool self, SseSerializer serializer) {
+  void sse_encode_window_action_kind(
+    WindowActionKind self,
+    SseSerializer serializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    serializer.buffer.putUint8(self ? 1 : 0);
+    sse_encode_i_32(self.index, serializer);
   }
 }

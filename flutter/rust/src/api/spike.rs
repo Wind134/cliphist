@@ -7,8 +7,8 @@
 //! This is throwaway scaffold — the real engine (arboard polling, ammonia
 //! sanitize, settings persistence) is ported from `src-tauri/src/` in M2.
 
-use flutter_rust_bridge::frb;
 use crate::frb_generated::StreamSink;
+use flutter_rust_bridge::frb;
 use std::thread;
 use std::time::Duration;
 
