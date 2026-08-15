@@ -48,8 +48,8 @@ pub fn request_window_action() {
 }
 
 /// Whether the privileged evdev double-tap helper is currently connected.
-/// M8 wires this to the real Linux helper connection state; stubbed `false`
-/// in M2 so the helper-status monitor thread exercises its emit path.
+/// Backed by the shortcut engine's listener flag (Windows rdev double-tap
+/// sets it; the Linux evdev helper takes over in M8).
 pub fn is_helper_connected() -> bool {
-    false
+    crate::core::shortcut_engine::helper_connected()
 }

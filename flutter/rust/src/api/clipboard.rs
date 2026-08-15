@@ -36,5 +36,5 @@ fn truncate_char_boundary(s: &str, max_bytes: usize) -> &str {
 /// Windows `rdev`, macOS unsupported) lands in M7. Returning an `Err` keeps the
 /// Dart side honest — no silent success while the feature is unimplemented.
 pub fn simulate_paste_cmd() -> Result<(), String> {
-    Err("simulate_paste: 实现 M7（global-hotkey/rdev/evdev uinput）".into())
+    crate::core::shortcut_engine::simulate_paste()
 }

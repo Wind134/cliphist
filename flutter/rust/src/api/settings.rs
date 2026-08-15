@@ -62,11 +62,14 @@ pub fn update_settings(patch: SettingsPatch) -> Result<Settings, String> {
         }
     }
 
-    // Side-effecting fields: validate format, persist; OS effect deferred.
+    // Side-effecting fields: validate + apply the OS effect, then persist.
     if let Some(v) = patch.hotkey {
         if hotkey_parse::validate_shortcut(&v) {
-            // M7: register via global-hotkey. M2 only validates + persists.
-            log::write_log(&format!("hotkey -> {} (registration deferred to M7)", v));
+            // Register before persisting so a failure leaves the old binding
+            // intact (matches the old Tauri rollback behavior).
+            if let Err(e) = crate::core::shortcut_engine::register_global_hotkey(&v) {
+                return Err(format!("快捷键注册失败: {}", e));
+            }
             current.hotkey = v;
         } else {
             return Err(format!("无效的快捷键格式: {}", v));
@@ -77,12 +80,13 @@ pub fn update_settings(patch: SettingsPatch) -> Result<Settings, String> {
         if !valid_keys.contains(&v.as_str()) {
             return Err(format!("无效的双击键: {}", v));
         }
-        // M7/M8: start/stop the real listener. M2 only validates + persists.
-        log::write_log(&format!(
-            "double_tap_key -> {} (listener deferred to M7/M8)",
-            v
-        ));
-        current.double_tap_key = v;
+        current.double_tap_key = v.clone();
+        // Persist first, then (re)start the listener. Start failure is
+        // non-fatal — the value is saved and retried on next toggle.
+        let start_result = crate::core::shortcut_engine::start_double_tap_listener(&v);
+        if let Err(e) = &start_result {
+            log::write_log(&format!("start_double_tap_listener failed: {}", e));
+        }
     }
 
     let result = current.clone();

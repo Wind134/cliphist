@@ -6,4 +6,5 @@ pub mod hotkey_parse;
 pub mod log;
 pub mod sanitize;
 pub mod settings_store;
+pub mod shortcut_engine;
 pub mod state;
