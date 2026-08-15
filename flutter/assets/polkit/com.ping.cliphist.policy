@@ -11,11 +11,11 @@
       <allow_inactive>auth_self_keep</allow_inactive>
       <allow_active>auth_self_keep</allow_active>
     </defaults>
-    <!-- The helper is now a standalone binary (plan 3.1), installed by the
-         packaging (deb/PKGBUILD) alongside the main app. The main crate
+    <!-- The helper is a standalone binary (plan 3.1), installed by the deb /
+         PKGBUILD at /opt/cliphist/ next to the main app. The main crate
          resolves the helper path at runtime (build-time override via
          CLIPHIST_HELPER_PATH, exe-dir neighbor, then PATH). -->
-    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/cliphist/cliphist-evdev-helper</annotate>
+    <annotate key="org.freedesktop.policykit.exec.path">/opt/cliphist/cliphist-evdev-helper</annotate>
     <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
   </action>
 </policyconfig>

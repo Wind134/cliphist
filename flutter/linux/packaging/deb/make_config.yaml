@@ -1,0 +1,34 @@
+# Deb package config for `fastforge package --platform linux --targets deb`.
+# The app is installed to /opt/cliphist/ (FHS third-party convention) with a
+# /usr/bin/cliphist symlink + desktop entry added by the packager.
+display_name: ClipHist
+package_name: cliphist
+
+maintainer:
+  name: ping
+  email: ping@users.noreply.github.com
+
+priority: optional
+section: x11
+installed_size: 30000
+
+# Ship the polkit policy that authorizes the privileged evdev helper. The file
+# is copied into the app bundle by the release CI hook-pre step, so it lands at
+# /opt/cliphist/com.ping.cliphist.policy; the postinstall installs it into the
+# polkit actions dir where `pkexec cliphist-evdev-helper` will find it.
+postinstall_scripts:
+  - install -Dm644 /opt/cliphist/com.ping.cliphist.policy /usr/share/polkit-1/actions/com.ping.cliphist.policy
+
+keywords:
+  - clipboard
+  - history
+  - manager
+  - paste
+
+generic_name: Clipboard History Manager
+
+categories:
+  - Utility
+
+startup_notify: true
+icon: assets/icon/app.png

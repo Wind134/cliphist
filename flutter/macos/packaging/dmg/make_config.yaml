@@ -1,0 +1,14 @@
+# DMG config for `fastforge package --platform macos --targets dmg`.
+# appdmg-style spec; the app bundle is `cliphist.app` (PRODUCT_NAME from
+# macos/Runner/Configs/AppInfo.xcconfig).
+title: ClipHist
+icon-size: 128
+contents:
+  - x: 448
+    y: 344
+    type: link
+    path: /Applications
+  - x: 192
+    y: 344
+    type: file
+    path: cliphist.app

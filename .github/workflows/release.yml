@@ -59,8 +59,6 @@ jobs:
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           sed -i "s/^version: .*/version: $VERSION/" flutter/pubspec.yaml
-          sed -i 's/^version = ".*"/version = "'"$VERSION"'"/' flutter/rust/Cargo.toml
-          sed -i 's/^version: .*/version: '"$VERSION"'/' flutter/fastforge.yaml
 
       - name: Build evdev helper (release)
         working-directory: rust/evdev-helper
@@ -69,21 +67,27 @@ jobs:
       - name: Install fastforge
         run: dart pub global activate fastforge 0.6.12
 
+      # --hook-pre runs after `flutter build` and before the makers, so the
+      # privileged helper + polkit policy get packed into the bundle (they land
+      # in /opt/cliphist/ of the deb; the deb postinstall moves the policy to
+      # /usr/share/polkit-1/actions/). The AppImage ignores them (see
+      # linux/packaging/appimage/make_config.yaml).
       - name: Build Linux packages
         working-directory: flutter
         run: |
-          ${HOME}/.pub-cache/bin/fastforge build --platform linux --targets deb,appimage
+          ${HOME}/.pub-cache/bin/fastforge package --platform linux --targets deb,appimage \
+            --hook-pre 'cp ../rust/evdev-helper/target/release/cliphist-evdev-helper build/linux/x64/release/bundle/ && cp assets/polkit/com.ping.cliphist.policy build/linux/x64/release/bundle/'
       - name: Upload deb
         uses: actions/upload-artifact@v4
         with:
           name: cliphist-linux-amd64-deb
-          path: flutter/build/linux/x64/release/bundle/deb/*.deb
+          path: flutter/build/linux/x64/release/bundle/**/*.deb
           retention-days: 5
       - name: Upload AppImage
         uses: actions/upload-artifact@v4
         with:
           name: cliphist-linux-amd64-appimage
-          path: flutter/build/linux/x64/release/bundle/appimage/*.AppImage
+          path: flutter/build/linux/x64/release/bundle/**/*.AppImage
           retention-days: 5
 
   build-windows:
@@ -103,66 +107,54 @@ jobs:
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           sed -i "s/^version: .*/version: $VERSION/" flutter/pubspec.yaml
-          sed -i 's/^version = ".*"/version = "'"$VERSION"'"/' flutter/rust/Cargo.toml
-          sed -i 's/^version: .*/version: '"$VERSION"'/' flutter/fastforge.yaml
       - name: Install fastforge
         run: dart pub global activate fastforge 0.6.12
       - name: Build Windows packages
         working-directory: flutter
         run: |
-          ${HOME}/.pub-cache/bin/fastforge build --platform windows --targets exe,msix
+          ${HOME}/.pub-cache/bin/fastforge package --platform windows --targets exe,msix
       - name: Upload NSIS setup
         uses: actions/upload-artifact@v4
         with:
           name: cliphist-windows-x64-setup
-          path: flutter/build/windows/x64/release/bundle/exe/*.exe
+          path: flutter/build/windows/x64/release/bundle/**/*.exe
           retention-days: 5
       - name: Upload MSIX
         uses: actions/upload-artifact@v4
         with:
           name: cliphist-windows-x64-msix
-          path: flutter/build/windows/x64/release/bundle/msix/*.msix
+          path: flutter/build/windows/x64/release/bundle/**/*.msix
           retention-days: 5
 
   build-macos:
     needs: frb-codegen-check
     runs-on: macos-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: aarch64-apple-darwin
-            suffix: macos-arm64
-          - target: x86_64-apple-darwin
-            suffix: macos-x64
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with: { channel: stable, cache: true }
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: 'flutter/rust -> target'
-          shared-key: macos-${{ matrix.target }}
+          shared-key: macos
       - name: Set version from tag
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           sed -i '' 's/^version: .*/version: '"$VERSION"'/' flutter/pubspec.yaml
-          sed -i '' 's/^version = ".*"/version = "'"$VERSION"'"/' flutter/rust/Cargo.toml
-          sed -i '' 's/^version: .*/version: '"$VERSION"'/' flutter/fastforge.yaml
       - name: Install fastforge
         run: dart pub global activate fastforge 0.6.12
+      # Native arch only (macos-latest = arm64). An x86_64 dmg would need a
+      # full x64 cross toolchain (Rust + Flutter) — tracked as a follow-up.
       - name: Build macOS dmg
         working-directory: flutter
         run: |
-          ${HOME}/.pub-cache/bin/fastforge build --platform macos --targets dmg --build-target ${{ matrix.target }}
+          ${HOME}/.pub-cache/bin/fastforge package --platform macos --targets dmg
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
-          name: cliphist-${{ matrix.suffix }}
-          path: flutter/build/macos/${{ matrix.target }}/release/bundle/dmg/*.dmg
+          name: cliphist-macos-arm64
+          path: flutter/build/macos/**/release/bundle/**/*.dmg
           retention-days: 5
 
   checksums:
