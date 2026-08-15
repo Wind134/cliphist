@@ -83,17 +83,22 @@ jobs:
 
       # The appimage maker invokes `appimagetool` from PATH (no auto-download).
       # GitHub runners have no FUSE, so extract the AppImage and use the inner
-      # binary directly. appimagetool shells out to `mksquashfs` which it locates
-      # at <bindir>/../lib/appimagekit/mksquashfs — so the whole extracted
-      # usr/ tree must land under /usr/local/, not just the appimagetool binary
-      # (copying only the binary leaves mksquashfs unfound and the maker fails).
+      # binary directly. appimagetool shells out to `mksquashfs`, which it
+      # locates at <bindir>/../lib/appimagekit/mksquashfs — so copy the binary
+      # to /usr/local/bin and the appimagekit/ subdir to /usr/local/lib/.
+      # Copying the whole extracted usr/ tree is wrong: it also dumps the
+      # AppImage's bundled libstdc++/libgcc_s into /usr/local/lib (a standard
+      # linker path), which the `flutter build linux` link then picks up and
+      # fails with "clang: error: linker command failed with exit code 1".
       - name: Install appimagetool
         run: |
           cd /tmp
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool.AppImage
           chmod +x appimagetool.AppImage
           ./appimagetool.AppImage --appimage-extract >/dev/null
-          sudo cp -r squashfs-root/usr/* /usr/local/
+          sudo cp squashfs-root/usr/bin/appimagetool /usr/local/bin/
+          sudo mkdir -p /usr/local/lib/appimagekit
+          sudo cp squashfs-root/usr/lib/appimagekit/* /usr/local/lib/appimagekit/
           test -x /usr/local/bin/appimagetool && test -x /usr/local/lib/appimagekit/mksquashfs
 
       # --hook-pre runs after `flutter build` and before the makers, so the

@@ -27,7 +27,29 @@ use crate::core::state;
 
 // ── Global hotkey (cross-platform) ─────────────────────────────────────────
 
-static HOTKEY_MANAGER: Mutex<Option<global_hotkey::GlobalHotKeyManager>> = Mutex::new(None);
+// global-hotkey's Windows `GlobalHotKeyManager` holds a Win32 HWND
+// (`*mut c_void`), which is `!Send` because HWNDs are thread-affine — a
+// window and its RegisterHotKey binding belong to the thread that created
+// them, and WM_HOTKEY is posted to that thread's message queue. That makes
+// `Mutex<Option<GlobalHotKeyManager>>` non-`Sync`, so it cannot live in a
+// `static` directly on Windows (the Linux X11 and macOS managers are `Send`
+// and compile fine). We only ever touch the manager from the Flutter main
+// thread: both call sites (init_app_state at startup, update_settings when
+// the binding changes) are sync `#[frb]` functions, which FRB runs on the
+// calling Dart isolate's thread — the platform/main thread that owns the
+// Win32 message loop the manager relies on to dispatch WM_HOTKEY. So the
+// `Send` impl below only satisfies the static's `Sync` bound; at runtime the
+// manager is created, registered, and dropped on one and the same (main)
+// thread and no HWND ever actually crosses threads. Keep all manager access
+// confined to the main thread — do not call register_global_hotkey from a
+// worker thread.
+struct HotKeyManager(global_hotkey::GlobalHotKeyManager);
+// SAFETY: see comment above — the manager is only accessed from the main
+// thread; the Send impl is for the static's Sync requirement, not for
+// actually moving the value across threads.
+unsafe impl Send for HotKeyManager {}
+
+static HOTKEY_MANAGER: Mutex<Option<HotKeyManager>> = Mutex::new(None);
 static HOTKEY_ID: AtomicU32 = AtomicU32::new(0);
 static HOTKEY_RECEIVER_RUNNING: AtomicBool = AtomicBool::new(false);
 
@@ -63,10 +85,13 @@ pub fn register_global_hotkey(shortcut_str: &str) -> Result<(), String> {
 
     let mut manager_slot = HOTKEY_MANAGER.lock();
     // Re-create the manager so all prior hotkeys are dropped (unregistered).
-    let manager = global_hotkey::GlobalHotKeyManager::new()
-        .map_err(|e| format!("GlobalHotKeyManager::new failed: {}", e))?;
+    let manager = HotKeyManager(
+        global_hotkey::GlobalHotKeyManager::new()
+            .map_err(|e| format!("GlobalHotKeyManager::new failed: {}", e))?,
+    );
     let hotkey = HotKey::new(Some(parsed.modifiers), parsed.code);
     manager
+        .0
         .register(hotkey)
         .map_err(|e| format!("register hotkey failed: {}", e))?;
     HOTKEY_ID.store(hotkey.id(), Ordering::SeqCst);
