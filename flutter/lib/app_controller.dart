@@ -71,23 +71,49 @@ class ClipHistController with WindowListener, TrayListener {
     );
 
     // Intercept the native close button so it respects "close to tray".
-    await windowManager.setPreventClose(true);
+    try {
+      await windowManager.setPreventClose(true);
+    } catch (e) {
+      api_clipboard.feLog(message: 'setPreventClose failed: $e');
+    }
     windowManager.addListener(this);
 
-    await _setupTray();
+    // Tray setup is best-effort: a failure here (icon load, context menu,
+    // platform channel) must not prevent the window/hotkey paths from
+    // working — if the tray never comes up the user can still reach the
+    // window via the global hotkey, and the cause is in the log.
+    try {
+      await _setupTray();
+    } catch (e, stack) {
+      api_clipboard.feLog(message: '_setupTray failed: $e\n$stack');
+    }
 
-    // Rust → Dart streams.
-    _windowActionSub = api_stream.streamWindowAction().listen((kind) {
-      if (kind == WindowActionKind.showAndRaise) {
-        performWindowDance();
-      }
-    });
-    _helperStatusSub = api_stream.streamHelperStatus().listen((connected) {
-      container.read(helperConnectedProvider.notifier).state = connected;
-    });
+    // Rust → Dart streams. Each group is best-effort so one broken sink
+    // (e.g. helper-status on a platform without the helper) doesn't drop
+    // the others.
+    try {
+      _windowActionSub = api_stream.streamWindowAction().listen((kind) {
+        if (kind == WindowActionKind.showAndRaise) {
+          performWindowDance();
+        }
+      });
+    } catch (e, stack) {
+      api_clipboard.feLog(message: 'streamWindowAction subscribe failed: $e\n$stack');
+    }
+    try {
+      _helperStatusSub = api_stream.streamHelperStatus().listen((connected) {
+        container.read(helperConnectedProvider.notifier).state = connected;
+      });
+    } catch (e, stack) {
+      api_clipboard.feLog(message: 'streamHelperStatus subscribe failed: $e\n$stack');
+    }
 
     // History-bearing streams → history provider.
-    _clipboardSubs = subscribeClipboardStreams(container);
+    try {
+      _clipboardSubs = subscribeClipboardStreams(container);
+    } catch (e, stack) {
+      api_clipboard.feLog(message: 'subscribeClipboardStreams failed: $e\n$stack');
+    }
   }
 
   /// The "pop to top" window-action dance, ported from the old Tauri worker:
