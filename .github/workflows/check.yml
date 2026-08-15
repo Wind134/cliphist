@@ -38,7 +38,7 @@ jobs:
       - name: Install Linux build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libevdev-dev libudev-dev libxi-dev libxtst-dev
+          sudo apt-get install -y libgtk-3-dev libevdev-dev libudev-dev libxi-dev libxtst-dev libayatana-appindicator3-dev
 
       - name: Regenerate FRB bindings
         working-directory: flutter
@@ -79,7 +79,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libevdev-dev libudev-dev libxi-dev libxtst-dev
+          sudo apt-get install -y libgtk-3-dev libevdev-dev libudev-dev libxi-dev libxtst-dev libayatana-appindicator3-dev
 
       - name: flutter analyze
         working-directory: flutter
