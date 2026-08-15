@@ -67,6 +67,17 @@ jobs:
       - name: Install fastforge
         run: dart pub global activate fastforge 0.6.12
 
+      # The appimage maker invokes `appimagetool` from PATH (no auto-download).
+      # GitHub runners have no FUSE, so extract the AppImage and use the inner
+      # binary directly.
+      - name: Install appimagetool
+        run: |
+          cd /tmp
+          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool.AppImage
+          chmod +x appimagetool.AppImage
+          ./appimagetool.AppImage --appimage-extract >/dev/null
+          sudo cp squashfs-root/usr/bin/appimagetool /usr/local/bin/
+
       # --hook-pre runs after `flutter build` and before the makers, so the
       # privileged helper + polkit policy get packed into the bundle (they land
       # in /opt/cliphist/ of the deb; the deb postinstall moves the policy to
@@ -75,19 +86,19 @@ jobs:
       - name: Build Linux packages
         working-directory: flutter
         run: |
-          ${HOME}/.pub-cache/bin/fastforge package --platform linux --targets deb,appimage \
+          dart pub global run fastforge:main package --platform linux --targets deb,appimage \
             --hook-pre 'cp ../rust/evdev-helper/target/release/cliphist-evdev-helper build/linux/x64/release/bundle/ && cp assets/polkit/com.ping.cliphist.policy build/linux/x64/release/bundle/'
       - name: Upload deb
         uses: actions/upload-artifact@v4
         with:
           name: cliphist-linux-amd64-deb
-          path: flutter/build/linux/x64/release/bundle/**/*.deb
+          path: flutter/dist/**/*.deb
           retention-days: 5
       - name: Upload AppImage
         uses: actions/upload-artifact@v4
         with:
           name: cliphist-linux-amd64-appimage
-          path: flutter/build/linux/x64/release/bundle/**/*.AppImage
+          path: flutter/dist/**/*.AppImage
           retention-days: 5
 
   build-windows:
@@ -109,21 +120,24 @@ jobs:
           sed -i "s/^version: .*/version: $VERSION/" flutter/pubspec.yaml
       - name: Install fastforge
         run: dart pub global activate fastforge 0.6.12
+      # The exe maker needs Inno Setup 6 (ISCC.exe) — it does not auto-install.
+      - name: Install Inno Setup 6
+        run: choco install innosetup --yes --no-progress
       - name: Build Windows packages
         working-directory: flutter
         run: |
-          ${HOME}/.pub-cache/bin/fastforge package --platform windows --targets exe,msix
+          dart pub global run fastforge:main package --platform windows --targets exe,msix
       - name: Upload NSIS setup
         uses: actions/upload-artifact@v4
         with:
           name: cliphist-windows-x64-setup
-          path: flutter/build/windows/x64/release/bundle/**/*.exe
+          path: flutter/dist/**/*.exe
           retention-days: 5
       - name: Upload MSIX
         uses: actions/upload-artifact@v4
         with:
           name: cliphist-windows-x64-msix
-          path: flutter/build/windows/x64/release/bundle/**/*.msix
+          path: flutter/dist/**/*.msix
           retention-days: 5
 
   build-macos:
@@ -144,17 +158,22 @@ jobs:
           sed -i '' 's/^version: .*/version: '"$VERSION"'/' flutter/pubspec.yaml
       - name: Install fastforge
         run: dart pub global activate fastforge 0.6.12
+      # The dmg maker requires `appdmg` and auto-installs it via `pnpm`, which
+      # is not on the macos runner — pre-install with npm so the requirement
+      # check passes.
+      - name: Install appdmg
+        run: npm install -g appdmg
       # Native arch only (macos-latest = arm64). An x86_64 dmg would need a
       # full x64 cross toolchain (Rust + Flutter) — tracked as a follow-up.
       - name: Build macOS dmg
         working-directory: flutter
         run: |
-          ${HOME}/.pub-cache/bin/fastforge package --platform macos --targets dmg
+          dart pub global run fastforge:main package --platform macos --targets dmg
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
           name: cliphist-macos-arm64
-          path: flutter/build/macos/**/release/bundle/**/*.dmg
+          path: flutter/dist/**/*.dmg
           retention-days: 5
 
   checksums:
