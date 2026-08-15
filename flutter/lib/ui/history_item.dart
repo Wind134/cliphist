@@ -137,7 +137,7 @@ class _HistoryItemState extends State<HistoryItem> {
               padding:
                   const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
               decoration: BoxDecoration(
-                color: _typeColor.withOpacity(0.12),
+                color: _typeColor.withValues(alpha: 0.12),
                 borderRadius:
                     BorderRadius.circular(CliphistColors.radiusSm),
               ),

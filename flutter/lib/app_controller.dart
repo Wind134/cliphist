@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:launch_at_startup/launch_at_startup.dart';
-import 'package:menu_base/menu_base.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -51,7 +50,7 @@ class ClipHistController with WindowListener, TrayListener {
     await windowManager.waitUntilReadyToShow(
       const WindowOptions(
         title: 'ClipHist',
-        minimumSize: const Size(320, 400),
+        minimumSize: Size(320, 400),
         titleBarStyle: TitleBarStyle.normal, // OS-native decorations (decision 3.6)
         skipTaskbar: false,
       ),

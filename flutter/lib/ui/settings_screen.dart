@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app_controller.dart';
 import '../src/rust/api/settings.dart' as api_settings;
-import '../src/rust/core/settings_store.dart' show Settings, SettingsPatch;
+import '../src/rust/core/settings_store.dart' show SettingsPatch;
 import '../state/providers.dart';
 import '../util/toast.dart';
 import 'theme.dart';
@@ -263,7 +262,7 @@ class _ToggleCard extends StatelessWidget {
       info: _Info(label: label, desc: desc),
       trailing: Switch(
         value: value,
-        activeColor: const Color(0xFF4F46E5),
+        activeThumbColor: const Color(0xFF4F46E5),
         onChanged: onChanged,
       ),
     );
@@ -480,7 +479,7 @@ class _Select extends StatelessWidget {
     return SizedBox(
       width: 120,
       child: DropdownButtonFormField<String>(
-        value: value,
+        initialValue: value,
         isDense: true,
         style: const TextStyle(
           color: CliphistColors.textPrimary,

@@ -144,7 +144,7 @@ class _ToastOverlay extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(
-            color: CliphistColors.textPrimary.withOpacity(0.9),
+            color: CliphistColors.textPrimary.withValues(alpha: 0.9),
             borderRadius: BorderRadius.circular(CliphistColors.radius),
           ),
           child: Text(
