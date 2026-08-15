@@ -221,21 +221,51 @@ pub fn start_double_tap_listener(key_name: &str) -> Result<(), String> {
         stop_double_tap_listener();
         return Ok(());
     }
-    platform_impl::start_double_tap_listener(key_name)
+    #[cfg(target_os = "windows")]
+    {
+        return windows_impl::start_double_tap_listener(key_name);
+    }
+    #[cfg(target_os = "linux")]
+    {
+        return linux_impl::start_linux_double_tap_listener(key_name);
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    {
+        let _ = key_name;
+        Ok(())
+    }
 }
 
 pub fn stop_double_tap_listener() {
     LISTENER_RUNNING.store(false, Ordering::SeqCst);
-    platform_impl::stop_double_tap_listener();
+    #[cfg(target_os = "windows")]
+    {
+        windows_impl::stop_double_tap_listener();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        linux_impl::stop_linux_double_tap_listener();
+    }
     HELPER_CONNECTED.store(false, Ordering::SeqCst);
 }
 
 pub fn simulate_paste() -> Result<(), String> {
-    platform_impl::simulate_paste()
+    #[cfg(target_os = "windows")]
+    {
+        return windows_impl::simulate_paste();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        return linux_impl::linux_simulate_paste();
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    {
+        Err("Paste simulation is not supported on this platform".into())
+    }
 }
 
 #[cfg(target_os = "windows")]
-mod platform_impl {
+mod windows_impl {
     use super::*;
     use std::sync::Arc;
     use std::time::Instant;
@@ -347,31 +377,200 @@ mod platform_impl {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
-mod platform_impl {
-    /// Non-Windows double-tap is handled by the privileged evdev helper
-    /// (Linux, M8) or not at all (macOS). No-op here.
-    pub fn start_double_tap_listener(_key_name: &str) -> Result<(), String> {
+/// Linux double-tap + paste via the privileged `cliphist-evdev-helper`
+/// binary (plan 3.1). The main process binds a Unix socket in the user-private
+/// `$XDG_RUNTIME_DIR`, spawns the helper through `pkexec` (polkit prompts the
+/// user once), and reads one `0x01` byte per detected double-tap. The socket
+/// is bidirectional — `simulate_paste` writes `b'P'` and the root helper does
+/// the uinput/wtype injection. Ported from the old `linux_impl` in
+/// `src-tauri/src/shortcut.rs`; the only change is the helper path: instead of
+/// re-entering `current_exe()` behind `--evdev-helper`, it resolves the
+/// standalone `cliphist-evdev-helper` binary (build-time override, exe-dir
+/// neighbor, then `PATH`).
+#[cfg(target_os = "linux")]
+mod linux_impl {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::os::unix::net::{UnixListener, UnixStream};
+    use std::process::{Child, Command, Stdio};
+    use std::sync::Mutex;
+
+    /// Bidirectional stream to the root helper, kept so `simulate_paste` can
+    /// send `b'P'` commands.
+    static PASTE_STREAM: Mutex<Option<UnixStream>> = Mutex::new(None);
+    static CHILD: Mutex<Option<Child>> = Mutex::new(None);
+    static SOCKET_PATH: Mutex<String> = Mutex::new(String::new());
+
+    /// Resolve the helper binary. Order:
+    ///   1. `CLIPHIST_HELPER_PATH` build-time env override (M10 packaging pins
+    ///      the installed absolute path).
+    ///   2. next to the running executable (`<exe_dir>/cliphist-evdev-helper`).
+    ///   3. bare `cliphist-evdev-helper` (resolved via `PATH`).
+    fn resolve_helper_path() -> String {
+        if let Some(p) = option_env!("CLIPHIST_HELPER_PATH") {
+            if !p.is_empty() {
+                return p.to_string();
+            }
+        }
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                let candidate = dir.join("cliphist-evdev-helper");
+                if candidate.exists() {
+                    return candidate.to_string_lossy().to_string();
+                }
+            }
+        }
+        "cliphist-evdev-helper".to_string()
+    }
+
+    pub fn start_linux_double_tap_listener(key_name: &str) -> Result<(), String> {
+        if LISTENER_RUNNING.load(Ordering::SeqCst) {
+            stop_linux_double_tap_listener();
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+        LISTENER_RUNNING.store(true, Ordering::SeqCst);
+
+        let key_name = key_name.to_string();
+
+        // $XDG_RUNTIME_DIR is per-user (0700) — not accessible to other users,
+        // so the socket is only reachable by us and the root helper (which
+        // bypasses perms). Avoids the predictable world-writable /tmp race.
+        let xdg_runtime_dir = std::env::var("XDG_RUNTIME_DIR")
+            .unwrap_or_else(|_| format!("/run/user/{}", unsafe { libc::getuid() }));
+        let socket_path = format!(
+            "{}/cliphist-dtap-{}.sock",
+            xdg_runtime_dir,
+            std::process::id()
+        );
+        let _ = std::fs::remove_file(&socket_path);
+        *SOCKET_PATH.lock().unwrap() = socket_path.clone();
+
+        let listener = UnixListener::bind(&socket_path)
+            .map_err(|e| format!("Failed to create Unix socket: {}", e))?;
+
+        let helper = resolve_helper_path();
+        let wayland_display =
+            std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "wayland-0".to_string());
+
+        log::write_log(&format!(
+            "Starting pkexec evdev helper: {} (socket: {})",
+            helper, socket_path
+        ));
+
+        let child = Command::new("pkexec")
+            .arg(&helper)
+            .arg("--key")
+            .arg(&key_name)
+            .arg("--socket")
+            .arg(&socket_path)
+            .arg("--wayland-display")
+            .arg(&wayland_display)
+            .arg("--xdg-runtime-dir")
+            .arg(&xdg_runtime_dir)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| format!("Failed to spawn pkexec: {}", e))?;
+        log::write_log(&format!("pkexec helper spawned, pid: {}", child.id()));
+        *CHILD.lock().unwrap() = Some(child);
+
+        std::thread::Builder::new()
+            .name("double-tap-socket-listener".to_string())
+            .spawn(move || {
+                log::write_log("Waiting for evdev helper to connect...");
+                let (mut stream, addr) = match listener.accept() {
+                    Ok(s) => s,
+                    Err(e) => {
+                        log::write_log(&format!("Failed to accept helper connection: {}", e));
+                        let _ = std::fs::remove_file(&socket_path);
+                        LISTENER_RUNNING.store(false, Ordering::SeqCst);
+                        return;
+                    }
+                };
+                log::write_log(&format!("Evdev helper connected from {:?}", addr));
+                HELPER_CONNECTED.store(true, Ordering::SeqCst);
+
+                {
+                    let mut paste_stream = PASTE_STREAM.lock().unwrap();
+                    *paste_stream = stream.try_clone().ok();
+                }
+
+                let mut buf = [0u8; 1];
+                loop {
+                    if !LISTENER_RUNNING.load(Ordering::SeqCst) {
+                        break;
+                    }
+                    match stream.read(&mut buf) {
+                        Ok(1) => {
+                            log::write_log("Double-tap notification from helper!");
+                            state::request_window_action();
+                        }
+                        Ok(0) => {
+                            log::write_log("Evdev helper disconnected");
+                            break;
+                        }
+                        Ok(_) => {}
+                        Err(e) => {
+                            log::write_log(&format!("Socket read error: {}", e));
+                            break;
+                        }
+                    }
+                }
+
+                drop(stream);
+                {
+                    let mut paste_stream = PASTE_STREAM.lock().unwrap();
+                    *paste_stream = None;
+                }
+                let _ = std::fs::remove_file(&socket_path);
+                // Reap the helper (pkexec may stick around briefly).
+                let mut child_guard = CHILD.lock().unwrap();
+                if let Some(mut child) = child_guard.take() {
+                    let _ = child.wait();
+                }
+                HELPER_CONNECTED.store(false, Ordering::SeqCst);
+                LISTENER_RUNNING.store(false, Ordering::SeqCst);
+                log::write_log("Double-tap socket listener stopped");
+            })
+            .map_err(|e| format!("Failed to spawn socket listener thread: {}", e))?;
+
         Ok(())
     }
 
-    pub fn stop_double_tap_listener() {}
+    pub fn stop_linux_double_tap_listener() {
+        // Drop the paste stream + kill the helper so the socket thread exits.
+        {
+            let mut paste_stream = PASTE_STREAM.lock().unwrap();
+            *paste_stream = None;
+        }
+        let mut child_guard = CHILD.lock().unwrap();
+        if let Some(mut child) = child_guard.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        let path = SOCKET_PATH.lock().unwrap().clone();
+        if !path.is_empty() {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
 
-    pub fn simulate_paste() -> Result<(), String> {
-        // Linux paste is injected by the evdev helper (M8). macOS paste
-        // injection is unsupported. Surface a clear error to Dart rather than
-        // a silent no-op.
-        #[cfg(target_os = "macos")]
-        {
-            Err("Paste simulation is not supported on macOS".into())
+    /// Send a paste command to the evdev helper via the bidirectional socket.
+    /// The helper (root) performs the uinput/wtype injection.
+    pub fn linux_simulate_paste() -> Result<(), String> {
+        let mut guard = PASTE_STREAM
+            .lock()
+            .map_err(|e| format!("PASTE_STREAM lock poisoned: {}", e))?;
+        if let Some(stream) = guard.as_mut() {
+            stream
+                .write_all(b"P")
+                .map_err(|e| format!("Failed to send paste command to helper: {}", e))?;
+            log::write_log("Sent paste command to evdev helper");
+        } else {
+            log::write_log(
+                "No evdev helper connected; clipboard populated, user can paste manually",
+            );
         }
-        #[cfg(target_os = "linux")]
-        {
-            Err("Linux paste injection requires the evdev helper (M8)".into())
-        }
-        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-        {
-            Err("Paste simulation is not supported on this platform".into())
-        }
+        Ok(())
     }
 }

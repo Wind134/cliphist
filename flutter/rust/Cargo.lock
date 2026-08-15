@@ -1957,6 +1957,7 @@ dependencies = [
  "flutter_rust_bridge",
  "global-hotkey",
  "image",
+ "libc",
  "parking_lot",
  "rdev",
  "serde",

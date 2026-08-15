@@ -17,6 +17,7 @@ dirs = "5"
 image = "0.25"
 ammonia = "4"
 global-hotkey = "0.8"
+libc = "0.2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 rdev = "0.5"

@@ -2,8 +2,7 @@
 name = "cliphist-evdev-helper"
 version = "0.1.0"
 edition = "2021"
-description = "ClipHist Linux evdev double-tap helper (runs as root via pkexec)"
-license = "MIT"
+description = "Privileged evdev double-tap + paste-injection helper for ClipHist (Linux)"
 
 [[bin]]
 name = "cliphist-evdev-helper"
