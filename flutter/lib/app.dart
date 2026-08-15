@@ -13,10 +13,20 @@ class ClipHistApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final zoom = ref.watch(settingsProvider).zoomLevel;
     return MaterialApp(
       title: 'ClipHist',
       debugShowCheckedModeBanner: false,
       theme: cliphistTheme(),
+      // Apply the persisted zoom level as a text scaler (preferred over
+      // Transform.scale — keeps text crisp, reflows layout). The Svelte
+      // version used CSS `transform: scale`; this is the Flutter analogue.
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(
+          textScaler: TextScaler.linear(zoom),
+        ),
+        child: child!,
+      ),
       home: const MainScreen(),
     );
   }

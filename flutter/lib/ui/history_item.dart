@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
 
 import '../src/rust/core/clipboard_engine.dart' show ClipboardItem;
 import '../util/image_cache.dart';
@@ -180,7 +181,25 @@ class _HistoryItemState extends State<HistoryItem> {
     if (item.contentType == 'image') {
       return _ImagePreview(id: item.id, width: item.imageWidth);
     }
-    // rich: plain text preview for now (M6 swaps in HtmlWidget).
+    if (item.contentType == 'rich' && item.htmlContent != null) {
+      // HTML is already sanitized at add-time in Rust (ammonia); the Dart
+      // widget is a second-line defense. Constrain height so the list row
+      // stays compact; the full content is not needed for a preview.
+      return ClipRect(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 96),
+          child: HtmlWidget(
+            item.htmlContent!,
+            textStyle: const TextStyle(
+              color: CliphistColors.textPrimary,
+              fontSize: 12,
+              height: 1.3,
+            ),
+            renderMode: RenderMode.column,
+          ),
+        ),
+      );
+    }
     final preview = item.preview.isNotEmpty ? item.preview : item.content;
     return Text(
       preview,
