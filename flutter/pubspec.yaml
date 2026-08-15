@@ -54,6 +54,23 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
 
+# MSIX packaging config — read by the `msix` Dart package, which fastforge's
+# msix maker delegates to. With sign_msix false (unsigned, sideload via the
+# Windows "开发者模式" toggle), the package still requires a `publisher`
+# value for the AppxManifest; a placeholder CN is fine for an unsigned bundle.
+# Mirrors windows/packaging/msix/make_config.yaml.
+msix_config:
+  display_name: ClipHist
+  publisher_display_name: ping
+  publisher: CN=ping
+  identity_name: com.ping.cliphist
+  msix_version: 1.0.0.0
+  logo_path: assets/icon/app.png
+  capabilities: internetClient
+  languages: zh-CN
+  architecture: x64
+  sign_msix: false
+
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
