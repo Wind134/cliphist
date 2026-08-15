@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:launch_at_startup/launch_at_startup.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'app.dart';
@@ -24,6 +27,15 @@ Future<void> main() async {
   await windowManager.ensureInitialized();
   await RustLib.init();
   await api_init.initAppState();
+
+  // Configure the auto-launch helper with the running executable so the
+  // settings "开机自动启动" toggle can register/unregister a login entry.
+  // The path is the resolved exe; M10 packaging may override with a fixed
+  // installed path.
+  launchAtStartup.setup(
+    appName: 'cliphist',
+    appPath: Platform.executable,
+  );
 
   final container = ProviderContainer();
   await ClipHistController.instance.start(container);

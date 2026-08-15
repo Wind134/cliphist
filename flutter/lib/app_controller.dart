@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:launch_at_startup/launch_at_startup.dart';
 import 'package:menu_base/menu_base.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
@@ -108,6 +109,23 @@ class ClipHistController with WindowListener, TrayListener {
   /// `closeToTray` is on.
   Future<void> hideWindow() async {
     await windowManager.hide();
+  }
+
+  /// Register/unregister a login auto-launch entry. Persistence of the
+  /// `autoStart` flag itself is done by the settings screen via
+  /// `updateSettings`; this applies the OS side-effect. Failures are logged
+  /// only — the toggle still reads as saved.
+  Future<void> applyAutoStart(bool enabled) async {
+    try {
+      final ok = enabled
+          ? await launchAtStartup.enable()
+          : await launchAtStartup.disable();
+      if (!ok) {
+        api_clipboard.feLog(message: 'launch_at_startup($enabled) returned false');
+      }
+    } catch (e) {
+      api_clipboard.feLog(message: 'launch_at_startup($enabled) failed: $e');
+    }
   }
 
   /// Quick-paste path (ported from `handleQuickPaste`): copy the item, float

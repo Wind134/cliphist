@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app_controller.dart';
 import 'state/providers.dart';
 import 'ui/history_view.dart';
+import 'ui/settings_screen.dart';
 import 'ui/theme.dart';
 
 class ClipHistApp extends ConsumerWidget {
@@ -29,7 +30,6 @@ class MainScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final settingsOpen = ref.watch(settingsOpenProvider);
-    final settings = ref.watch(settingsProvider);
     final toast = ref.watch(toastMessageProvider);
 
     return Shortcuts(
@@ -61,7 +61,7 @@ class MainScreen extends ConsumerWidget {
                       ),
                       Expanded(
                         child: settingsOpen
-                            ? _SettingsPlaceholder(settings: settings)
+                            ? const SettingsScreen()
                             : const HistoryView(),
                       ),
                     ],
@@ -111,31 +111,6 @@ class _TopBar extends StatelessWidget {
             onPressed: onSettingsTap,
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _SettingsPlaceholder extends StatelessWidget {
-  const _SettingsPlaceholder({required this.settings});
-  final dynamic settings;
-
-  @override
-  Widget build(BuildContext context) {
-    return const Center(
-      child: Padding(
-        padding: EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.tune, size: 40, color: CliphistColors.textTertiary),
-            SizedBox(height: 12),
-            Text(
-              'M5 设置 UI 待移植',
-              style: TextStyle(color: CliphistColors.textSecondary, fontSize: 13),
-            ),
-          ],
-        ),
       ),
     );
   }
