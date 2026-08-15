@@ -20,7 +20,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
-        with: { channel: stable, cache: true }
+        # Pinned to the Flutter version used to generate + validate the FRB
+        # bindings locally. The codegen runs `dart format` on its output, and
+        # import grouping drifted between Dart SDK versions — the frb-codegen-check
+        # diff gate must compare against the same formatter.
+        with:
+          channel: stable
+          flutter-version: 3.44.9
+          cache: true
       - uses: dtolnay/rust-toolchain@stable
       - name: Install flutter_rust_bridge_codegen 2.12.0
         run: cargo install flutter_rust_bridge_codegen --version 2.12.0 --locked
@@ -41,7 +48,14 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: subosito/flutter-action@v2
-        with: { channel: stable, cache: true }
+        # Pinned to the Flutter version used to generate + validate the FRB
+        # bindings locally. The codegen runs `dart format` on its output, and
+        # import grouping drifted between Dart SDK versions — the frb-codegen-check
+        # diff gate must compare against the same formatter.
+        with:
+          channel: stable
+          flutter-version: 3.44.9
+          cache: true
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -107,7 +121,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
-        with: { channel: stable, cache: true }
+        # Pinned to the Flutter version used to generate + validate the FRB
+        # bindings locally. The codegen runs `dart format` on its output, and
+        # import grouping drifted between Dart SDK versions — the frb-codegen-check
+        # diff gate must compare against the same formatter.
+        with:
+          channel: stable
+          flutter-version: 3.44.9
+          cache: true
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -146,7 +167,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
-        with: { channel: stable, cache: true }
+        # Pinned to the Flutter version used to generate + validate the FRB
+        # bindings locally. The codegen runs `dart format` on its output, and
+        # import grouping drifted between Dart SDK versions — the frb-codegen-check
+        # diff gate must compare against the same formatter.
+        with:
+          channel: stable
+          flutter-version: 3.44.9
+          cache: true
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:

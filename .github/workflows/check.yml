@@ -22,8 +22,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: subosito/flutter-action@v2
+        # Pinned to the Flutter used to generate the FRB bindings locally — the
+        # codegen's `dart format` import grouping differs across Dart versions,
+        # and the diff gate must compare against the same formatter.
         with:
           channel: stable
+          flutter-version: 3.44.9
           cache: true
 
       - uses: dtolnay/rust-toolchain@stable
@@ -55,8 +59,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: subosito/flutter-action@v2
+        # Pinned to the Flutter used to generate the FRB bindings locally — the
+        # codegen's `dart format` import grouping differs across Dart versions,
+        # and the diff gate must compare against the same formatter.
         with:
           channel: stable
+          flutter-version: 3.44.9
           cache: true
 
       - uses: dtolnay/rust-toolchain@stable
