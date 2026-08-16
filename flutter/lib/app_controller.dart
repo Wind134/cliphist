@@ -189,9 +189,24 @@ class ClipHistController with WindowListener, TrayListener {
     final iconPath =
         Platform.isWindows ? 'assets/icon/icon.ico' : 'assets/icon/icon.png';
     await trayManager.setIcon(iconPath);
-    // tray_manager 0.5.3 on Linux has no setToolTip impl (spike B); setTitle
-    // is the closest supported label.
-    await trayManager.setTitle('ClipHist');
+    // Hover label is cosmetic and platform support is asymmetric: tray_manager
+    // implements setTitle on Linux but NOT on Windows (NotImplemented → throws
+    // MissingPluginException), and setToolTip the other way around on some
+    // platforms. Try each best-effort so a missing impl can't abort the
+    // context-menu + listener registration below — that abort was why BOTH tray
+    // clicks were dead on Windows (setIcon succeeded → icon visible, but
+    // setTitle threw → setContextMenu + addListener never ran → no menu, no
+    // click handlers).
+    try {
+      await trayManager.setTitle('ClipHist');
+    } catch (_) {
+      // setTitle not implemented on this platform (Windows) — ignore.
+    }
+    try {
+      await trayManager.setToolTip('ClipHist');
+    } catch (_) {
+      // setToolTip not implemented on this platform — ignore.
+    }
     await trayManager.setContextMenu(Menu(items: [
       MenuItem(
         label: '显示窗口',
@@ -218,6 +233,7 @@ class ClipHistController with WindowListener, TrayListener {
       MenuItem(label: '退出', onClick: (_) => quit()),
     ]));
     trayManager.addListener(this);
+    api_clipboard.feLog(message: '_setupTray done (icon+menu+listener)');
   }
 
   // ── TrayListener ────────────────────────────────────────────────────────
