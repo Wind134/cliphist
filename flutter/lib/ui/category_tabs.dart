@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 
 import 'theme.dart';
 
-/// Category filter tabs, ported from `src/lib/category-tabs.svelte`. Six tabs
-/// with per-type accent colors; the active tab is filled, the rest are
-/// outlined. Laid out in a horizontally scrollable row so a narrow window
-/// still reaches every tab.
+/// Category filter tabs. Modern pill chips: each carries a small colored dot
+/// (the type accent) + label; the active chip is filled with a soft accent tint
+/// and the type-colored dot, the rest sit on a subtle surface. Horizontally
+/// scrollable so a narrow window still reaches every tab.
 class CategoryTabs extends StatelessWidget {
   const CategoryTabs({
     super.key,
@@ -16,44 +16,25 @@ class CategoryTabs extends StatelessWidget {
   final String current;
   final ValueChanged<String> onChanged;
 
-  static const _tabs = <_TabDef>[
-    _TabDef('all', '全部', Color(0xFF4F46E5)),
-    _TabDef('image', '图片', Color(0xFF059669)),
-    _TabDef('text', '文本', Color(0xFF2563EB)),
-    _TabDef('link', '链接', Color(0xFFDC2626)),
-    _TabDef('short', '短文本', Color(0xFF7C3AED)),
-    _TabDef('rich', '富文本', Color(0xFFE11D48)),
-  ];
-
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 34,
+    return Container(
+      height: 40,
+      color: CliphistColors.bgBase,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        itemCount: _tabs.length,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        itemCount: ClipType.byKey.length,
         separatorBuilder: (_, _) => const SizedBox(width: 6),
         itemBuilder: (_, i) {
-          final t = _tabs[i];
+          final t = ClipType.byKey[i];
           final active = t.key == current;
-          return _Chip(
-            label: t.label,
-            color: t.color,
-            active: active,
-            onTap: () => onChanged(t.key),
-          );
+          return _Chip(label: t.label, color: t.color, active: active,
+              onTap: () => onChanged(t.key));
         },
       ),
     );
   }
-}
-
-class _TabDef {
-  final String key;
-  final String label;
-  final Color color;
-  const _TabDef(this.key, this.label, this.color);
 }
 
 class _Chip extends StatelessWidget {
@@ -76,25 +57,57 @@ class _Chip extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
         onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
           decoration: BoxDecoration(
-            color: active ? color : Colors.transparent,
+            color: active
+                ? CliphistColors.accentSoft
+                : CliphistColors.surfaceSubtle,
+            borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
             border: Border.all(
-              color: active ? color : CliphistColors.border,
+              color: active
+                  ? CliphistColors.accent.withValues(alpha: 0.35)
+                  : Colors.transparent,
               width: 1,
             ),
-            borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
           ),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: active ? Colors.white : CliphistColors.textSecondary,
-              fontSize: 11,
-              fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-            ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _Dot(color: active ? CliphistColors.accent : color),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  color: active
+                      ? CliphistColors.accentHover
+                      : CliphistColors.textSecondary,
+                  fontSize: 12,
+                  fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+                  height: 1.2,
+                ),
+              ),
+            ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _Dot extends StatelessWidget {
+  const _Dot({required this.color});
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 7,
+      height: 7,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(4),
       ),
     );
   }

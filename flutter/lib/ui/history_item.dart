@@ -7,12 +7,13 @@ import '../src/rust/core/clipboard_engine.dart' show ClipboardItem;
 import '../util/image_cache.dart';
 import 'theme.dart';
 
-/// One history row, ported from `src/lib/history-item.svelte`.
-///
-/// Layout: `[index badge] [type chip + preview] [timestamp + meta]` with copy
-/// / delete buttons revealed on hover. The selected row gets an accent rail.
-/// Image rows lazy-load bytes via [getImageData]; rich rows show the plain
-/// text preview for now (the HTML widget lands in M6).
+/// One history row. Modern layout:
+///   `[index] · [preview line(s)] … [hover actions]`
+///   `[meta: timestamp · count]`
+/// with a leading type dot, a 3px accent rail on the selected row, and a soft
+/// hover wash. Type is conveyed by the dot color (kept calm — the old colored
+/// chip + colored rail competed with the text). Image rows show a thumbnail
+/// on the left.
 class HistoryItem extends StatefulWidget {
   const HistoryItem({
     super.key,
@@ -26,7 +27,7 @@ class HistoryItem extends StatefulWidget {
   });
 
   final ClipboardItem item;
-  /// 1-based display index (1-9); rows past 9 show no badge.
+  /// 1-based display index (1-9 quick-paste hint); rows past 9 show no badge.
   final int index;
   final bool selected;
   final VoidCallback onTap;
@@ -41,47 +42,19 @@ class HistoryItem extends StatefulWidget {
 class _HistoryItemState extends State<HistoryItem> {
   bool _hovered = false;
 
-  Color get _typeColor {
-    switch (widget.item.contentType) {
-      case 'image':
-        return const Color(0xFF059669);
-      case 'text':
-        return const Color(0xFF107C10);
-      case 'short':
-        return const Color(0xFF8764B8);
-      case 'link':
-        return CliphistColors.accent;
-      case 'rich':
-        return const Color(0xFFE11D48);
-      default:
-        return CliphistColors.textSecondary;
-    }
-  }
+  ClipType get _type => ClipType.of(widget.item.contentType) ??
+      ClipType.all;
 
-  String get _typeLabel {
-    switch (widget.item.contentType) {
-      case 'image':
-        return '图片';
-      case 'text':
-        return '文本';
-      case 'short':
-        return '短文本';
-      case 'link':
-        return '链接';
-      case 'rich':
-        return '富文本';
-      default:
-        return widget.item.contentType;
-    }
+  Color get _rowBg {
+    if (widget.selected) return CliphistColors.selected;
+    if (_hovered) return CliphistColors.hover;
+    return CliphistColors.surface;
   }
 
   @override
   Widget build(BuildContext context) {
     final item = widget.item;
-    final bg = widget.selected
-        ? CliphistColors.bgActive
-        : (_hovered ? CliphistColors.bgHover : CliphistColors.bgSecondary);
-
+    final isImage = item.contentType == 'image';
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
@@ -91,34 +64,36 @@ class _HistoryItemState extends State<HistoryItem> {
         onDoubleTap: widget.onDoubleTap,
         child: Container(
           decoration: BoxDecoration(
-            color: bg,
-            border: Border(
-              left: BorderSide(
-                color: widget.selected ? _typeColor : Colors.transparent,
-                width: 3,
-              ),
-              bottom:
-                  const BorderSide(color: CliphistColors.border, width: 1),
+            color: _rowBg,
+            border: const Border(
+              bottom: BorderSide(color: CliphistColors.borderSubtle, width: 1),
             ),
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              _IndexBadge(index: widget.index),
-              const SizedBox(width: 8),
-              Expanded(child: _body(item)),
-              if (_hovered) ...[
+              // Selection rail (sits against the row's left edge, outside the
+              // padded content so it spans the full row height).
+              if (widget.selected)
+                Container(width: 3, height: 36, color: CliphistColors.accent)
+              else
+                const SizedBox(width: 3),
+              const SizedBox(width: 9),
+              _Index(index: widget.index),
+              const SizedBox(width: 10),
+              if (isImage) ...[
+                _ImagePreview(id: item.id),
+                const SizedBox(width: 12),
+              ] else
+                _Dot(color: _type.color),
+              const SizedBox(width: 10),
+              Expanded(child: _body(item, isImage)),
+              if (_hovered && !isImage) ...[
                 _IconBtn(
-                  icon: Icons.content_copy,
-                  tooltip: '复制',
-                  onTap: widget.onCopy,
-                ),
+                    icon: Icons.content_copy, tooltip: '复制', onTap: widget.onCopy),
                 _IconBtn(
-                  icon: Icons.delete_outline,
-                  tooltip: '删除',
-                  onTap: widget.onDelete,
-                ),
+                    icon: Icons.delete_outline, tooltip: '删除', onTap: widget.onDelete),
               ],
             ],
           ),
@@ -127,50 +102,20 @@ class _HistoryItemState extends State<HistoryItem> {
     );
   }
 
-  Widget _body(ClipboardItem item) {
+  Widget _body(ClipboardItem item, bool isImage) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Row(
-          children: [
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-              decoration: BoxDecoration(
-                color: _typeColor.withValues(alpha: 0.12),
-                borderRadius:
-                    BorderRadius.circular(CliphistColors.radiusSm),
-              ),
-              child: Text(
-                _typeLabel,
-                style: TextStyle(
-                  color: _typeColor,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                item.timestamp,
-                style: const TextStyle(
-                  color: CliphistColors.textTertiary,
-                  fontSize: 10,
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
         _preview(item),
         const SizedBox(height: 3),
         Text(
           _meta(item),
           style: const TextStyle(
-            color: CliphistColors.textTertiary,
-            fontSize: 10,
+            color: CliphistColors.textMuted,
+            fontSize: 11,
+            height: 1.25,
+            fontFeatures: [FontFeature.tabularFigures()],
           ),
         ),
       ],
@@ -178,22 +123,18 @@ class _HistoryItemState extends State<HistoryItem> {
   }
 
   Widget _preview(ClipboardItem item) {
-    if (item.contentType == 'image') {
-      return _ImagePreview(id: item.id, width: item.imageWidth);
-    }
     if (item.contentType == 'rich' && item.htmlContent != null) {
-      // HTML is already sanitized at add-time in Rust (ammonia); the Dart
-      // widget is a second-line defense. Constrain height so the list row
-      // stays compact; the full content is not needed for a preview.
+      // HTML is sanitized at add-time in Rust (ammonia); the Dart widget is a
+      // second line of defense. Constrain height so the row stays compact.
       return ClipRect(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 96),
+          constraints: const BoxConstraints(maxHeight: 72),
           child: HtmlWidget(
             item.htmlContent!,
             textStyle: const TextStyle(
               color: CliphistColors.textPrimary,
-              fontSize: 12,
-              height: 1.3,
+              fontSize: 13,
+              height: 1.35,
             ),
             renderMode: RenderMode.column,
           ),
@@ -203,60 +144,73 @@ class _HistoryItemState extends State<HistoryItem> {
     final preview = item.preview.isNotEmpty ? item.preview : item.content;
     return Text(
       preview,
-      maxLines: 3,
+      maxLines: 2,
       overflow: TextOverflow.ellipsis,
       style: const TextStyle(
         color: CliphistColors.textPrimary,
-        fontSize: 12,
-        height: 1.3,
+        fontSize: 13,
+        height: 1.35,
       ),
     );
   }
 
   String _meta(ClipboardItem item) {
+    final time = item.timestamp;
     if (item.contentType == 'image') {
       final w = item.imageWidth ?? 0;
       final h = item.imageHeight ?? 0;
-      return w > 0 && h > 0 ? '$w × $h px' : '';
+      final dim = w > 0 && h > 0 ? '$w × $h px' : '图片';
+      return '$time · $dim';
     }
     final count = item.charCount.toInt();
-    return '$count 字符';
+    return '$time · $count 字符';
   }
 }
 
-class _IndexBadge extends StatelessWidget {
-  const _IndexBadge({required this.index});
+class _Index extends StatelessWidget {
+  const _Index({required this.index});
   final int index;
 
   @override
   Widget build(BuildContext context) {
-    if (index < 1 || index > 9) {
-      return const SizedBox(width: 18, height: 18);
-    }
-    return Container(
+    if (index < 1 || index > 9) return const SizedBox(width: 18);
+    return SizedBox(
       width: 18,
-      height: 18,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: CliphistColors.bgTertiary,
-        borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
-      ),
       child: Text(
         '$index',
+        textAlign: TextAlign.center,
         style: const TextStyle(
-          color: CliphistColors.textSecondary,
-          fontSize: 10,
+          color: CliphistColors.textMuted,
+          fontSize: 11,
           fontWeight: FontWeight.w600,
+          height: 1.2,
+          fontFeatures: [FontFeature.tabularFigures()],
         ),
       ),
     );
   }
 }
 
+class _Dot extends StatelessWidget {
+  const _Dot({required this.color});
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 8,
+      height: 8,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(4),
+      ),
+    );
+  }
+}
+
 class _ImagePreview extends StatefulWidget {
-  const _ImagePreview({required this.id, required this.width});
+  const _ImagePreview({required this.id});
   final BigInt id;
-  final int? width;
 
   @override
   State<_ImagePreview> createState() => _ImagePreviewState();
@@ -294,29 +248,32 @@ class _ImagePreviewState extends State<_ImagePreview> {
   @override
   Widget build(BuildContext context) {
     if (_failed) {
-      return const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.broken_image, size: 14, color: CliphistColors.textTertiary),
-          SizedBox(width: 4),
-          Text(
-            '图片加载失败',
-            style: TextStyle(color: CliphistColors.textTertiary, fontSize: 11),
-          ),
-        ],
+      return Container(
+        width: 64,
+        height: 64,
+        decoration: BoxDecoration(
+          color: CliphistColors.surfaceSubtle,
+          borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
+        ),
+        child: const Icon(Icons.broken_image_outlined,
+            size: 20, color: CliphistColors.textMuted),
       );
     }
     if (!_loaded) {
-      return const SizedBox(
-        height: 48,
-        width: 48,
-        child: Center(
+      return Container(
+        width: 64,
+        height: 64,
+        decoration: BoxDecoration(
+          color: CliphistColors.surfaceSubtle,
+          borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
+        ),
+        child: const Center(
           child: SizedBox(
-            width: 14,
-            height: 14,
+            width: 16,
+            height: 16,
             child: CircularProgressIndicator(
               strokeWidth: 2,
-              color: CliphistColors.textTertiary,
+              color: CliphistColors.textMuted,
             ),
           ),
         ),
@@ -325,7 +282,7 @@ class _ImagePreviewState extends State<_ImagePreview> {
     return ClipRRect(
       borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 96),
+        constraints: const BoxConstraints(maxHeight: 72, maxWidth: 96),
         child: Image.memory(_bytes!, fit: BoxFit.contain),
       ),
     );
@@ -351,8 +308,9 @@ class _IconBtn extends StatelessWidget {
         borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.all(4),
-          child: Icon(icon, size: 15, color: CliphistColors.textSecondary),
+          padding: const EdgeInsets.all(5),
+          child:
+              Icon(icon, size: 16, color: CliphistColors.textSecondary),
         ),
       ),
     );

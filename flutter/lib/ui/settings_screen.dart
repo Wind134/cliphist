@@ -9,14 +9,15 @@ import '../util/toast.dart';
 import 'theme.dart';
 
 /// Settings panel, ported from `src/lib/settings-panel.svelte` (449 lines).
-/// One scrollable column of setting cards; every change persists immediately
-/// through `updateSettings` (which writes `settings.json` atomically in Rust)
-/// and refreshes [settingsProvider] with the returned snapshot.
+/// Modernized: one scrollable column of rounded cards with a leading icon,
+/// a title + description, and the control on the trailing side. Every change
+/// persists immediately through `updateSettings` (atomically in Rust) and
+/// refreshes [settingsProvider] with the returned snapshot.
 ///
 /// Side-effects deferred: global-hotkey registration and the double-tap
 /// listener land in M7; `launch_at_startup` wiring for the autoStart toggle
-/// is stubbed here and finalized with packaging paths in M10. Only
-/// validate + persist + log happens in the Rust core for now (see M2 notes).
+/// is finalized with packaging paths in M10. Only validate + persist + log
+/// happens in the Rust core for now (see M2 notes).
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
@@ -67,10 +68,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final current = (s.zoomLevel * 100).round();
     final next = (current + step).clamp(50, 200);
     if (next == current) return;
-    await _save(
-      SettingsPatch(zoomLevel: next / 100.0),
-      '缩放已调整',
-    );
+    await _save(SettingsPatch(zoomLevel: next / 100.0), '缩放已调整');
   }
 
   @override
@@ -83,66 +81,76 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       _hotkeyCtrl.text = s.hotkey;
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _Header(onClose: () => ref.read(settingsOpenProvider.notifier).state = false),
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.all(12),
-            children: [
-              _ToggleCard(
-                label: '关闭时最小化到托盘',
-                desc: '关闭窗口时程序继续在后台运行',
-                value: s.closeToTray,
-                onChanged: (v) => _save(SettingsPatch(closeToTray: v), '设置已保存'),
-              ),
-              _ToggleCard(
-                label: '静默启动',
-                desc: '启动时自动隐藏到托盘后台运行',
-                value: s.silentStart,
-                onChanged: (v) => _save(SettingsPatch(silentStart: v), '设置已保存'),
-              ),
-              _ToggleCard(
-                label: '开机自动启动',
-                desc: '系统启动时自动运行 ClipHist',
-                value: s.autoStart,
-                onChanged: (v) {
-                  ClipHistController.instance.applyAutoStart(v);
-                  _save(SettingsPatch(autoStart: v), '设置已保存');
-                },
-              ),
-              _ZoomCard(
-                percent: (s.zoomLevel * 100).round(),
-                onDown: () => _zoomDelta(-10),
-                onUp: () => _zoomDelta(10),
-              ),
-              _HotkeyCard(
-                controller: _hotkeyCtrl,
-                error: _hotkeyError,
-                onSubmit: _onHotkeySubmit,
-              ),
-              _DoubleTapCard(
-                value: s.doubleTapKey,
-                helperConnected: helper,
-                onChanged: (v) =>
-                    _save(SettingsPatch(doubleTapKey: v), '双击快捷键已保存'),
-              ),
-              _RetentionCard(
-                value: s.retentionDays,
-                onChanged: (v) =>
-                    _save(SettingsPatch(retentionDays: v), '设置已保存'),
-              ),
-              const _AboutCard(),
-            ],
+    return Container(
+      color: CliphistColors.bgBase,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _Header(onClose: () => ref.read(settingsOpenProvider.notifier).state = false),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+              children: [
+                _SectionLabel('通用'),
+                _ToggleCard(
+                  icon: Icons.minimize_rounded,
+                  label: '关闭时最小化到托盘',
+                  desc: '关闭窗口时程序继续在后台运行',
+                  value: s.closeToTray,
+                  onChanged: (v) => _save(SettingsPatch(closeToTray: v), '设置已保存'),
+                ),
+                _ToggleCard(
+                  icon: Icons.visibility_off_rounded,
+                  label: '静默启动',
+                  desc: '启动时自动隐藏到托盘后台运行',
+                  value: s.silentStart,
+                  onChanged: (v) => _save(SettingsPatch(silentStart: v), '设置已保存'),
+                ),
+                _ToggleCard(
+                  icon: Icons.power_settings_new_rounded,
+                  label: '开机自动启动',
+                  desc: '系统启动时自动运行 ClipHist',
+                  value: s.autoStart,
+                  onChanged: (v) {
+                    ClipHistController.instance.applyAutoStart(v);
+                    _save(SettingsPatch(autoStart: v), '设置已保存');
+                  },
+                ),
+                _SectionLabel('界面'),
+                _ZoomCard(
+                  percent: (s.zoomLevel * 100).round(),
+                  onDown: () => _zoomDelta(-10),
+                  onUp: () => _zoomDelta(10),
+                ),
+                _SectionLabel('快捷键'),
+                _HotkeyCard(
+                  controller: _hotkeyCtrl,
+                  error: _hotkeyError,
+                  onSubmit: _onHotkeySubmit,
+                ),
+                _DoubleTapCard(
+                  value: s.doubleTapKey,
+                  helperConnected: helper,
+                  onChanged: (v) =>
+                      _save(SettingsPatch(doubleTapKey: v), '双击快捷键已保存'),
+                ),
+                _SectionLabel('数据'),
+                _RetentionCard(
+                  value: s.retentionDays,
+                  onChanged: (v) =>
+                      _save(SettingsPatch(retentionDays: v), '设置已保存'),
+                ),
+                const _AboutCard(),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
 
-// ── Cards ──────────────────────────────────────────────────────────────────
+// ── Header / labels / cards ──────────────────────────────────────────────────
 
 class _Header extends StatelessWidget {
   const _Header({required this.onClose});
@@ -151,24 +159,32 @@ class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 32,
+      height: 44,
       padding: const EdgeInsets.only(left: 16, right: 8),
-      color: CliphistColors.bgSecondary,
+      decoration: const BoxDecoration(
+        color: CliphistColors.surface,
+        border: Border(
+          bottom: BorderSide(color: CliphistColors.borderSubtle, width: 1),
+        ),
+      ),
       child: Row(
         children: [
+          const Icon(Icons.tune_rounded,
+              size: 18, color: CliphistColors.textSecondary),
+          const SizedBox(width: 8),
           const Text(
             '设置',
             style: TextStyle(
               color: CliphistColors.textPrimary,
-              fontSize: 13,
+              fontSize: 15,
               fontWeight: FontWeight.w600,
             ),
           ),
           const Spacer(),
           IconButton(
-            icon: const Icon(Icons.close, size: 16),
+            icon: const Icon(Icons.close_rounded, size: 18),
             color: CliphistColors.textSecondary,
-            splashRadius: 14,
+            splashRadius: 16,
             onPressed: onClose,
           ),
         ],
@@ -177,35 +193,72 @@ class _Header extends StatelessWidget {
   }
 }
 
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 12, 4, 6),
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: CliphistColors.textMuted,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
+  }
+}
+
 class _CardShell extends StatelessWidget {
-  const _CardShell({required this.info, required this.trailing});
+  const _CardShell({required this.icon, required this.info, required this.trailing});
+  final IconData icon;
   final Widget info;
   final Widget trailing;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
       decoration: BoxDecoration(
-        color: CliphistColors.bgSecondary,
-        borderRadius: BorderRadius.circular(8),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0F000000),
-            blurRadius: 3,
-            offset: Offset(0, 1),
-          ),
-        ],
+        color: CliphistColors.surface,
+        borderRadius: BorderRadius.circular(CliphistColors.radiusLg),
+        border: Border.all(color: CliphistColors.borderSubtle),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          _LeadingIcon(icon: icon),
+          const SizedBox(width: 12),
           Expanded(child: info),
           const SizedBox(width: 12),
           trailing,
         ],
       ),
+    );
+  }
+}
+
+class _LeadingIcon extends StatelessWidget {
+  const _LeadingIcon({required this.icon});
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 34,
+      height: 34,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: CliphistColors.accentSoft,
+        borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
+      ),
+      child: Icon(icon, size: 18, color: CliphistColors.accent),
     );
   }
 }
@@ -233,11 +286,12 @@ class _Info extends StatelessWidget {
         Text(
           desc,
           style: const TextStyle(
-            color: CliphistColors.textTertiary,
-            fontSize: 11,
+            color: CliphistColors.textMuted,
+            fontSize: 11.5,
+            height: 1.3,
           ),
         ),
-        if (extra != null) ...[const SizedBox(height: 2), extra!],
+        if (extra != null) ...[const SizedBox(height: 4), extra!],
       ],
     );
   }
@@ -245,12 +299,14 @@ class _Info extends StatelessWidget {
 
 class _ToggleCard extends StatelessWidget {
   const _ToggleCard({
+    required this.icon,
     required this.label,
     required this.desc,
     required this.value,
     required this.onChanged,
   });
 
+  final IconData icon;
   final String label;
   final String desc;
   final bool value;
@@ -259,11 +315,14 @@ class _ToggleCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _CardShell(
+      icon: icon,
       info: _Info(label: label, desc: desc),
-      trailing: Switch(
-        value: value,
-        activeThumbColor: const Color(0xFF4F46E5),
-        onChanged: onChanged,
+      trailing: SizedBox(
+        height: 28,
+        child: Switch(
+          value: value,
+          onChanged: onChanged,
+        ),
       ),
     );
   }
@@ -283,23 +342,26 @@ class _ZoomCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _CardShell(
+      icon: Icons.format_size_rounded,
       info: const _Info(label: '窗口缩放', desc: '调整界面显示大小'),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _ZoomBtn(icon: Icons.remove, onTap: onDown),
+          _ZoomBtn(icon: Icons.remove_rounded, onTap: onDown),
           Container(
-            width: 45,
+            width: 52,
             alignment: Alignment.center,
             child: Text(
               '$percent%',
               style: const TextStyle(
                 color: CliphistColors.textPrimary,
                 fontSize: 13,
+                fontWeight: FontWeight.w600,
+                fontFeatures: [FontFeature.tabularFigures()],
               ),
             ),
           ),
-          _ZoomBtn(icon: Icons.add, onTap: onUp),
+          _ZoomBtn(icon: Icons.add_rounded, onTap: onUp),
         ],
       ),
     );
@@ -317,15 +379,14 @@ class _ZoomBtn extends StatelessWidget {
       borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
       onTap: onTap,
       child: Container(
-        width: 28,
-        height: 28,
+        width: 30,
+        height: 30,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: CliphistColors.bgTertiary,
-          border: Border.all(color: CliphistColors.border),
+          color: CliphistColors.surfaceSubtle,
           borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
         ),
-        child: Icon(icon, size: 16, color: CliphistColors.textPrimary),
+        child: Icon(icon, size: 18, color: CliphistColors.textSecondary),
       ),
     );
   }
@@ -345,51 +406,71 @@ class _HotkeyCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _CardShell(
+      icon: Icons.keyboard_rounded,
       info: _Info(
         label: '全局快捷键',
         desc: '唤醒窗口的快捷键',
         extra: error.isNotEmpty
             ? Text(
                 error,
-                style: const TextStyle(color: Color(0xFFDC2626), fontSize: 11),
+                style: const TextStyle(
+                    color: CliphistColors.danger, fontSize: 11),
               )
             : null,
       ),
       trailing: SizedBox(
-        width: 120,
-        child: TextField(
+        width: 130,
+        child: _Field(
           controller: controller,
-          onSubmitted: (_) => onSubmit(),
-          textInputAction: TextInputAction.done,
-          style: const TextStyle(
-            color: CliphistColors.textPrimary,
-            fontSize: 12,
-          ),
-          textAlign: TextAlign.center,
-          decoration: InputDecoration(
-            isDense: true,
-            hintText: 'Ctrl+Shift+V',
-            hintStyle: const TextStyle(
-              color: CliphistColors.textTertiary,
-              fontSize: 12,
-            ),
-            contentPadding: const EdgeInsets.symmetric(vertical: 8),
-            filled: true,
-            fillColor: CliphistColors.bgTertiary,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
-              borderSide: const BorderSide(color: CliphistColors.border),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
-              borderSide: const BorderSide(color: CliphistColors.border),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
-              borderSide:
-                  const BorderSide(color: CliphistColors.accent, width: 1.5),
-            ),
-          ),
+          onSubmit: onSubmit,
+          hint: 'Ctrl+Shift+V',
+        ),
+      ),
+    );
+  }
+}
+
+class _Field extends StatelessWidget {
+  const _Field({
+    required this.controller,
+    required this.onSubmit,
+    required this.hint,
+  });
+
+  final TextEditingController controller;
+  final VoidCallback onSubmit;
+  final String hint;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      onSubmitted: (_) => onSubmit(),
+      textInputAction: TextInputAction.done,
+      style: const TextStyle(
+        color: CliphistColors.textPrimary,
+        fontSize: 12,
+      ),
+      textAlign: TextAlign.center,
+      cursorColor: CliphistColors.accent,
+      decoration: InputDecoration(
+        isDense: true,
+        hintText: hint,
+        hintStyle: const TextStyle(color: CliphistColors.textMuted, fontSize: 12),
+        contentPadding: const EdgeInsets.symmetric(vertical: 10),
+        filled: true,
+        fillColor: CliphistColors.surfaceSubtle,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
+          borderSide: const BorderSide(color: CliphistColors.accent, width: 1.5),
         ),
       ),
     );
@@ -410,18 +491,32 @@ class _DoubleTapCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _CardShell(
+      icon: Icons.touch_app_rounded,
       info: _Info(
         label: '双击快捷键',
         desc: '快速双击指定键唤醒窗口',
         extra: value.isNotEmpty
-            ? Text(
-                helperConnected ? '已授权' : 'Linux 下首次使用需授权',
-                style: TextStyle(
-                  color: helperConnected
-                      ? const Color(0xFF22C55E)
-                      : CliphistColors.textTertiary,
-                  fontSize: 11,
-                ),
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    helperConnected ? Icons.check_circle : Icons.info_outline_rounded,
+                    size: 12,
+                    color: helperConnected
+                        ? CliphistColors.success
+                        : CliphistColors.textMuted,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    helperConnected ? '已授权' : 'Linux 下首次使用需授权',
+                    style: TextStyle(
+                      color: helperConnected
+                          ? CliphistColors.success
+                          : CliphistColors.textMuted,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
               )
             : null,
       ),
@@ -447,6 +542,7 @@ class _RetentionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _CardShell(
+      icon: Icons.schedule_rounded,
       info: const _Info(label: '历史记录保存时长', desc: '超过设定时间的记录将自动清理'),
       trailing: _Select(
         value: value.toString(),
@@ -477,7 +573,7 @@ class _Select extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 120,
+      width: 130,
       child: DropdownButtonFormField<String>(
         initialValue: value,
         isDense: true,
@@ -485,19 +581,21 @@ class _Select extends StatelessWidget {
           color: CliphistColors.textPrimary,
           fontSize: 12,
         ),
-        dropdownColor: CliphistColors.bgSecondary,
+        dropdownColor: CliphistColors.surface,
+        icon: const Icon(Icons.keyboard_arrow_down_rounded,
+            size: 18, color: CliphistColors.textMuted),
         decoration: InputDecoration(
           isDense: true,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
           filled: true,
-          fillColor: CliphistColors.bgTertiary,
+          fillColor: CliphistColors.surfaceSubtle,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
-            borderSide: const BorderSide(color: CliphistColors.border),
+            borderSide: BorderSide.none,
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
-            borderSide: const BorderSide(color: CliphistColors.border),
+            borderSide: BorderSide.none,
           ),
         ),
         items: items
@@ -516,14 +614,52 @@ class _AboutCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Version injection (sed into pubspec) lands in M10; show a placeholder
-    // until then.
     return Container(
-      margin: const EdgeInsets.only(top: 4),
-      padding: const EdgeInsets.all(12),
-      child: const _Info(
-        label: '关于 ClipHist',
-        desc: '版本 dev · 剪贴板历史管理器',
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+      decoration: BoxDecoration(
+        color: CliphistColors.surface,
+        borderRadius: BorderRadius.circular(CliphistColors.radiusLg),
+        border: Border.all(color: CliphistColors.borderSubtle),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: CliphistColors.accentSoft,
+              borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
+            ),
+            child: const Icon(Icons.layers_rounded,
+                size: 18, color: CliphistColors.accent),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Text(
+                  'ClipHist',
+                  style: TextStyle(
+                    color: CliphistColors.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  '剪贴板历史管理器 · Rust + Flutter',
+                  style: TextStyle(
+                    color: CliphistColors.textMuted,
+                    fontSize: 11.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
