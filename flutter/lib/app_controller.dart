@@ -225,6 +225,23 @@ class ClipHistController with WindowListener, TrayListener {
     }
   }
 
+  @override
+  void onTrayIconRightMouseDown() async {
+    // Windows does not auto-show the context menu on a right-click — the
+    // native tray_manager plugin only fires this event (WM_RBUTTONUP →
+    // "onTrayIconRightMouseDown"). Pop the menu explicitly so the tray
+    // right-click works on Windows. Linux (StatusNotifierItem) and macOS
+    // (NSStatusItem.menu) already show the setContextMenu menu on their own,
+    // and `popUpContextMenu` is not implemented on those platforms (calling
+    // it would throw through the method channel) — so guard to Windows.
+    // `bringAppToFront` runs the SetForegroundWindow trick so the menu
+    // dismisses on click-away (TrackPopupMenu's classic quirk).
+    if (Platform.isWindows) {
+      // ignore: deprecated_member_use
+      await trayManager.popUpContextMenu(bringAppToFront: true);
+    }
+  }
+
   // ── WindowListener ──────────────────────────────────────────────────────
   @override
   void onWindowClose() async {
