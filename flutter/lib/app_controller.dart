@@ -182,7 +182,13 @@ class ClipHistController with WindowListener, TrayListener {
   }
 
   Future<void> _setupTray() async {
-    await trayManager.setIcon('assets/icon/icon.png');
+    // tray_manager's Windows SetIcon uses LoadImage(IMAGE_ICON, LR_LOADFROMFILE),
+    // which only reads .ico/.cur/.ani — a .png returns NULL and the icon is
+    // silently invisible (setIcon still returns success). Linux (GTK) and
+    // macOS (NSImage) load .png fine, so pick the asset by platform.
+    final iconPath =
+        Platform.isWindows ? 'assets/icon/icon.ico' : 'assets/icon/icon.png';
+    await trayManager.setIcon(iconPath);
     // tray_manager 0.5.3 on Linux has no setToolTip impl (spike B); setTitle
     // is the closest supported label.
     await trayManager.setTitle('ClipHist');
