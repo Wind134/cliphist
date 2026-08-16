@@ -63,10 +63,11 @@ fn window_action_worker(rx: mpsc::Receiver<()>) {
     }
 }
 
-/// Monitor the evdev helper connection and emit on change so the UI can show
-/// whether Linux double-tap is authorized. In M2 `is_helper_connected` is
-/// stubbed `false` (real wiring is M8), so this thread exercises the stream
-/// plumbing once and then stays quiet.
+/// Monitor the evdev-helper / rdev-listener connection and emit on change so
+/// the UI can show whether double-tap is authorized. On Linux the flag is the
+/// evdev helper's connected state; on Windows/macOS it is the rdev `grab`
+/// listener's running state (set true on start, false on stop/error). Either
+/// way this thread just watches `is_helper_connected` and pushes deltas.
 fn helper_status_monitor() {
     let mut was = false;
     loop {

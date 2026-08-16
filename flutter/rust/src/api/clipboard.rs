@@ -30,11 +30,12 @@ fn truncate_char_boundary(s: &str, max_bytes: usize) -> &str {
     &s[..idx]
 }
 
-/// Simulate a Ctrl+V paste into the previously-focused window.
-///
-/// M7 stub: the real injection (Linux evdev uinput via the privileged helper,
-/// Windows `rdev`, macOS unsupported) lands in M7. Returning an `Err` keeps the
-/// Dart side honest — no silent success while the feature is unimplemented.
+/// Simulate a Ctrl+V (Windows) / Cmd+V (macOS) / evdev-injected (Linux) paste
+/// into the previously-focused window. Delegates to the platform paste engine
+/// — Windows + macOS use `rdev::simulate`, Linux routes through the privileged
+/// evdev helper. Returns `Err` on platforms without paste support or if the
+/// synthetic event fails, so the Dart side surfaces it rather than a silent
+/// no-op.
 pub fn simulate_paste_cmd() -> Result<(), String> {
     crate::core::shortcut_engine::simulate_paste()
 }

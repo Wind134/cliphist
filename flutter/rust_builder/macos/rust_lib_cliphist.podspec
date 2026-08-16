@@ -39,6 +39,14 @@ A new Flutter FFI plugin project.
     'DEFINES_MODULE' => 'YES',
     # Flutter.framework does not contain a i386 slice.
     'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386',
-    'OTHER_LDFLAGS' => '-force_load ${BUILT_PRODUCTS_DIR}/librust_lib_cliphist.a',
+    # -force_load pulls every object out of the Rust staticlib (so no CGU is
+    # left unreferenced). The framework links below are the system frameworks
+    # the Rust staticlib calls into but that Flutter's macOS pod chain does
+    # not auto-link:
+    #   - Carbon: RegisterEventHotKey / InstallEventHandler / GetEvent* (global_hotkey macOS backend)
+    #   - CoreGraphics + CoreFoundation: CGEventTapCreate / CFMachPort* / CFRunLoop* (global_hotkey media-key tap)
+    #   - AppKit + Cocoa: NSEvent (global_hotkey) + general macOS app glue
+    # Without these the Xcode link fails with undefined Carbon/CoreGraphics symbols.
+    'OTHER_LDFLAGS' => '-force_load ${BUILT_PRODUCTS_DIR}/librust_lib_cliphist.a -framework Carbon -framework CoreGraphics -framework CoreFoundation -framework AppKit -framework Cocoa',
   }
 end

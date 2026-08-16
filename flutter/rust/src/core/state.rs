@@ -47,9 +47,10 @@ pub fn request_window_action() {
     }
 }
 
-/// Whether the privileged evdev double-tap helper is currently connected.
-/// Backed by the shortcut engine's listener flag (Windows rdev double-tap
-/// sets it; the Linux evdev helper takes over in M8).
+/// Whether the double-tap listener is currently authorized/connected. Backed
+/// by the shortcut engine's listener flag: Windows/macOS set it when the
+/// `rdev::grab` listener starts (and clear it on stop/error), Linux sets it
+/// when the privileged evdev helper connects.
 pub fn is_helper_connected() -> bool {
     crate::core::shortcut_engine::helper_connected()
 }

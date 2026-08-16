@@ -8,11 +8,12 @@
 //!    portal. The receiver thread turns a trigger into a
 //!    [`crate::core::state::request_window_action`] (ShowAndRaise), which the
 //!    Dart side performs.
-//!  - **Double-tap**: Windows `rdev::grab` listener (ported verbatim). Linux
-//!    double-tap goes through the privileged evdev helper (M8). macOS has no
-//!    double-tap.
-//!  - **simulate_paste**: Windows `rdev` Ctrl+V. macOS unsupported. Linux goes
-//!    through the evdev helper (M8) — returns `Err` here until then.
+//!  - **Double-tap**: Windows + macOS both use `rdev::grab` (a global key
+//!    tap listener); macOS requires the app to be granted Accessibility
+//!    permission or `grab` errors out. Linux double-tap goes through the
+//!    privileged evdev helper (M8).
+//!  - **simulate_paste**: Windows `rdev` Ctrl+V, macOS `rdev` Cmd+V, Linux
+//!    through the evdev helper (M8). Other platforms return `Err`.
 //!
 //! The hotkey string parser reuses [`crate::core::hotkey_parse`] for
 //! validation; this module owns the enum mapping for actual registration.
@@ -249,24 +250,24 @@ pub fn start_double_tap_listener(key_name: &str) -> Result<(), String> {
     start_double_tap_listener_platform(key_name)
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn start_double_tap_listener_platform(key_name: &str) -> Result<(), String> {
-    windows_impl::start_double_tap_listener(key_name)
+    rdev_impl::start_double_tap_listener(key_name)
 }
 #[cfg(target_os = "linux")]
 fn start_double_tap_listener_platform(key_name: &str) -> Result<(), String> {
     linux_impl::start_linux_double_tap_listener(key_name)
 }
-#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
 fn start_double_tap_listener_platform(_key_name: &str) -> Result<(), String> {
     Ok(())
 }
 
 pub fn stop_double_tap_listener() {
     LISTENER_RUNNING.store(false, Ordering::SeqCst);
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     {
-        windows_impl::stop_double_tap_listener();
+        rdev_impl::stop_double_tap_listener();
     }
     #[cfg(target_os = "linux")]
     {
@@ -279,21 +280,29 @@ pub fn simulate_paste() -> Result<(), String> {
     simulate_paste_platform()
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn simulate_paste_platform() -> Result<(), String> {
-    windows_impl::simulate_paste()
+    rdev_impl::simulate_paste()
 }
 #[cfg(target_os = "linux")]
 fn simulate_paste_platform() -> Result<(), String> {
     linux_impl::linux_simulate_paste()
 }
-#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
 fn simulate_paste_platform() -> Result<(), String> {
     Err("Paste simulation is not supported on this platform".into())
 }
 
-#[cfg(target_os = "windows")]
-mod windows_impl {
+/// Shared `rdev` backend for Windows + macOS. Both expose `rdev::grab` (a
+/// global key tap listener) and `rdev::simulate` (synthetic key events), so
+/// the double-tap detector and the paste injection are byte-for-byte
+/// identical between the two — only the paste modifier differs (Ctrl on
+/// Windows, Cmd on macOS). macOS requires the app to be granted Accessibility
+/// permission; without it `grab` returns an error (logged below) and the
+/// "双击快捷键" status dot stays grey, mirroring the Linux "needs
+/// authorization" UX.
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+mod rdev_impl {
     use super::*;
     use std::sync::Arc;
     use std::time::Instant;
@@ -316,6 +325,13 @@ mod windows_impl {
         })
     }
 
+    /// The modifier held during a synthetic paste — Ctrl on Windows, Cmd on
+    /// macOS (the platform's copy/paste modifier).
+    #[cfg(target_os = "windows")]
+    const PASTE_MOD: rdev::Key = rdev::Key::ControlLeft;
+    #[cfg(target_os = "macos")]
+    const PASTE_MOD: rdev::Key = rdev::Key::MetaLeft;
+
     pub fn start_double_tap_listener(key_name: &str) -> Result<(), String> {
         let target_key = key_name_to_rdev(key_name)
             .ok_or_else(|| format!("Unsupported double-tap key: {}", key_name))?;
@@ -336,7 +352,7 @@ mod windows_impl {
             .name("double-tap-listener".to_string())
             .spawn(move || {
                 log::write_log(&format!(
-                    "Starting Windows double-tap listener for key: {:?}",
+                    "Starting rdev double-tap listener for key: {:?}",
                     target_key
                 ));
                 let result = rdev::grab(move |event| {
@@ -353,7 +369,7 @@ mod windows_impl {
                                         s.last_press = None;
                                         s.released = false;
                                         drop(s);
-                                        log::write_log("Double-tap detected! (Windows)");
+                                        log::write_log("Double-tap detected! (rdev)");
                                         state::request_window_action();
                                         return Some(event);
                                     }
@@ -370,8 +386,8 @@ mod windows_impl {
                     Some(event)
                 });
                 match result {
-                    Ok(()) => log::write_log("Windows double-tap listener stopped normally"),
-                    Err(e) => log::write_log(&format!("Windows double-tap grab error: {:?}", e)),
+                    Ok(()) => log::write_log("rdev double-tap listener stopped normally"),
+                    Err(e) => log::write_log(&format!("rdev double-tap grab error: {:?}", e)),
                 }
                 HELPER_CONNECTED.store(false, Ordering::SeqCst);
                 LISTENER_RUNNING.store(false, Ordering::SeqCst);
@@ -390,8 +406,8 @@ mod windows_impl {
 
     pub fn simulate_paste() -> Result<(), String> {
         use rdev::{simulate, EventType, Key};
-        simulate(&EventType::KeyPress(Key::ControlLeft))
-            .map_err(|e| format!("Simulate Ctrl press failed: {:?}", e))?;
+        simulate(&EventType::KeyPress(PASTE_MOD))
+            .map_err(|e| format!("Simulate modifier press failed: {:?}", e))?;
         std::thread::sleep(std::time::Duration::from_millis(30));
         simulate(&EventType::KeyPress(Key::KeyV))
             .map_err(|e| format!("Simulate V press failed: {:?}", e))?;
@@ -399,8 +415,8 @@ mod windows_impl {
         simulate(&EventType::KeyRelease(Key::KeyV))
             .map_err(|e| format!("Simulate V release failed: {:?}", e))?;
         std::thread::sleep(std::time::Duration::from_millis(30));
-        simulate(&EventType::KeyRelease(Key::ControlLeft))
-            .map_err(|e| format!("Simulate Ctrl release failed: {:?}", e))?;
+        simulate(&EventType::KeyRelease(PASTE_MOD))
+            .map_err(|e| format!("Simulate modifier release failed: {:?}", e))?;
         Ok(())
     }
 }

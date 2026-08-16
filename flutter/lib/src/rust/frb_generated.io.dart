@@ -98,6 +98,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SettingsPatch dco_decode_settings_patch(dynamic raw);
 
   @protected
+  SingleInstanceResult dco_decode_single_instance_result(dynamic raw);
+
+  @protected
   int dco_decode_u_32(dynamic raw);
 
   @protected
@@ -191,6 +194,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SettingsPatch sse_decode_settings_patch(SseDeserializer deserializer);
+
+  @protected
+  SingleInstanceResult sse_decode_single_instance_result(
+    SseDeserializer deserializer,
+  );
 
   @protected
   int sse_decode_u_32(SseDeserializer deserializer);
@@ -302,6 +310,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_settings_patch(SettingsPatch self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_single_instance_result(
+    SingleInstanceResult self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_u_32(int self, SseSerializer serializer);

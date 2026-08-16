@@ -37,6 +37,20 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await windowManager.ensureInitialized();
   await RustLib.init();
+
+  // Single-instance guard: if ClipHist is already running, this second
+  // process pokes the existing instance to bring its window forward and
+  // exits. This also covers the Wayland `--toggle-window` CLI (a system
+  // shortcut bound to `cliphist --toggle-window` just pokes the running
+  // instance). Must run before init_app_state so we never start a second
+  // clipboard poll loop / second tray icon. `forceVisible` is true when
+  // --toggle-window launched us from cold (no other instance), so the window
+  // shows instead of starting hidden by silentStart.
+  final instance = await api_init.checkSingleInstance();
+  if (!instance.firstInstance) {
+    exit(0);
+  }
+
   await api_init.initAppState();
 
   // Configure the auto-launch helper with the running executable so the
@@ -83,7 +97,10 @@ Future<void> main() async {
   // fatal — the Flutter app keeps running and the user can still read the
   // log to see what broke.
   try {
-    await ClipHistController.instance.start(container);
+    await ClipHistController.instance.start(
+      container,
+      forceVisible: instance.forceVisible,
+    );
   } catch (e, stack) {
     api_clipboard.feLog(
         message: 'ClipHistController.start() failed: $e\n$stack');

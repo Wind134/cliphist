@@ -6,9 +6,52 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+/// Single-instance guard + wake signal. Dart must call this *before*
+/// `init_app_state`: if it returns `first_instance == false`, Dart must
+/// `exit(0)` immediately (we already poked the running instance to show its
+/// window). Otherwise Dart proceeds to `init_app_state`, passing
+/// `force_visible` through so a cold `--toggle-window` launch shows the
+/// window instead of starting hidden.
+///
+/// Reads `std::env::args()` directly (the process command line), so Dart does
+/// not need to forward argv. A failure in the single-instance machinery is
+/// logged inside and fails open — `first_instance == true` — so a broken lock
+/// never blocks the app.
+Future<SingleInstanceResult> checkSingleInstance() =>
+    RustLib.instance.api.crateApiInitCheckSingleInstance();
+
 /// Initialize the Rust core: load history + settings, install the panic hook,
 /// stash the global [`AppState`], and spawn the four background tasks
 /// (clipboard poll, window-action worker, helper-status monitor, expired-item
 /// cleaner). Idempotent-ish: a second call is a no-op (the [`OnceLock`] guards
 /// the state), so it is safe if Dart retries after a hot restart.
 Future<void> initAppState() => RustLib.instance.api.crateApiInitInitAppState();
+
+/// Outcome of the single-instance check, surfaced to Dart before it decides
+/// whether to run the app or exit.
+class SingleInstanceResult {
+  /// `true` if this process is the first/only instance and should run the
+  /// app. `false` if another instance is already running — we poked it to
+  /// bring its window forward and Dart should `exit(0)`.
+  final bool firstInstance;
+
+  /// `true` when `--toggle-window` launched us from cold (no other instance),
+  /// so the window should be shown even if `silentStart` is on.
+  final bool forceVisible;
+
+  const SingleInstanceResult({
+    required this.firstInstance,
+    required this.forceVisible,
+  });
+
+  @override
+  int get hashCode => firstInstance.hashCode ^ forceVisible.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SingleInstanceResult &&
+          runtimeType == other.runtimeType &&
+          firstInstance == other.firstInstance &&
+          forceVisible == other.forceVisible;
+}

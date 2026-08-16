@@ -37,7 +37,7 @@ class ClipHistController with WindowListener, TrayListener {
   List<StreamSubscription> _clipboardSubs = const [];
   int _lastResizeSave = 0;
 
-  Future<void> start(ProviderContainer c) async {
+  Future<void> start(ProviderContainer c, {bool forceVisible = false}) async {
     container = c;
 
     final s = api_settings.getSettings();
@@ -60,7 +60,10 @@ class ClipHistController with WindowListener, TrayListener {
         }
         // Silent start: create the window then immediately hide to tray so it
         // does not steal focus on login. The tray / hotkey reveals it later.
-        if (s.silentStart) {
+        // `forceVisible` (a cold `--toggle-window` launch) overrides this so
+        // the window shows even if silentStart is on — the user pressed the
+        // shortcut expecting to see it.
+        if (s.silentStart && !forceVisible) {
           await windowManager.show();
           await windowManager.hide();
         } else {

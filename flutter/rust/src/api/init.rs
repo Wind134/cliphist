@@ -16,6 +16,44 @@ pub fn init_app() {
     flutter_rust_bridge::setup_default_user_utils();
 }
 
+/// Outcome of the single-instance check, surfaced to Dart before it decides
+/// whether to run the app or exit.
+pub struct SingleInstanceResult {
+    /// `true` if this process is the first/only instance and should run the
+    /// app. `false` if another instance is already running — we poked it to
+    /// bring its window forward and Dart should `exit(0)`.
+    pub first_instance: bool,
+    /// `true` when `--toggle-window` launched us from cold (no other instance),
+    /// so the window should be shown even if `silentStart` is on.
+    pub force_visible: bool,
+}
+
+/// Single-instance guard + wake signal. Dart must call this *before*
+/// `init_app_state`: if it returns `first_instance == false`, Dart must
+/// `exit(0)` immediately (we already poked the running instance to show its
+/// window). Otherwise Dart proceeds to `init_app_state`, passing
+/// `force_visible` through so a cold `--toggle-window` launch shows the
+/// window instead of starting hidden.
+///
+/// Reads `std::env::args()` directly (the process command line), so Dart does
+/// not need to forward argv. A failure in the single-instance machinery is
+/// logged inside and fails open — `first_instance == true` — so a broken lock
+/// never blocks the app.
+pub fn check_single_instance() -> SingleInstanceResult {
+    match crate::core::single_instance::check() {
+        crate::core::single_instance::Outcome::FirstInstance { force_visible } => {
+            SingleInstanceResult {
+                first_instance: true,
+                force_visible,
+            }
+        }
+        crate::core::single_instance::Outcome::SignalSent => SingleInstanceResult {
+            first_instance: false,
+            force_visible: false,
+        },
+    }
+}
+
 /// Initialize the Rust core: load history + settings, install the panic hook,
 /// stash the global [`AppState`], and spawn the four background tasks
 /// (clipboard poll, window-action worker, helper-status monitor, expired-item
@@ -40,6 +78,11 @@ pub fn init_app_state() -> Result<(), String> {
         window_action_tx,
     };
     state::set_state(state_app);
+
+    // If a second instance poked us during our own startup (before state
+    // existed), its wake is buffered in the single-instance module — drain it
+    // now so the window still pops up.
+    crate::core::single_instance::drain_pending_wake();
 
     crate::core::background::spawn_all(history, counter, window_action_rx);
 
