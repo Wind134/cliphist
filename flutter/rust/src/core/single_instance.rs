@@ -119,7 +119,9 @@ fn try_check() -> std::io::Result<Outcome> {
         .create(true)
         .read(true)
         .write(true)
-        .truncate(true)
+        .truncate(false) // do NOT truncate on open — that would wipe the port
+        // a concurrent second instance is reading, before we even hold the
+        // lock. We truncate post-lock via set_len(0) below.
         .open(&path)?;
 
     match file.try_lock_exclusive() {
