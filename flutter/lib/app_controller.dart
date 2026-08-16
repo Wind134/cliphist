@@ -213,11 +213,15 @@ class ClipHistController with WindowListener, TrayListener {
     await trayManager.setContextMenu(Menu(items: [
       MenuItem(
         label: '显示窗口',
-        onClick: (_) => performWindowDance(),
+        onClick: (_) {
+          api_clipboard.feLog(message: 'tray menu: 显示窗口');
+          performWindowDance();
+        },
       ),
       MenuItem(
         label: '设置',
         onClick: (_) async {
+          api_clipboard.feLog(message: 'tray menu: 设置');
           container.read(settingsOpenProvider.notifier).state = true;
           await performWindowDance();
         },
@@ -225,6 +229,7 @@ class ClipHistController with WindowListener, TrayListener {
       MenuItem(
         label: '清空历史',
         onClick: (_) async {
+          api_clipboard.feLog(message: 'tray menu: 清空历史');
           try {
             await api_history.clearHistory(); // emits history-replace(empty)
           } catch (e) {
@@ -233,7 +238,13 @@ class ClipHistController with WindowListener, TrayListener {
         },
       ),
       MenuItem.separator(),
-      MenuItem(label: '退出', onClick: (_) => quit()),
+      MenuItem(
+        label: '退出',
+        onClick: (_) {
+          api_clipboard.feLog(message: 'tray menu: 退出');
+          quit();
+        },
+      ),
     ]));
     trayManager.addListener(this);
     api_clipboard.feLog(message: '_setupTray done (icon+menu+listener)');
@@ -314,15 +325,49 @@ class ClipHistController with WindowListener, TrayListener {
   }
 
   Future<void> quit() async {
-    await _windowActionSub?.cancel();
-    await _helperStatusSub?.cancel();
-    for (final s in _clipboardSubs) {
-      await s.cancel();
+    api_clipboard.feLog(message: 'quit() invoked');
+    // Best-effort cleanup — every step is guarded so a failure can never
+    // prevent the hard `exit(0)` below. The OS reclaims all resources (window,
+    // sockets, threads) on process exit regardless; we only bother destroying
+    // the tray icon explicitly so it does not linger in the Windows
+    // notification area after the process is gone (a classic Windows tray
+    // quirk). Crucially, `windowManager.destroy()` can be intercepted by our
+    // own `onWindowClose` (when close-to-tray is on), and stream cancels can
+    // throw — without the try/catch the unawaited Future's error would be
+    // swallowed by the zone and `exit(0)` would never run, which is exactly
+    // why the tray "退出" item appeared to do nothing.
+    try {
+      await _windowActionSub?.cancel();
+    } catch (e) {
+      api_clipboard.feLog(message: 'quit: windowActionSub cancel failed: $e');
     }
-    trayManager.removeListener(this);
-    windowManager.removeListener(this);
-    await trayManager.destroy();
-    await windowManager.destroy();
+    try {
+      await _helperStatusSub?.cancel();
+    } catch (e) {
+      api_clipboard.feLog(message: 'quit: helperStatusSub cancel failed: $e');
+    }
+    for (final s in _clipboardSubs) {
+      try {
+        await s.cancel();
+      } catch (e) {
+        api_clipboard.feLog(message: 'quit: clipboardSub cancel failed: $e');
+      }
+    }
+    try {
+      trayManager.removeListener(this);
+    } catch (_) {}
+    try {
+      windowManager.removeListener(this);
+    } catch (_) {}
+    try {
+      await trayManager.destroy();
+    } catch (e) {
+      api_clipboard.feLog(message: 'quit: tray destroy failed: $e');
+    }
+    // Skip windowManager.destroy() — it can route through onWindowClose
+    // (close-to-tray) and hide instead of destroying, which delays/loses the
+    // exit. The OS tears the window down on exit(0) anyway.
+    api_clipboard.feLog(message: 'quit: calling exit(0)');
     exit(0);
   }
 }
