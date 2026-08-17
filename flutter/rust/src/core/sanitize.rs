@@ -9,17 +9,18 @@
 /// Sanitize rich-text HTML captured from the clipboard. Returns an empty
 /// string if everything was stripped (caller treats empty as "no rich text").
 ///
-/// Allowlist = inline formatting + block structure + links/images, on top of
+/// Allowlist = inline formatting + block structure + links, on top of
 /// ammonia's safe defaults. Relative URLs are denied (no `..`, no bare
 /// `/path`), and URL schemes are limited to ammonia's safe set (http/https/
-/// mailto) so `javascript:`, `data:` and friends cannot survive.
+/// mailto) so `javascript:`, `data:` and friends cannot survive. Images are
+/// removed to prevent a copied tracking pixel from making a background
+/// network request when the history row renders.
 pub fn sanitize_html(input: &str) -> String {
     let mut builder = ammonia::Builder::default();
     // Defaults already cover b/i/u/strong/em/s/del/p/br/span/a/code/blockquote.
-    // Add the headings, lists, pre, and image that the rich view renders.
-    builder.add_tags([
-        "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "pre", "img",
-    ]);
+    // Add the headings, lists, and preformatted blocks the rich view renders.
+    builder.add_tags(["h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "pre"]);
+    builder.rm_tags(["img"]);
     // No relative URLs: a captured fragment's `href="/admin"` should not
     // resolve against the app origin.
     builder.url_relative(ammonia::UrlRelative::Deny);
@@ -42,11 +43,13 @@ mod tests {
 
     #[test]
     fn strips_dangerous_embeds() {
-        let payload = r#"<iframe src="https://evil"></iframe><object data="x"></object><embed>"#;
+        let payload = r#"<iframe src="https://evil"></iframe><object data="x"></object><embed><img src="https://tracker.example/pixel">"#;
         let out = sanitize_html(payload);
         assert!(!out.contains("iframe"));
         assert!(!out.contains("object"));
         assert!(!out.contains("embed"));
+        assert!(!out.contains("img"));
+        assert!(!out.contains("tracker.example"));
     }
 
     #[test]

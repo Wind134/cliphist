@@ -67,7 +67,7 @@ jobs:
       - name: Install Linux build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libevdev-dev libudev-dev libxi-dev libxtst-dev libayatana-appindicator3-dev librsvg2-dev desktop-file-utils
+          sudo apt-get install -y libgtk-3-dev libevdev-dev libudev-dev libxi-dev libxtst-dev libayatana-appindicator3-dev libkeybinder-3.0-dev librsvg2-dev desktop-file-utils
 
       - name: Set version from tag
         run: |
@@ -110,6 +110,7 @@ jobs:
         working-directory: flutter
         run: |
           dart pub global run fastforge:main package --platform linux --targets deb,appimage \
+            --artifact-name '{{name}}-{{build_name}}-linux.{{ext}}' \
             --hook-pre 'cp ../rust/evdev-helper/target/release/cliphist-evdev-helper build/linux/x64/release/bundle/ && cp assets/polkit/com.ping.cliphist.policy build/linux/x64/release/bundle/'
       - name: Upload deb
         uses: actions/upload-artifact@v4
@@ -127,16 +128,6 @@ jobs:
   build-windows:
     needs: frb-codegen-check
     runs-on: windows-latest
-    # Temporarily non-blocking: the Cargokit-driven `flutter build windows`
-    # step fails with a context-free MSB8066 "exited with code -1" because
-    # Cargokit runs cargo via Process.runSync (capturing stdout/stderr) and
-    # MSBuild's VS-generator custom-build step redirects that captured output
-    # to a build log the runner never surfaces — so the real cargo error is
-    # invisible. The "Build Rust library" step below builds the cdylib
-    # directly to surface that error in the log; once the root cause is fixed
-    # and that step + the fastforge step both go green, remove this
-    # continue-on-error. Linux deb/AppImage still ship; Windows lands next.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -158,6 +149,8 @@ jobs:
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           sed -i "s/^version: .*/version: $VERSION+${{ github.run_number }}/" flutter/pubspec.yaml
+          sed -i "s/^  msix_version: .*/  msix_version: $VERSION.${{ github.run_number }}/" flutter/pubspec.yaml
+          sed -i "s/^msix_version: .*/msix_version: $VERSION.${{ github.run_number }}/" flutter/windows/packaging/msix/make_config.yaml
       - name: Install fastforge
         run: dart pub global activate fastforge 0.6.12
       # The exe maker needs Inno Setup 6 (ISCC.exe) — it does not auto-install.
@@ -197,12 +190,6 @@ jobs:
   build-macos:
     needs: frb-codegen-check
     runs-on: macos-latest
-    # Non-blocking until the Cargokit macOS linkage issue is fixed: the Rust
-    # staticlib builds both arm64+x86_64 slices, but `global_hotkey`'s macOS
-    # manager symbols come out undefined in the fat archive (ld: symbol(s) not
-    # found, both archs) — reproducible only on a real macOS host. Linux + Win
-    # still ship; the dmg is added back when this lands.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2

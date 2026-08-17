@@ -2,7 +2,7 @@
 # Unsigned installer (no code-signing, consistent with the old release pipeline).
 app_id: D0E0A5BA-AC73-46F5-977B-DE18A4535790
 publisher_name: ping
-publisher_url: https://github.com/ping/cliphist
+publisher_url: https://github.com/Wind134/cliphist
 display_name: ClipHist
 executable_name: cliphist
 create_desktop_icon: true

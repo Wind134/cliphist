@@ -10,11 +10,10 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 /// In-memory settings (single source of truth). Synchronous.
 Settings getSettings() => RustLib.instance.api.crateApiSettingsGetSettings();
 
-/// Apply a partial settings patch. Type-safe field extraction via
-/// [`SettingsPatch`]; bounded numeric fields are clamped; side-effecting
-/// fields (autostart, hotkey registration, double-tap listener) are validated
-/// here but their OS-level effects are wired in M5/M7/M8 respectively — M2
-/// persists the value and logs the deferral.
+/// Apply a partial settings patch transactionally. Validation happens against
+/// a clone first, so an invalid multi-field patch cannot partially mutate the
+/// in-memory settings. The file is saved before the shared snapshot is swapped
+/// and before the double-tap side effect is applied.
 Future<Settings> updateSettings({required SettingsPatch patch}) =>
     RustLib.instance.api.crateApiSettingsUpdateSettings(patch: patch);
 

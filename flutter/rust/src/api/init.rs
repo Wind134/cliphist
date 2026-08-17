@@ -60,6 +60,11 @@ pub fn check_single_instance() -> SingleInstanceResult {
 /// cleaner). Idempotent-ish: a second call is a no-op (the [`OnceLock`] guards
 /// the state), so it is safe if Dart retries after a hot restart.
 pub fn init_app_state() -> Result<(), String> {
+    if state::is_initialized() {
+        log::write_log("init_app_state skipped: already initialized");
+        return Ok(());
+    }
+
     std::panic::set_hook(Box::new(|pi| log::write_log(&format!("PANIC: {}", pi))));
 
     log::write_log("ClipHist starting (flutter/rust core)...");
@@ -74,10 +79,13 @@ pub fn init_app_state() -> Result<(), String> {
     let state_app = AppState {
         history: history.clone(),
         counter: counter.clone(),
-        settings: Arc::new(Mutex::new(startup_settings)),
+        settings: Arc::new(Mutex::new(startup_settings.clone())),
         window_action_tx,
     };
-    state::set_state(state_app);
+    if !state::set_state(state_app) {
+        log::write_log("init_app_state skipped: another caller initialized state");
+        return Ok(());
+    }
 
     // If a second instance poked us during our own startup (before state
     // existed), its wake is buffered in the single-instance module — drain it
@@ -86,17 +94,10 @@ pub fn init_app_state() -> Result<(), String> {
 
     crate::core::background::spawn_all(history, counter, window_action_rx);
 
-    // Register the startup hotkey + double-tap listener (M7). Failures are
-    // logged only — the app still runs; the user can fix the binding in
-    // settings. Wayland skips the hotkey (logged inside).
-    let startup_settings = settings_store::load_settings();
-    if !startup_settings.hotkey.is_empty() {
-        if let Err(e) =
-            crate::core::shortcut_engine::register_global_hotkey(&startup_settings.hotkey)
-        {
-            log::write_log(&format!("Startup hotkey register failed: {}", e));
-        }
-    }
+    // Global-hotkey registration lives in Dart's native `hotkey_manager`
+    // plugin. That plugin executes on each platform's UI/event-loop thread;
+    // constructing `global-hotkey` from an FRB worker thread was invalid on
+    // macOS and thread-affine on Windows.
     if !startup_settings.double_tap_key.is_empty() {
         if let Err(e) = crate::core::shortcut_engine::start_double_tap_listener(
             &startup_settings.double_tap_key,

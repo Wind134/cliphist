@@ -15,42 +15,56 @@ pub fn get_history() -> Vec<ClipboardItem> {
 /// persist the new order. Triggered by the frontend's number-key quick-paste
 /// (1-9) so the just-used entry floats to the top. Other copy actions
 /// (double-click, copy button, Enter) intentionally do NOT reorder.
-pub fn move_to_top(id: usize) {
+pub fn move_to_top(id: usize) -> Result<(), String> {
     {
         let st = state::st();
         let mut history = st.history.lock();
         let Some(pos) = history.iter().position(|i| i.id == id) else {
-            return;
+            return Err("历史记录不存在".to_string());
         };
         if pos == 0 {
-            return;
+            return Ok(());
         }
-        let it = history.remove(pos);
-        history.insert(0, it);
-        // Keep persistence ordered with every other history mutation.
-        clipboard_engine::save_history(&history);
+        let mut next = history.clone();
+        let item = next.remove(pos);
+        next.insert(0, item);
+        clipboard_engine::save_history(&next)?;
+        *history = next;
     }
     events::emit_item_moved_to_top(id);
+    Ok(())
 }
 
-pub fn delete_item(id: usize) {
+pub fn delete_item(id: usize) -> Result<(), String> {
     let st = state::st();
     let mut history = st.history.lock();
-    if let Some(pos) = history.iter().position(|item| item.id == id) {
-        let removed = history.remove(pos);
-        clipboard_engine::delete_image_file(&removed.image_path);
-    }
-    clipboard_engine::save_history(&history);
+    let Some(pos) = history.iter().position(|item| item.id == id) else {
+        return Err("历史记录不存在".to_string());
+    };
+    let mut next = history.clone();
+    let removed = next.remove(pos);
+    clipboard_engine::save_history(&next)?;
+    *history = next;
+    drop(history);
+    clipboard_engine::delete_image_file(&removed.image_path);
+    Ok(())
 }
 
-pub fn clear_history() {
+pub fn clear_history() -> Result<(), String> {
     let st = state::st();
     let mut history = st.history.lock();
-    for item in history.iter() {
-        clipboard_engine::delete_image_file(&item.image_path);
-    }
+    let images = history
+        .iter()
+        .map(|item| item.image_path.clone())
+        .collect::<Vec<_>>();
+    clipboard_engine::save_history(&[])?;
     history.clear();
-    clipboard_engine::save_history(&history);
+    drop(history);
+    for image in &images {
+        clipboard_engine::delete_image_file(image);
+    }
+    events::emit_history_replace(Vec::new());
+    Ok(())
 }
 
 /// Load an item's image PNG bytes on demand (FRB maps `Vec<u8>` to `Uint8List`

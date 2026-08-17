@@ -8,6 +8,7 @@ import '../src/rust/api/history.dart' as api_history;
 import '../src/rust/core/clipboard_engine.dart' show ClipboardItem;
 import '../state/history_provider.dart';
 import '../state/providers.dart';
+import '../update/update_service.dart';
 import '../util/image_cache.dart';
 import '../util/toast.dart';
 import 'category_tabs.dart';
@@ -39,8 +40,9 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
   final FocusNode _viewFocus = FocusNode(debugLabel: 'history-view');
   final FocusNode _searchFocus = FocusNode(debugLabel: 'history-search');
 
-  static const double _rowHeight = 72;
-  static const double _imageRowHeight = 92;
+  static const double _rowHeight = 84;
+  static const double _imageRowHeight = 108;
+  static const double _richRowHeight = 120;
 
   @override
   void initState() {
@@ -143,19 +145,39 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
 
   void _ensureVisible(int index) {
     if (!_scrollCtrl.hasClients) return;
-    final h = _filtered[index].contentType == 'image'
-        ? _imageRowHeight
-        : _rowHeight;
+    final items = _filtered;
+    final zoom = ref.read(settingsProvider).zoomLevel.toDouble();
+    final h = _itemExtent(items[index], zoom);
     final viewport = _scrollCtrl.position.viewportDimension;
     final offset = _scrollCtrl.offset;
-    final target = index * h;
-    if (target < offset) {
-      _scrollCtrl.animateTo(target,
-          duration: const Duration(milliseconds: 80), curve: Curves.easeOut);
-    } else if (target + h > offset + viewport) {
-      _scrollCtrl.animateTo(target + h - viewport,
-          duration: const Duration(milliseconds: 80), curve: Curves.easeOut);
+    var target = 0.0;
+    for (var i = 0; i < index; i++) {
+      target += _itemExtent(items[i], zoom);
     }
+    if (target < offset) {
+      _scrollCtrl.animateTo(
+        target,
+        duration: const Duration(milliseconds: 80),
+        curve: Curves.easeOut,
+      );
+    } else if (target + h > offset + viewport) {
+      _scrollCtrl.animateTo(
+        target + h - viewport,
+        duration: const Duration(milliseconds: 80),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+  double _itemExtent(ClipboardItem item, double zoom) {
+    final base = switch (item.contentType) {
+      'image' => _imageRowHeight,
+      'rich' => _richRowHeight,
+      _ => _rowHeight,
+    };
+    // Text scales through MediaQuery. Give it corresponding vertical room so
+    // 150–200% zoom never overflows fixed list extents.
+    return base + (zoom - 1).clamp(0, 1).toDouble() * 50;
   }
 
   void _handleEnter() {
@@ -234,6 +256,11 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
     final query = ref.watch(searchQueryProvider);
     final category = ref.watch(currentCategoryProvider);
     final helper = ref.watch(helperConnectedProvider);
+    final historyCount = ref.watch(historyProvider).length;
+    final zoom = ref
+        .watch(settingsProvider.select((s) => s.zoomLevel))
+        .toDouble();
+    final update = ref.watch(updateStateProvider);
 
     return Focus(
       focusNode: _viewFocus,
@@ -243,6 +270,12 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            _HeroHeader(
+              count: historyCount,
+              onClearHistory: _clearAll,
+              onSettings: () =>
+                  ref.read(settingsOpenProvider.notifier).state = true,
+            ),
             _SearchBar(
               controller: _searchCtrl,
               focusNode: _searchFocus,
@@ -252,30 +285,25 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
                 _searchCtrl.clear();
                 _onSearchQueryChanged('');
               },
-              onClearHistory: _clearAll,
-              onSettings: () =>
-                  ref.read(settingsOpenProvider.notifier).state = true,
             ),
+            if (update.hasUpdate) _UpdateBanner(update: update),
             CategoryTabs(current: category, onChanged: _onCategoryChanged),
             Expanded(
               child: filtered.isEmpty
                   ? _EmptyState(query: query, category: category)
                   : ListView.builder(
                       controller: _scrollCtrl,
-                      padding: EdgeInsets.zero,
+                      padding: const EdgeInsets.fromLTRB(10, 4, 10, 10),
                       itemCount: filtered.length,
                       itemExtentBuilder: (i, _) =>
-                          filtered[i].contentType == 'image'
-                              ? _imageRowHeight
-                              : _rowHeight,
+                          _itemExtent(filtered[i], zoom),
                       itemBuilder: (ctx, i) => HistoryItem(
                         key: ValueKey(filtered[i].id),
                         item: filtered[i],
                         index: i + 1,
                         selected: i == selected,
-                        onTap: () => ref
-                            .read(selectedIndexProvider.notifier)
-                            .state = i,
+                        onTap: () =>
+                            ref.read(selectedIndexProvider.notifier).state = i,
                         onDoubleTap: () =>
                             _copyItem(filtered[i], hideAfter: true),
                         onCopy: () => _copyItem(filtered[i]),
@@ -291,6 +319,162 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
   }
 }
 
+class _HeroHeader extends StatelessWidget {
+  const _HeroHeader({
+    required this.count,
+    required this.onClearHistory,
+    required this.onSettings,
+  });
+
+  final int count;
+  final VoidCallback onClearHistory;
+  final VoidCallback onSettings;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 10, 14),
+      decoration: const BoxDecoration(gradient: CliphistColors.brandGradient),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.94),
+              borderRadius: BorderRadius.circular(13),
+              boxShadow: const [
+                BoxShadow(color: Color(0x24000000), blurRadius: 12),
+              ],
+            ),
+            child: Image.asset('assets/icon/app.png'),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '剪贴板',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '$count 条历史记录 · 实时同步',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.78),
+                    fontSize: 11.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          _HeaderAction(
+            icon: Icons.delete_sweep_outlined,
+            tooltip: '清空历史',
+            onTap: onClearHistory,
+          ),
+          _HeaderAction(
+            icon: Icons.tune_rounded,
+            tooltip: '设置',
+            onTap: onSettings,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeaderAction extends StatelessWidget {
+  const _HeaderAction({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: IconButton(
+        onPressed: onTap,
+        icon: Icon(icon, color: Colors.white, size: 19),
+        style: IconButton.styleFrom(
+          backgroundColor: Colors.white.withValues(alpha: 0.14),
+          hoverColor: Colors.white.withValues(alpha: 0.22),
+        ),
+      ),
+    );
+  }
+}
+
+class _UpdateBanner extends StatelessWidget {
+  const _UpdateBanner({required this.update});
+  final AppUpdateState update;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+      child: Material(
+        color: CliphistColors.accentSoft,
+        borderRadius: BorderRadius.circular(CliphistColors.radius),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(CliphistColors.radius),
+          onTap: ClipHistController.instance.openLatestRelease,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.auto_awesome_rounded,
+                  size: 16,
+                  color: CliphistColors.accent,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '新版本 v${update.latestVersion} 已可用',
+                    style: const TextStyle(
+                      color: CliphistColors.accentHover,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const Text(
+                  '查看',
+                  style: TextStyle(
+                    color: CliphistColors.accent,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: 2),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  size: 17,
+                  color: CliphistColors.accent,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _SearchBar extends StatelessWidget {
   const _SearchBar({
     required this.controller,
@@ -298,8 +482,6 @@ class _SearchBar extends StatelessWidget {
     required this.value,
     required this.onChanged,
     required this.onClear,
-    required this.onClearHistory,
-    required this.onSettings,
   });
 
   final TextEditingController controller;
@@ -307,15 +489,13 @@ class _SearchBar extends StatelessWidget {
   final String value;
   final ValueChanged<String> onChanged;
   final VoidCallback onClear;
-  final VoidCallback onClearHistory;
-  final VoidCallback onSettings;
 
   @override
   Widget build(BuildContext context) {
     if (controller.text != value) controller.text = value;
     final hasText = value.isNotEmpty;
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
       color: CliphistColors.bgBase,
       child: Row(
         children: [
@@ -323,14 +503,18 @@ class _SearchBar extends StatelessWidget {
             child: Container(
               decoration: BoxDecoration(
                 color: CliphistColors.surface,
-                borderRadius: BorderRadius.circular(CliphistColors.radius),
+                borderRadius: BorderRadius.circular(CliphistColors.radiusLg),
                 border: Border.all(color: CliphistColors.border),
+                boxShadow: CliphistColors.cardShadow,
               ),
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Row(
                 children: [
-                  const Icon(Icons.search_rounded,
-                      size: 17, color: CliphistColors.textMuted),
+                  const Icon(
+                    Icons.search_rounded,
+                    size: 17,
+                    color: CliphistColors.textMuted,
+                  ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: TextField(
@@ -360,9 +544,13 @@ class _SearchBar extends StatelessWidget {
                                 iconSize: 16,
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints(
-                                    minWidth: 28, minHeight: 28),
-                                icon: const Icon(Icons.close_rounded,
-                                    color: CliphistColors.textMuted),
+                                  minWidth: 28,
+                                  minHeight: 28,
+                                ),
+                                icon: const Icon(
+                                  Icons.close_rounded,
+                                  color: CliphistColors.textMuted,
+                                ),
                                 onPressed: onClear,
                               )
                             : null,
@@ -373,39 +561,7 @@ class _SearchBar extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 6),
-          _ActionIcon(
-              icon: Icons.delete_sweep_outlined, tooltip: '清空历史', onTap: onClearHistory),
-          _ActionIcon(
-              icon: Icons.settings_outlined, tooltip: '设置', onTap: onSettings),
         ],
-      ),
-    );
-  }
-}
-
-class _ActionIcon extends StatelessWidget {
-  const _ActionIcon({
-    required this.icon,
-    required this.tooltip,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: Icon(icon, size: 18, color: CliphistColors.textSecondary),
-        ),
       ),
     );
   }

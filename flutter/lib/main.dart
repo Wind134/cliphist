@@ -57,10 +57,7 @@ Future<void> main() async {
   // settings "开机自动启动" toggle can register/unregister a login entry.
   // The path is the resolved exe; M10 packaging may override with a fixed
   // installed path.
-  launchAtStartup.setup(
-    appName: 'cliphist',
-    appPath: Platform.executable,
-  );
+  launchAtStartup.setup(appName: 'cliphist', appPath: Platform.executable);
 
   // Route Flutter framework errors (widget build throws, rendering errors)
   // to the Rust log so a release-mode blank window is diagnosable. The Rust
@@ -68,8 +65,10 @@ Future<void> main() async {
   FlutterError.onError = (details) {
     FlutterError.presentError(details);
     api_clipboard.feLog(
-        message: 'FlutterError: ${details.exceptionAsString()}\n'
-            '${details.stack}');
+      message:
+          'FlutterError: ${details.exceptionAsString()}\n'
+          '${details.stack}',
+    );
   };
 
   final container = ProviderContainer();
@@ -103,6 +102,7 @@ Future<void> main() async {
     );
   } catch (e, stack) {
     api_clipboard.feLog(
-        message: 'ClipHistController.start() failed: $e\n$stack');
+      message: 'ClipHistController.start() failed: $e\n$stack',
+    );
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../src/rust/api/settings.dart' as api_settings;
 import '../src/rust/core/settings_store.dart' show Settings;
+import '../update/update_service.dart';
 
 /// In-memory settings (single source of truth, mirrors the Rust `AppState`
 /// settings). Seeded synchronously from `getSettings()`; the controller and
@@ -22,3 +23,9 @@ final helperConnectedProvider = StateProvider<bool>((ref) => false);
 /// Ephemeral toast message (M4 wires the toast widget). Held as state so any
 /// part of the UI can surface feedback.
 final toastMessageProvider = StateProvider<String>((ref) => '');
+
+/// Result of the latest GitHub Releases update check. The controller performs
+/// a silent check after startup; settings can trigger a manual retry.
+final updateStateProvider = StateProvider<AppUpdateState>(
+  (ref) => const AppUpdateState.idle(),
+);

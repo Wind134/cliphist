@@ -22,9 +22,9 @@ class ClipHistApp extends ConsumerWidget {
       // Transform.scale — keeps text crisp, reflows layout). The Svelte
       // version used CSS `transform: scale`; this is the Flutter analogue.
       builder: (context, child) => MediaQuery(
-        data: MediaQuery.of(context).copyWith(
-          textScaler: TextScaler.linear(zoom),
-        ),
+        data: MediaQuery.of(
+          context,
+        ).copyWith(textScaler: TextScaler.linear(zoom)),
         child: child!,
       ),
       home: const MainScreen(),
@@ -46,9 +46,7 @@ class MainScreen extends ConsumerWidget {
     final toast = ref.watch(toastMessageProvider);
 
     return Shortcuts(
-      shortcuts: {
-        LogicalKeySet(LogicalKeyboardKey.escape): _EscapeIntent(),
-      },
+      shortcuts: {LogicalKeySet(LogicalKeyboardKey.escape): _EscapeIntent()},
       child: Actions(
         actions: {
           _EscapeIntent: CallbackAction<_EscapeIntent>(
@@ -62,9 +60,7 @@ class MainScreen extends ConsumerWidget {
             body: SafeArea(
               child: Stack(
                 children: [
-                  settingsOpen
-                      ? const SettingsScreen()
-                      : const HistoryView(),
+                  settingsOpen ? const SettingsScreen() : const HistoryView(),
                   if (toast.isNotEmpty) _ToastOverlay(message: toast),
                 ],
               ),

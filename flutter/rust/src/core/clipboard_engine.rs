@@ -113,17 +113,18 @@ pub fn delete_image_file(path: &Option<String>) {
 /// Atomically persist history: write a temp file, then rename over the
 /// target. Avoids leaving a half-written JSON if the process is interrupted
 /// mid-write. The payload is now small (images are external), so this is cheap.
-pub fn save_history(items: &[ClipboardItem]) {
-    if let Ok(json) = serde_json::to_string_pretty(items) {
-        let path = get_storage_path();
-        let tmp = path.with_extension("json.tmp");
-        if std::fs::write(&tmp, &json).is_ok() && std::fs::rename(&tmp, &path).is_ok() {
-            return;
-        }
-        // Fallback: write directly if the temp+rename path failed.
-        let _ = std::fs::write(&path, &json);
-        let _ = std::fs::remove_file(&tmp);
+pub fn save_history(items: &[ClipboardItem]) -> Result<(), String> {
+    let json = serde_json::to_string_pretty(items)
+        .map_err(|e| format!("Failed to serialize history: {}", e))?;
+    let path = get_storage_path();
+    let tmp = path.with_extension("json.tmp");
+    if std::fs::write(&tmp, &json).is_ok() && std::fs::rename(&tmp, &path).is_ok() {
+        return Ok(());
     }
+    // Fallback: direct write if the temp+rename path failed, but still report
+    // a real error to commands if that fallback also fails.
+    let _ = std::fs::remove_file(&tmp);
+    std::fs::write(&path, &json).map_err(|e| format!("Failed to save history to {:?}: {}", path, e))
 }
 
 pub fn load_history() -> Vec<ClipboardItem> {
@@ -131,7 +132,34 @@ pub fn load_history() -> Vec<ClipboardItem> {
     let path = get_storage_path();
     crate::core::log::write_log(&format!("load_history: path={:?}", path));
     if let Ok(json) = std::fs::read_to_string(path) {
-        if let Ok(items) = serde_json::from_str::<Vec<ClipboardItem>>(&json) {
+        if let Ok(mut items) = serde_json::from_str::<Vec<ClipboardItem>>(&json) {
+            // Re-sanitize persisted rich text as a migration boundary. Older
+            // versions may have stored HTML before the current allowlist was
+            // introduced; rendering it must not revive remote images or old
+            // unsafe attributes.
+            let mut changed = false;
+            for item in &mut items {
+                if let Some(html) = item.html_content.take() {
+                    let clean = crate::core::sanitize::sanitize_html(&html);
+                    changed |= clean != html;
+                    if clean.is_empty() {
+                        item.content_type = get_content_type(&item.content);
+                    } else {
+                        item.html_content = Some(clean);
+                    }
+                } else if item.content_type == "rich" {
+                    item.content_type = get_content_type(&item.content);
+                    changed = true;
+                }
+            }
+            if changed {
+                if let Err(e) = save_history(&items) {
+                    crate::core::log::write_log(&format!(
+                        "Failed to persist sanitized history migration: {}",
+                        e
+                    ));
+                }
+            }
             return items;
         }
     }
@@ -153,9 +181,10 @@ pub fn get_content_type(content: &str) -> String {
     // A link is a single bare token that starts with a scheme or "www."
     // (no embedded spaces). The old `contains("www.")` check misclassified any
     // text merely mentioning "www." as a link.
-    let is_link = t.starts_with("http://")
-        || t.starts_with("https://")
-        || (t.starts_with("www.") && t.contains('.') && !t.contains(' '));
+    let is_link = !t.chars().any(char::is_whitespace)
+        && (t.starts_with("http://")
+            || t.starts_with("https://")
+            || (t.starts_with("www.") && t.contains('.')));
     if is_link {
         "link".to_string()
     } else if t.chars().count() > 50 {
@@ -246,8 +275,9 @@ pub fn copy_item_to_clipboard(history: &[ClipboardItem], id: usize) -> Result<()
             };
             // Mark this exact image as self-written so the poll loop doesn't
             // re-record it as a new history entry.
-            mark_self_set(img_hash(&img_data));
+            let self_hash = img_hash(&img_data);
             clipboard.set_image(img_data).map_err(|e| e.to_string())?;
+            mark_self_set(self_hash);
             return Ok(());
         }
     }
@@ -288,6 +318,7 @@ mod tests {
     fn content_type_only_marks_bare_urls_as_links() {
         assert_eq!(get_content_type("https://example.com/a"), "link");
         assert_eq!(get_content_type("see https://example.com"), "short");
+        assert_eq!(get_content_type("https://example.com/a b"), "short");
         assert_eq!(get_content_type("www.example.com"), "link");
     }
 

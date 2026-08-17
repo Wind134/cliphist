@@ -18,19 +18,24 @@ class CategoryTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scale = MediaQuery.textScalerOf(context).scale(1);
     return Container(
-      height: 40,
+      height: 44 + (scale - 1).clamp(0, 1).toDouble() * 12,
       color: CliphistColors.bgBase,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
         itemCount: ClipType.byKey.length,
         separatorBuilder: (_, _) => const SizedBox(width: 6),
         itemBuilder: (_, i) {
           final t = ClipType.byKey[i];
           final active = t.key == current;
-          return _Chip(label: t.label, color: t.color, active: active,
-              onTap: () => onChanged(t.key));
+          return _Chip(
+            label: t.label,
+            color: t.color,
+            active: active,
+            onTap: () => onChanged(t.key),
+          );
         },
       ),
     );
@@ -59,7 +64,7 @@ class _Chip extends StatelessWidget {
         onTap: onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 120),
-          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
             color: active
                 ? CliphistColors.accentSoft

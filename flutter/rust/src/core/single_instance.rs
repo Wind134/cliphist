@@ -154,51 +154,51 @@ fn try_check() -> std::io::Result<Outcome> {
             Ok(Outcome::FirstInstance { force_visible })
         }
         Err(_) => {
-            // Another instance holds the lock. Read its port and poke it.
+            // Another instance holds the lock. The lock is authoritative:
+            // retry briefly while the first process finishes stamping its
+            // port, but never start a duplicate clipboard monitor merely
+            // because the wake channel is temporarily unavailable.
             drop(file);
-            let mut s = String::new();
-            File::open(&path)?.read_to_string(&mut s)?;
-            let port = s
-                .trim()
-                .lines()
-                .next()
-                .and_then(|l| l.split(':').nth(1))
-                .and_then(|p| p.trim().parse::<u16>().ok());
-            if let Some(port) = port {
-                let addr =
-                    std::net::SocketAddr::from((std::net::Ipv4Addr::new(127, 0, 0, 1), port));
-                if let Ok(mut stream) =
-                    TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(2))
-                {
-                    let _ = stream.write_all(b"wake\n");
-                    log::write_log(&format!(
-                        "single-instance: poked running instance on port {}",
-                        port
-                    ));
-                } else {
-                    log::write_log(&format!(
-                        "single-instance: lock held but port {} unreachable, proceeding (may double-instance)",
-                        port
-                    ));
-                    // Lock is held but the holder is unreachable (e.g. it died
-                    // without the OS releasing the lock — shouldn't happen with
-                    // flock, but be safe). Fail open.
-                    return Ok(Outcome::FirstInstance {
-                        force_visible: has_toggle_window_arg(),
-                    });
+            for _ in 0..20 {
+                let port = std::fs::read_to_string(&path)
+                    .ok()
+                    .and_then(|contents| parse_wake_port(&contents));
+                if let Some(port) = port {
+                    let addr = std::net::SocketAddr::from((std::net::Ipv4Addr::LOCALHOST, port));
+                    if let Ok(mut stream) =
+                        TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(100))
+                    {
+                        let _ = stream.write_all(b"wake\n");
+                        log::write_log(&format!(
+                            "single-instance: poked running instance on port {}",
+                            port
+                        ));
+                        return Ok(Outcome::SignalSent);
+                    }
                 }
+                std::thread::sleep(std::time::Duration::from_millis(50));
             }
+            log::write_log(
+                "single-instance: lock held but wake channel unavailable; exiting duplicate",
+            );
             Ok(Outcome::SignalSent)
         }
     }
 }
 
+fn parse_wake_port(contents: &str) -> Option<u16> {
+    contents
+        .trim()
+        .lines()
+        .next()
+        .and_then(|line| line.split_once(':'))
+        .and_then(|(_, port)| port.trim().parse().ok())
+}
+
 /// Spawn the wake-acceptor thread. Each accepted connection pokes
 /// [`state::request_window_action`]. A wake that arrives before
-/// `init_app_state` has installed the global state is retried briefly inside
-/// `request_window_action`'s `STATE.get()` guard (a no-op until state exists),
-/// so the worst case is the window pops up a few hundred ms late on a cold
-/// second-launch race — acceptable.
+/// `init_app_state` has installed the global state is retained in
+/// [`PENDING_WAKE`] and drained immediately after state initialization.
 fn start_wake_listener(listener: TcpListener) {
     std::thread::Builder::new()
         .name("single-instance-wake".to_string())
@@ -226,4 +226,21 @@ fn start_wake_listener(listener: TcpListener) {
             }
         })
         .ok();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_wake_port;
+
+    #[test]
+    fn parses_complete_lock_stamp() {
+        assert_eq!(parse_wake_port("1234:49152"), Some(49152));
+    }
+
+    #[test]
+    fn rejects_partial_or_invalid_lock_stamp() {
+        assert_eq!(parse_wake_port("1234:"), None);
+        assert_eq!(parse_wake_port(""), None);
+        assert_eq!(parse_wake_port("1234:not-a-port"), None);
+    }
 }

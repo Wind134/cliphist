@@ -5,12 +5,11 @@
 //!     --wayland-display wayland-0 --xdg-runtime-dir /run/user/1000
 //!
 //! It reads /dev/input/event* (accessible as root), detects a double-tap of
-//! the configured modifier key, and writes a single `0x01` byte to the Unix
-//! socket the main process is listening on. The socket is bidirectional: the
-//! helper also reads commands — `b'P'` triggers Ctrl+V paste injection via
-//! uinput (kernel-level; works on X11 and most Wayland compositors) with a
-//! `wtype` fallback for strict Wayland compositors. When the socket closes,
-//! the helper exits cleanly.
+//! the configured modifier key, and writes `b'D'` to the Unix socket the main
+//! process is listening on. The socket is bidirectional: `b'P'` triggers
+//! Ctrl+V paste injection via uinput (with a `wtype` fallback), followed by a
+//! `b'S'`/`b'F'` success acknowledgement. When the socket closes, the helper
+//! exits cleanly.
 //!
 //! Ported verbatim from `src-tauri/src/evdev_helper.rs`; the only change is
 //! standing alone (own arg parsing, inline `DoubleTapState`) instead of
@@ -222,11 +221,13 @@ fn run(key_name: &str, socket_path: &str, wayland_display: &str, xdg_runtime_dir
                     match stream.read(&mut cmd_buf) {
                         Ok(1) if cmd_buf[0] == b'P' => {
                             eprintln!("[cliphist-helper] Paste command received");
-                            simulate_paste_injection(
+                            let pasted = simulate_paste_injection(
                                 &mut persistent_uinput,
                                 &wayland_display,
                                 &xdg_runtime_dir,
                             );
+                            let _ = stream.write_all(if pasted { b"S" } else { b"F" });
+                            let _ = stream.flush();
                         }
                         Ok(0) => {
                             eprintln!("[cliphist-helper] Main process closed socket, exiting");
@@ -269,7 +270,7 @@ fn run(key_name: &str, socket_path: &str, wayland_display: &str, xdg_runtime_dir
                                             {
                                                 state.last_press = None;
                                                 state.released = false;
-                                                if stream.write_all(&[1]).is_err() {
+                                                if stream.write_all(b"D").is_err() {
                                                     unsafe {
                                                         libc::close(epoll_fd);
                                                     }
@@ -315,7 +316,7 @@ fn simulate_paste_injection(
     uinput: &mut Option<UInputDevice>,
     wayland_display: &str,
     xdg_runtime_dir: &str,
-) {
+) -> bool {
     if uinput.is_none() {
         *uinput = create_persistent_uinput();
         if uinput.is_some() {
@@ -326,25 +327,23 @@ fn simulate_paste_injection(
 
     if try_uinput_paste(uinput) {
         eprintln!("[cliphist-helper] Paste succeeded via uinput");
-        return;
+        return true;
     }
     eprintln!("[cliphist-helper] uinput paste failed, trying wtype fallback");
 
     if try_wtype_paste(wayland_display, xdg_runtime_dir) {
         eprintln!("[cliphist-helper] Paste succeeded via wtype");
-        return;
+        return true;
     }
     eprintln!(
         "[cliphist-helper] All paste strategies failed; clipboard is populated, user can paste manually"
     );
+    false
 }
 
 fn try_uinput_paste(uinput: &mut Option<UInputDevice>) -> bool {
     match uinput {
-        Some(uidev) => {
-            inject_ctrl_v_uinput(uidev);
-            true
-        }
+        Some(uidev) => inject_ctrl_v_uinput(uidev),
         None => false,
     }
 }
@@ -362,47 +361,64 @@ fn try_wtype_paste(wayland_display: &str, xdg_runtime_dir: &str) -> bool {
         .arg("v")
         .spawn()
     {
-        Ok(mut c) => matches!(c.wait(), Ok(s) if s.success()),
+        Ok(mut child) => {
+            let deadline = Instant::now() + std::time::Duration::from_secs(1);
+            loop {
+                match child.try_wait() {
+                    Ok(Some(status)) => return status.success(),
+                    Ok(None) if Instant::now() < deadline => {
+                        std::thread::sleep(std::time::Duration::from_millis(20));
+                    }
+                    Ok(None) => {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        return false;
+                    }
+                    Err(_) => return false,
+                }
+            }
+        }
         Err(_) => false,
     }
 }
 
-fn inject_ctrl_v_uinput(uidev: &UInputDevice) {
+fn inject_ctrl_v_uinput(uidev: &UInputDevice) -> bool {
     use evdev_rs::enums::*;
     let ts = TimeVal::new(0, 0);
-    let send = |code: EV_KEY, value: i32| {
-        uidev
-            .write_event(&InputEvent {
-                time: ts.clone(),
-                event_type: EventType::EV_KEY,
-                event_code: EventCode::EV_KEY(code),
-                value,
-            })
-            .map_err(|e| eprintln!("[cliphist-helper] uinput write error: {:?}", e))
-            .ok();
+    let send = |code: EV_KEY, value: i32| match uidev.write_event(&InputEvent {
+        time: ts.clone(),
+        event_type: EventType::EV_KEY,
+        event_code: EventCode::EV_KEY(code),
+        value,
+    }) {
+        Ok(()) => true,
+        Err(e) => {
+            eprintln!("[cliphist-helper] uinput write error: {:?}", e);
+            false
+        }
     };
-    let syn = || {
-        uidev
-            .write_event(&InputEvent {
-                time: ts.clone(),
-                event_type: EventType::EV_SYN,
-                event_code: EventCode::EV_SYN(EV_SYN::SYN_REPORT),
-                value: 0,
-            })
-            .map_err(|e| eprintln!("[cliphist-helper] uinput syn error: {:?}", e))
-            .ok();
+    let syn = || match uidev.write_event(&InputEvent {
+        time: ts.clone(),
+        event_type: EventType::EV_SYN,
+        event_code: EventCode::EV_SYN(EV_SYN::SYN_REPORT),
+        value: 0,
+    }) {
+        Ok(()) => true,
+        Err(e) => {
+            eprintln!("[cliphist-helper] uinput syn error: {:?}", e);
+            false
+        }
     };
 
-    send(EV_KEY::KEY_LEFTCTRL, 1);
-    syn();
+    let mut success = send(EV_KEY::KEY_LEFTCTRL, 1) & syn();
     std::thread::sleep(std::time::Duration::from_millis(30));
-    send(EV_KEY::KEY_V, 1);
-    syn();
+    success &= send(EV_KEY::KEY_V, 1) & syn();
     std::thread::sleep(std::time::Duration::from_millis(30));
-    send(EV_KEY::KEY_V, 0);
-    syn();
+    success &= send(EV_KEY::KEY_V, 0) & syn();
     std::thread::sleep(std::time::Duration::from_millis(30));
-    send(EV_KEY::KEY_LEFTCTRL, 0);
-    syn();
+    // Always attempt releases even after an earlier write failure so a
+    // partially delivered sequence cannot leave Ctrl/V logically held.
+    success &= send(EV_KEY::KEY_LEFTCTRL, 0) & syn();
     std::thread::sleep(std::time::Duration::from_millis(30));
+    success
 }

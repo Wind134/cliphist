@@ -25,8 +25,12 @@ pub struct AppState {
 static STATE: OnceLock<AppState> = OnceLock::new();
 
 /// Install the global state. Called once from `init_app_state`.
-pub fn set_state(state: AppState) {
-    let _ = STATE.set(state);
+pub fn set_state(state: AppState) -> bool {
+    STATE.set(state).is_ok()
+}
+
+pub fn is_initialized() -> bool {
+    STATE.get().is_some()
 }
 
 /// Borrow the global state. Panics if `init_app_state` has not run yet — the

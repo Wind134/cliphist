@@ -27,6 +27,7 @@ class HistoryItem extends StatefulWidget {
   });
 
   final ClipboardItem item;
+
   /// 1-based display index (1-9 quick-paste hint); rows past 9 show no badge.
   final int index;
   final bool selected;
@@ -42,8 +43,7 @@ class HistoryItem extends StatefulWidget {
 class _HistoryItemState extends State<HistoryItem> {
   bool _hovered = false;
 
-  ClipType get _type => ClipType.of(widget.item.contentType) ??
-      ClipType.all;
+  ClipType get _type => ClipType.of(widget.item.contentType) ?? ClipType.all;
 
   Color get _rowBg {
     if (widget.selected) return CliphistColors.selected;
@@ -63,20 +63,34 @@ class _HistoryItemState extends State<HistoryItem> {
         onTap: widget.onTap,
         onDoubleTap: widget.onDoubleTap,
         child: Container(
+          margin: const EdgeInsets.only(bottom: 8),
           decoration: BoxDecoration(
             color: _rowBg,
-            border: const Border(
-              bottom: BorderSide(color: CliphistColors.borderSubtle, width: 1),
+            borderRadius: BorderRadius.circular(CliphistColors.radiusLg),
+            border: Border.all(
+              color: widget.selected
+                  ? CliphistColors.accent.withValues(alpha: 0.38)
+                  : CliphistColors.borderSubtle,
             ),
+            boxShadow: _hovered || widget.selected
+                ? CliphistColors.cardShadow
+                : null,
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               // Selection rail (sits against the row's left edge, outside the
               // padded content so it spans the full row height).
               if (widget.selected)
-                Container(width: 3, height: 36, color: CliphistColors.accent)
+                Container(
+                  width: 3,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: CliphistColors.accent,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                )
               else
                 const SizedBox(width: 3),
               const SizedBox(width: 9),
@@ -86,14 +100,20 @@ class _HistoryItemState extends State<HistoryItem> {
                 _ImagePreview(id: item.id),
                 const SizedBox(width: 12),
               ] else
-                _Dot(color: _type.color),
+                _TypeBadge(type: _type),
               const SizedBox(width: 10),
               Expanded(child: _body(item, isImage)),
-              if (_hovered && !isImage) ...[
+              if (_hovered) ...[
                 _IconBtn(
-                    icon: Icons.content_copy, tooltip: '复制', onTap: widget.onCopy),
+                  icon: Icons.content_copy,
+                  tooltip: '复制',
+                  onTap: widget.onCopy,
+                ),
                 _IconBtn(
-                    icon: Icons.delete_outline, tooltip: '删除', onTap: widget.onDelete),
+                  icon: Icons.delete_outline,
+                  tooltip: '删除',
+                  onTap: widget.onDelete,
+                ),
               ],
             ],
           ),
@@ -111,6 +131,8 @@ class _HistoryItemState extends State<HistoryItem> {
         const SizedBox(height: 3),
         Text(
           _meta(item),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             color: CliphistColors.textMuted,
             fontSize: 11,
@@ -173,14 +195,21 @@ class _Index extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (index < 1 || index > 9) return const SizedBox(width: 18);
-    return SizedBox(
-      width: 18,
+    if (index < 1 || index > 9) return const SizedBox(width: 24);
+    return Container(
+      width: 24,
+      height: 24,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: CliphistColors.surface,
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: CliphistColors.border),
+      ),
       child: Text(
         '$index',
         textAlign: TextAlign.center,
         style: const TextStyle(
-          color: CliphistColors.textMuted,
+          color: CliphistColors.textSecondary,
           fontSize: 11,
           fontWeight: FontWeight.w600,
           height: 1.2,
@@ -191,19 +220,28 @@ class _Index extends StatelessWidget {
   }
 }
 
-class _Dot extends StatelessWidget {
-  const _Dot({required this.color});
-  final Color color;
+class _TypeBadge extends StatelessWidget {
+  const _TypeBadge({required this.type});
+  final ClipType type;
+
+  IconData get _icon => switch (type.key) {
+    'link' => Icons.link_rounded,
+    'rich' => Icons.format_color_text_rounded,
+    'short' => Icons.short_text_rounded,
+    _ => Icons.notes_rounded,
+  };
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 8,
-      height: 8,
+      width: 30,
+      height: 30,
+      alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(4),
+        color: type.color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(9),
       ),
+      child: Icon(_icon, size: 16, color: type.color),
     );
   }
 }
@@ -253,10 +291,13 @@ class _ImagePreviewState extends State<_ImagePreview> {
         height: 64,
         decoration: BoxDecoration(
           color: CliphistColors.surfaceSubtle,
-          borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
+          borderRadius: BorderRadius.circular(CliphistColors.radius),
         ),
-        child: const Icon(Icons.broken_image_outlined,
-            size: 20, color: CliphistColors.textMuted),
+        child: const Icon(
+          Icons.broken_image_outlined,
+          size: 20,
+          color: CliphistColors.textMuted,
+        ),
       );
     }
     if (!_loaded) {
@@ -265,7 +306,7 @@ class _ImagePreviewState extends State<_ImagePreview> {
         height: 64,
         decoration: BoxDecoration(
           color: CliphistColors.surfaceSubtle,
-          borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
+          borderRadius: BorderRadius.circular(CliphistColors.radius),
         ),
         child: const Center(
           child: SizedBox(
@@ -280,7 +321,7 @@ class _ImagePreviewState extends State<_ImagePreview> {
       );
     }
     return ClipRRect(
-      borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
+      borderRadius: BorderRadius.circular(CliphistColors.radius),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxHeight: 72, maxWidth: 96),
         child: Image.memory(_bytes!, fit: BoxFit.contain),
@@ -309,8 +350,7 @@ class _IconBtn extends StatelessWidget {
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.all(5),
-          child:
-              Icon(icon, size: 16, color: CliphistColors.textSecondary),
+          child: Icon(icon, size: 16, color: CliphistColors.textSecondary),
         ),
       ),
     );

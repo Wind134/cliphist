@@ -102,10 +102,8 @@ fn wire__crate__api__history__clear_history_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, ()>((move || {
-                    let output_ok = Result::<_, ()>::Ok({
-                        crate::api::history::clear_history();
-                    })?;
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::history::clear_history()?;
                     Ok(output_ok)
                 })())
             }
@@ -170,10 +168,8 @@ fn wire__crate__api__history__delete_item_impl(
             let api_id = <usize>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, ()>((move || {
-                    let output_ok = Result::<_, ()>::Ok({
-                        crate::api::history::delete_item(api_id);
-                    })?;
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::history::delete_item(api_id)?;
                     Ok(output_ok)
                 })())
             }
@@ -398,10 +394,8 @@ fn wire__crate__api__history__move_to_top_impl(
             let api_id = <usize>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, ()>((move || {
-                    let output_ok = Result::<_, ()>::Ok({
-                        crate::api::history::move_to_top(api_id);
-                    })?;
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::history::move_to_top(api_id)?;
                     Ok(output_ok)
                 })())
             }

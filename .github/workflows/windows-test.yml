@@ -1,0 +1,71 @@
+name: Windows Test Package
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.44.9
+          cache: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: 'flutter/rust -> target'
+          shared-key: windows-test
+
+      # Build the native library separately so Rust diagnostics remain visible
+      # if Cargokit's MSBuild integration fails later in the Flutter build.
+      - name: Build Rust library
+        working-directory: flutter/rust
+        run: cargo build --release --locked
+
+      - name: Build Windows release bundle
+        working-directory: flutter
+        run: >-
+          flutter build windows --release
+          --build-name 2.0.8
+          --build-number ${{ github.run_number }}
+
+      - name: Create portable test package
+        shell: pwsh
+        run: |
+          $bundle = 'flutter/build/windows/x64/runner/Release'
+          $output = 'artifacts'
+          $zip = Join-Path $output 'cliphist-2.0.8-windows-x64-test.zip'
+          $checksum = "$zip.sha256"
+
+          if (-not (Test-Path (Join-Path $bundle 'cliphist.exe'))) {
+            throw "Windows release bundle was not produced at $bundle"
+          }
+
+          New-Item -ItemType Directory -Path $output -Force | Out-Null
+          Compress-Archive -Path "$bundle/*" -DestinationPath $zip -CompressionLevel Optimal
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $(Split-Path $zip -Leaf)" | Set-Content -Path $checksum -Encoding ascii
+
+          Get-ChildItem $bundle -Recurse | Select-Object FullName, Length
+          Get-Content $checksum
+
+      - name: Upload Windows test package
+        uses: actions/upload-artifact@v4
+        with:
+          name: cliphist-2.0.8-windows-x64-test
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 7

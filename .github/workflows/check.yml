@@ -85,19 +85,26 @@ jobs:
         working-directory: flutter
         run: flutter analyze
 
+      - name: flutter test
+        working-directory: flutter
+        run: flutter test
+
       - name: cargo fmt
         working-directory: flutter/rust
         run: cargo fmt -- --check
 
       - name: cargo clippy
         working-directory: flutter/rust
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: cargo test
         working-directory: flutter/rust
-        run: cargo test
+        run: cargo test --locked
 
       - name: Build evdev helper (Linux only)
         if: runner.os == 'Linux'
         working-directory: rust/evdev-helper
-        run: cargo build --locked
+        run: |
+          cargo fmt -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked

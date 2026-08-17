@@ -1,20 +1,22 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:launch_at_startup/launch_at_startup.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
-import '../src/rust/api/clipboard.dart' as api_clipboard;
-import '../src/rust/api/history.dart' as api_history;
-import '../src/rust/api/settings.dart' as api_settings;
-import '../src/rust/api/stream.dart' as api_stream;
-import '../src/rust/core/events.dart' show WindowActionKind;
-import '../src/rust/core/settings_store.dart' show SettingsPatch;
 import 'bridge/streams.dart';
+import 'src/rust/api/clipboard.dart' as api_clipboard;
+import 'src/rust/api/history.dart' as api_history;
+import 'src/rust/api/settings.dart' as api_settings;
+import 'src/rust/api/stream.dart' as api_stream;
+import 'src/rust/core/events.dart' show WindowActionKind;
+import 'src/rust/core/settings_store.dart' show SettingsPatch;
 import 'state/providers.dart';
+import 'update/update_service.dart';
 import 'util/toast.dart';
 
 /// Process-singleton owning the native window + tray lifecycle and the
@@ -36,6 +38,8 @@ class ClipHistController with WindowListener, TrayListener {
   StreamSubscription<bool>? _helperStatusSub;
   List<StreamSubscription> _clipboardSubs = const [];
   int _lastResizeSave = 0;
+  HotKey? _registeredHotKey;
+  bool _quitting = false;
 
   Future<void> start(ProviderContainer c, {bool forceVisible = false}) async {
     container = c;
@@ -51,7 +55,8 @@ class ClipHistController with WindowListener, TrayListener {
       const WindowOptions(
         title: 'ClipHist',
         minimumSize: Size(320, 400),
-        titleBarStyle: TitleBarStyle.normal, // OS-native decorations (decision 3.6)
+        titleBarStyle:
+            TitleBarStyle.normal, // OS-native decorations (decision 3.6)
         skipTaskbar: false,
       ),
       () async {
@@ -81,6 +86,14 @@ class ClipHistController with WindowListener, TrayListener {
     }
     windowManager.addListener(this);
 
+    try {
+      await applyHotkey(s.hotkey);
+    } catch (e, stack) {
+      api_clipboard.feLog(
+        message: 'startup hotkey registration failed: $e\n$stack',
+      );
+    }
+
     // Tray setup is best-effort: a failure here (icon load, context menu,
     // platform channel) must not prevent the window/hotkey paths from
     // working — if the tray never comes up the user can still reach the
@@ -101,22 +114,32 @@ class ClipHistController with WindowListener, TrayListener {
         }
       });
     } catch (e, stack) {
-      api_clipboard.feLog(message: 'streamWindowAction subscribe failed: $e\n$stack');
+      api_clipboard.feLog(
+        message: 'streamWindowAction subscribe failed: $e\n$stack',
+      );
     }
     try {
       _helperStatusSub = api_stream.streamHelperStatus().listen((connected) {
         container.read(helperConnectedProvider.notifier).state = connected;
       });
     } catch (e, stack) {
-      api_clipboard.feLog(message: 'streamHelperStatus subscribe failed: $e\n$stack');
+      api_clipboard.feLog(
+        message: 'streamHelperStatus subscribe failed: $e\n$stack',
+      );
     }
 
     // History-bearing streams → history provider.
     try {
       _clipboardSubs = subscribeClipboardStreams(container);
     } catch (e, stack) {
-      api_clipboard.feLog(message: 'subscribeClipboardStreams failed: $e\n$stack');
+      api_clipboard.feLog(
+        message: 'subscribeClipboardStreams failed: $e\n$stack',
+      );
     }
+
+    // Never block startup on the network. A successful result is exposed as a
+    // compact banner; failures stay quiet until the user checks manually.
+    unawaited(checkForUpdates(silent: true));
   }
 
   /// The "pop to top" window-action dance, ported from the old Tauri worker:
@@ -149,10 +172,203 @@ class ClipHistController with WindowListener, TrayListener {
           ? await launchAtStartup.enable()
           : await launchAtStartup.disable();
       if (!ok) {
-        api_clipboard.feLog(message: 'launch_at_startup($enabled) returned false');
+        throw StateError('系统拒绝了开机启动设置');
       }
-    } catch (e) {
+    } catch (e, stack) {
       api_clipboard.feLog(message: 'launch_at_startup($enabled) failed: $e');
+      api_clipboard.feLog(message: '$stack');
+      rethrow;
+    }
+  }
+
+  /// Register a system-wide hotkey through a native Flutter plugin. Keeping
+  /// this out of FRB is important: macOS requires registration on its main
+  /// event loop, while Windows hotkey handles are thread-affine.
+  Future<void> applyHotkey(String shortcut) async {
+    final previous = _registeredHotKey;
+    final next = _parseHotKey(shortcut);
+
+    await hotKeyManager.unregisterAll();
+    _registeredHotKey = null;
+
+    // The plugin uses X11 keybinder on Linux. Wayland users bind
+    // `cliphist --toggle-window` in their desktop shortcut settings instead.
+    final wayland =
+        Platform.isLinux &&
+        Platform.environment['XDG_SESSION_TYPE']?.toLowerCase() == 'wayland';
+    if (wayland) {
+      api_clipboard.feLog(
+        message: 'Wayland: skipped app global hotkey; use --toggle-window',
+      );
+      return;
+    }
+
+    try {
+      await hotKeyManager.register(
+        next,
+        keyDownHandler: (_) => unawaited(performWindowDance()),
+      );
+      _registeredHotKey = next;
+      api_clipboard.feLog(message: 'Registered native hotkey: $shortcut');
+    } catch (_) {
+      if (previous != null) {
+        try {
+          await hotKeyManager.register(
+            previous,
+            keyDownHandler: (_) => unawaited(performWindowDance()),
+          );
+          _registeredHotKey = previous;
+        } catch (rollbackError) {
+          api_clipboard.feLog(
+            message: 'hotkey rollback failed: $rollbackError',
+          );
+        }
+      }
+      rethrow;
+    }
+  }
+
+  HotKey _parseHotKey(String shortcut) {
+    final parts = shortcut
+        .split('+')
+        .map((part) => part.trim().toUpperCase())
+        .where((part) => part.isNotEmpty)
+        .toList();
+    final modifiers = <HotKeyModifier>[];
+    PhysicalKeyboardKey? key;
+    for (final part in parts) {
+      switch (part) {
+        case 'COMMANDORCONTROL':
+        case 'CMDORCTRL':
+        case 'CTRL':
+        case 'CONTROL':
+          modifiers.add(HotKeyModifier.control);
+        case 'COMMAND':
+        case 'CMD':
+        case 'SUPER':
+        case 'META':
+        case 'WIN':
+          modifiers.add(HotKeyModifier.meta);
+        case 'SHIFT':
+          modifiers.add(HotKeyModifier.shift);
+        case 'ALT':
+        case 'OPTION':
+          modifiers.add(HotKeyModifier.alt);
+        default:
+          key = _physicalKey(part);
+      }
+    }
+    if (key == null || modifiers.isEmpty) {
+      throw FormatException('无效的快捷键: $shortcut');
+    }
+    return HotKey(
+      key: key,
+      modifiers: modifiers.toSet().toList(),
+      scope: HotKeyScope.system,
+    );
+  }
+
+  PhysicalKeyboardKey? _physicalKey(String value) {
+    if (value.length == 1) {
+      const letters = <String, PhysicalKeyboardKey>{
+        'A': PhysicalKeyboardKey.keyA,
+        'B': PhysicalKeyboardKey.keyB,
+        'C': PhysicalKeyboardKey.keyC,
+        'D': PhysicalKeyboardKey.keyD,
+        'E': PhysicalKeyboardKey.keyE,
+        'F': PhysicalKeyboardKey.keyF,
+        'G': PhysicalKeyboardKey.keyG,
+        'H': PhysicalKeyboardKey.keyH,
+        'I': PhysicalKeyboardKey.keyI,
+        'J': PhysicalKeyboardKey.keyJ,
+        'K': PhysicalKeyboardKey.keyK,
+        'L': PhysicalKeyboardKey.keyL,
+        'M': PhysicalKeyboardKey.keyM,
+        'N': PhysicalKeyboardKey.keyN,
+        'O': PhysicalKeyboardKey.keyO,
+        'P': PhysicalKeyboardKey.keyP,
+        'Q': PhysicalKeyboardKey.keyQ,
+        'R': PhysicalKeyboardKey.keyR,
+        'S': PhysicalKeyboardKey.keyS,
+        'T': PhysicalKeyboardKey.keyT,
+        'U': PhysicalKeyboardKey.keyU,
+        'V': PhysicalKeyboardKey.keyV,
+        'W': PhysicalKeyboardKey.keyW,
+        'X': PhysicalKeyboardKey.keyX,
+        'Y': PhysicalKeyboardKey.keyY,
+        'Z': PhysicalKeyboardKey.keyZ,
+        '0': PhysicalKeyboardKey.digit0,
+        '1': PhysicalKeyboardKey.digit1,
+        '2': PhysicalKeyboardKey.digit2,
+        '3': PhysicalKeyboardKey.digit3,
+        '4': PhysicalKeyboardKey.digit4,
+        '5': PhysicalKeyboardKey.digit5,
+        '6': PhysicalKeyboardKey.digit6,
+        '7': PhysicalKeyboardKey.digit7,
+        '8': PhysicalKeyboardKey.digit8,
+        '9': PhysicalKeyboardKey.digit9,
+      };
+      return letters[value];
+    }
+    const named = <String, PhysicalKeyboardKey>{
+      'SPACE': PhysicalKeyboardKey.space,
+      'ENTER': PhysicalKeyboardKey.enter,
+      'RETURN': PhysicalKeyboardKey.enter,
+      'TAB': PhysicalKeyboardKey.tab,
+      'ESC': PhysicalKeyboardKey.escape,
+      'ESCAPE': PhysicalKeyboardKey.escape,
+      'BACKSPACE': PhysicalKeyboardKey.backspace,
+      'F1': PhysicalKeyboardKey.f1,
+      'F2': PhysicalKeyboardKey.f2,
+      'F3': PhysicalKeyboardKey.f3,
+      'F4': PhysicalKeyboardKey.f4,
+      'F5': PhysicalKeyboardKey.f5,
+      'F6': PhysicalKeyboardKey.f6,
+      'F7': PhysicalKeyboardKey.f7,
+      'F8': PhysicalKeyboardKey.f8,
+      'F9': PhysicalKeyboardKey.f9,
+      'F10': PhysicalKeyboardKey.f10,
+      'F11': PhysicalKeyboardKey.f11,
+      'F12': PhysicalKeyboardKey.f12,
+    };
+    return named[value];
+  }
+
+  Future<void> checkForUpdates({bool silent = false}) async {
+    final previous = container.read(updateStateProvider);
+    container.read(updateStateProvider.notifier).state = AppUpdateState(
+      phase: UpdatePhase.checking,
+      currentVersion: previous.currentVersion,
+      latestVersion: previous.latestVersion,
+      releaseUrl: previous.releaseUrl,
+    );
+    final result = await UpdateService().check(
+      currentVersion: previous.currentVersion.isEmpty
+          ? null
+          : previous.currentVersion,
+    );
+    container.read(updateStateProvider.notifier).state = result;
+    if (silent) return;
+    switch (result.phase) {
+      case UpdatePhase.available:
+        showToast(container, '发现新版本 v${result.latestVersion}');
+      case UpdatePhase.upToDate:
+        showToast(container, '当前已是最新版本');
+      case UpdatePhase.failed:
+        showToast(container, '检查更新失败: ${result.errorMessage}');
+      case UpdatePhase.idle:
+      case UpdatePhase.checking:
+        break;
+    }
+  }
+
+  Future<void> openLatestRelease() async {
+    final uri = container.read(updateStateProvider).releaseUrl;
+    if (uri == null) return;
+    try {
+      await UpdateService.openRelease(uri);
+    } catch (e) {
+      showToast(container, '打开下载页失败: $e');
     }
   }
 
@@ -160,9 +376,9 @@ class ClipHistController with WindowListener, TrayListener {
   /// it to the top, hide the window, wait 200ms for the target app to regain
   /// focus, then simulate Ctrl+V. The window is hidden unconditionally
   /// (paste is meaningless with the history window in the way). The
-  /// `simulatePasteCmd` Rust call is an M7 stub that returns `Err` until the
-  /// platform paste injection lands — surface that as a toast rather than a
-  /// silent no-op.
+  /// Native paste injection is best-effort; a missing Linux helper or denied
+  /// accessibility permission is surfaced as a toast instead of a silent
+  /// no-op.
   Future<void> quickPaste(BigInt id) async {
     try {
       await api_clipboard.copyToClipboard(id: id);
@@ -189,8 +405,9 @@ class ClipHistController with WindowListener, TrayListener {
     // which only reads .ico/.cur/.ani — a .png returns NULL and the icon is
     // silently invisible (setIcon still returns success). Linux (GTK) and
     // macOS (NSImage) load .png fine, so pick the asset by platform.
-    final iconPath =
-        Platform.isWindows ? 'assets/icon/icon.ico' : 'assets/icon/icon.png';
+    final iconPath = Platform.isWindows
+        ? 'assets/icon/icon.ico'
+        : 'assets/icon/icon.png';
     await trayManager.setIcon(iconPath);
     // Hover label is cosmetic and platform support is asymmetric: tray_manager
     // implements setTitle on Linux but NOT on Windows (NotImplemented → throws
@@ -210,42 +427,55 @@ class ClipHistController with WindowListener, TrayListener {
     } catch (_) {
       // setToolTip not implemented on this platform — ignore.
     }
-    await trayManager.setContextMenu(Menu(items: [
-      MenuItem(
-        label: '显示窗口',
-        onClick: (_) {
-          api_clipboard.feLog(message: 'tray menu: 显示窗口');
-          performWindowDance();
-        },
+    await trayManager.setContextMenu(
+      Menu(
+        items: [
+          MenuItem(
+            label: '显示窗口',
+            onClick: (_) {
+              api_clipboard.feLog(message: 'tray menu: 显示窗口');
+              unawaited(performWindowDance());
+            },
+          ),
+          MenuItem(
+            label: '设置',
+            onClick: (_) async {
+              api_clipboard.feLog(message: 'tray menu: 设置');
+              container.read(settingsOpenProvider.notifier).state = true;
+              await performWindowDance();
+            },
+          ),
+          MenuItem(
+            label: '清空历史',
+            onClick: (_) async {
+              api_clipboard.feLog(message: 'tray menu: 清空历史');
+              try {
+                await api_history
+                    .clearHistory(); // emits history-replace(empty)
+              } catch (e) {
+                api_clipboard.feLog(message: 'tray clear failed: $e');
+              }
+            },
+          ),
+          MenuItem(
+            label: '检查更新',
+            onClick: (_) async {
+              container.read(settingsOpenProvider.notifier).state = true;
+              await performWindowDance();
+              await checkForUpdates();
+            },
+          ),
+          MenuItem.separator(),
+          MenuItem(
+            label: '退出',
+            onClick: (_) {
+              api_clipboard.feLog(message: 'tray menu: 退出');
+              unawaited(quit());
+            },
+          ),
+        ],
       ),
-      MenuItem(
-        label: '设置',
-        onClick: (_) async {
-          api_clipboard.feLog(message: 'tray menu: 设置');
-          container.read(settingsOpenProvider.notifier).state = true;
-          await performWindowDance();
-        },
-      ),
-      MenuItem(
-        label: '清空历史',
-        onClick: (_) async {
-          api_clipboard.feLog(message: 'tray menu: 清空历史');
-          try {
-            await api_history.clearHistory(); // emits history-replace(empty)
-          } catch (e) {
-            api_clipboard.feLog(message: 'tray clear failed: $e');
-          }
-        },
-      ),
-      MenuItem.separator(),
-      MenuItem(
-        label: '退出',
-        onClick: (_) {
-          api_clipboard.feLog(message: 'tray menu: 退出');
-          quit();
-        },
-      ),
-    ]));
+    );
     trayManager.addListener(this);
     api_clipboard.feLog(message: '_setupTray done (icon+menu+listener)');
   }
@@ -325,6 +555,8 @@ class ClipHistController with WindowListener, TrayListener {
   }
 
   Future<void> quit() async {
+    if (_quitting) return;
+    _quitting = true;
     api_clipboard.feLog(message: 'quit() invoked');
     // Best-effort cleanup — every step is guarded so a failure can never
     // prevent the hard `exit(0)` below. The OS reclaims all resources (window,
@@ -363,6 +595,11 @@ class ClipHistController with WindowListener, TrayListener {
       await trayManager.destroy();
     } catch (e) {
       api_clipboard.feLog(message: 'quit: tray destroy failed: $e');
+    }
+    try {
+      await hotKeyManager.unregisterAll();
+    } catch (e) {
+      api_clipboard.feLog(message: 'quit: hotkey unregister failed: $e');
     }
     // Skip windowManager.destroy() — it can route through onWindowClose
     // (close-to-tray) and hide instead of destroying, which delays/loses the

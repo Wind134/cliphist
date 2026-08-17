@@ -1,237 +1,22 @@
-//! Global hotkey + double-tap + paste injection, ported from the old
-//! `src-tauri/src/shortcut.rs` minus the Tauri plugin layer.
+//! Double-tap detection + paste injection, ported from the old
+//! `src-tauri/src/shortcut.rs` minus the Tauri plugin layer. Global hotkeys
+//! are registered by Dart's native plugin on the platform event-loop thread.
 //!
 //! Scope by platform (matches the old split):
-//!  - **Global hotkey**: `global-hotkey` crate, registered on Linux (X11) +
-//!    Windows + macOS. Wayland sessions skip registration (plan 3.5) — there
-//!    is no X11 global-grab on Wayland; v2 will use the GlobalShortcuts
-//!    portal. The receiver thread turns a trigger into a
-//!    [`crate::core::state::request_window_action`] (ShowAndRaise), which the
-//!    Dart side performs.
 //!  - **Double-tap**: Windows + macOS both use `rdev::grab` (a global key
 //!    tap listener); macOS requires the app to be granted Accessibility
 //!    permission or `grab` errors out. Linux double-tap goes through the
 //!    privileged evdev helper (M8).
 //!  - **simulate_paste**: Windows `rdev` Ctrl+V, macOS `rdev` Cmd+V, Linux
 //!    through the evdev helper (M8). Other platforms return `Err`.
-//!
-//! The hotkey string parser reuses [`crate::core::hotkey_parse`] for
-//! validation; this module owns the enum mapping for actual registration.
-
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-
-use global_hotkey::hotkey::{Code, HotKey, Modifiers};
-use parking_lot::Mutex;
+#[cfg(target_os = "linux")]
+use std::sync::atomic::AtomicU64;
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+use std::sync::atomic::AtomicU8;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::core::log;
 use crate::core::state;
-
-// ── Global hotkey (cross-platform) ─────────────────────────────────────────
-
-// global-hotkey's Windows `GlobalHotKeyManager` holds a Win32 HWND
-// (`*mut c_void`), which is `!Send` because HWNDs are thread-affine — a
-// window and its RegisterHotKey binding belong to the thread that created
-// them, and WM_HOTKEY is posted to that thread's message queue. That makes
-// `Mutex<Option<GlobalHotKeyManager>>` non-`Sync`, so it cannot live in a
-// `static` directly on Windows (the Linux X11 and macOS managers are `Send`
-// and compile fine). We only ever touch the manager from the Flutter main
-// thread: both call sites (init_app_state at startup, update_settings when
-// the binding changes) are sync `#[frb]` functions, which FRB runs on the
-// calling Dart isolate's thread — the platform/main thread that owns the
-// Win32 message loop the manager relies on to dispatch WM_HOTKEY. So the
-// `Send` impl below only satisfies the static's `Sync` bound; at runtime the
-// manager is created, registered, and dropped on one and the same (main)
-// thread and no HWND ever actually crosses threads. Keep all manager access
-// confined to the main thread — do not call register_global_hotkey from a
-// worker thread.
-struct HotKeyManager(global_hotkey::GlobalHotKeyManager);
-// SAFETY: see comment above — the manager is only accessed from the main
-// thread; the Send impl is for the static's Sync requirement, not for
-// actually moving the value across threads.
-unsafe impl Send for HotKeyManager {}
-
-static HOTKEY_MANAGER: Mutex<Option<HotKeyManager>> = Mutex::new(None);
-static HOTKEY_ID: AtomicU32 = AtomicU32::new(0);
-static HOTKEY_RECEIVER_RUNNING: AtomicBool = AtomicBool::new(false);
-
-/// (Re)register the global hotkey. Parses [shortcut_str] (e.g.
-/// `Ctrl+Shift+V`), unregisters any prior binding, and spawns (once) the
-/// event-receiver thread that turns triggers into window-action requests.
-/// Wayland sessions skip registration and log a notice (plan 3.5).
-pub fn register_global_hotkey(shortcut_str: &str) -> Result<(), String> {
-    // Wayland degradation: global-hotkey relies on X11 grabs; on Wayland it
-    // would no-op or fail. Skip cleanly and let the UI guide the user to a
-    // system-level binding (M10 adds the `--toggle-window` CLI).
-    if is_wayland() {
-        log::write_log(&format!(
-            "Skipping global hotkey registration on Wayland: {}",
-            shortcut_str
-        ));
-        // Drop any previously registered manager just in case the session
-        // changed under us.
-        *HOTKEY_MANAGER.lock() = None;
-        HOTKEY_ID.store(0, Ordering::SeqCst);
-        return Ok(());
-    }
-
-    let parsed = match parse_hotkey(shortcut_str) {
-        Some(p) => p,
-        None => {
-            // Empty / invalid — unregister whatever was there.
-            *HOTKEY_MANAGER.lock() = None;
-            HOTKEY_ID.store(0, Ordering::SeqCst);
-            return Ok(());
-        }
-    };
-
-    let mut manager_slot = HOTKEY_MANAGER.lock();
-    // Re-create the manager so all prior hotkeys are dropped (unregistered).
-    let manager = HotKeyManager(
-        global_hotkey::GlobalHotKeyManager::new()
-            .map_err(|e| format!("GlobalHotKeyManager::new failed: {}", e))?,
-    );
-    let hotkey = HotKey::new(Some(parsed.modifiers), parsed.code);
-    manager
-        .0
-        .register(hotkey)
-        .map_err(|e| format!("register hotkey failed: {}", e))?;
-    HOTKEY_ID.store(hotkey.id(), Ordering::SeqCst);
-    *manager_slot = Some(manager);
-    drop(manager_slot);
-
-    ensure_receiver_thread();
-    log::write_log(&format!("Registered global hotkey: {}", shortcut_str));
-    Ok(())
-}
-
-fn ensure_receiver_thread() {
-    if HOTKEY_RECEIVER_RUNNING.swap(true, Ordering::SeqCst) {
-        return;
-    }
-    std::thread::Builder::new()
-        .name("hotkey-receiver".to_string())
-        .spawn(|| {
-            let receiver = global_hotkey::GlobalHotKeyEvent::receiver();
-            while HOTKEY_RECEIVER_RUNNING.load(Ordering::SeqCst) {
-                // Block until a hotkey event arrives (or the channel errors).
-                match receiver.recv() {
-                    Ok(event) => {
-                        let current = HOTKEY_ID.load(Ordering::SeqCst);
-                        if current != 0 && event.id == current {
-                            log::write_log("Global hotkey triggered");
-                            state::request_window_action();
-                        }
-                    }
-                    Err(_) => {
-                        // Sender dropped (manager replaced) — loop and try
-                        // again; a new receiver is the same static handle.
-                        std::thread::sleep(std::time::Duration::from_millis(100));
-                    }
-                }
-            }
-        })
-        .ok();
-}
-
-fn is_wayland() -> bool {
-    std::env::var("XDG_SESSION_TYPE")
-        .unwrap_or_default()
-        .eq_ignore_ascii_case("wayland")
-}
-
-struct ParsedHotkey {
-    modifiers: Modifiers,
-    code: Code,
-}
-
-fn parse_hotkey(s: &str) -> Option<ParsedHotkey> {
-    let mut modifiers = Modifiers::empty();
-    let mut code: Option<Code> = None;
-
-    for part in s.split('+') {
-        match part.trim().to_uppercase().as_str() {
-            "COMMANDORCONTROL" | "CMDORCTRL" | "CTRL" | "CONTROL" => {
-                modifiers |= Modifiers::CONTROL;
-            }
-            "COMMAND" | "CMD" | "SUPER" | "META" | "WIN" => {
-                modifiers |= Modifiers::SUPER;
-            }
-            "SHIFT" => modifiers |= Modifiers::SHIFT,
-            "ALT" | "OPTION" => modifiers |= Modifiers::ALT,
-            k => {
-                if let Some(c) = parse_key_code(k) {
-                    code = Some(c);
-                }
-            }
-        }
-    }
-
-    // Require at least one modifier — a bare key would hijack that key
-    // system-wide (same guard as the old `parse_shortcut`).
-    if modifiers.is_empty() {
-        return None;
-    }
-    code.map(|c| ParsedHotkey { modifiers, code: c })
-}
-
-fn parse_key_code(k: &str) -> Option<Code> {
-    Some(match k {
-        "A" => Code::KeyA,
-        "B" => Code::KeyB,
-        "C" => Code::KeyC,
-        "D" => Code::KeyD,
-        "E" => Code::KeyE,
-        "F" => Code::KeyF,
-        "G" => Code::KeyG,
-        "H" => Code::KeyH,
-        "I" => Code::KeyI,
-        "J" => Code::KeyJ,
-        "K" => Code::KeyK,
-        "L" => Code::KeyL,
-        "M" => Code::KeyM,
-        "N" => Code::KeyN,
-        "O" => Code::KeyO,
-        "P" => Code::KeyP,
-        "Q" => Code::KeyQ,
-        "R" => Code::KeyR,
-        "S" => Code::KeyS,
-        "T" => Code::KeyT,
-        "U" => Code::KeyU,
-        "V" => Code::KeyV,
-        "W" => Code::KeyW,
-        "X" => Code::KeyX,
-        "Y" => Code::KeyY,
-        "Z" => Code::KeyZ,
-        "0" => Code::Digit0,
-        "1" => Code::Digit1,
-        "2" => Code::Digit2,
-        "3" => Code::Digit3,
-        "4" => Code::Digit4,
-        "5" => Code::Digit5,
-        "6" => Code::Digit6,
-        "7" => Code::Digit7,
-        "8" => Code::Digit8,
-        "9" => Code::Digit9,
-        "SPACE" => Code::Space,
-        "ENTER" | "RETURN" => Code::Enter,
-        "TAB" => Code::Tab,
-        "ESC" | "ESCAPE" => Code::Escape,
-        "BACKSPACE" => Code::Backspace,
-        "F1" => Code::F1,
-        "F2" => Code::F2,
-        "F3" => Code::F3,
-        "F4" => Code::F4,
-        "F5" => Code::F5,
-        "F6" => Code::F6,
-        "F7" => Code::F7,
-        "F8" => Code::F8,
-        "F9" => Code::F9,
-        "F10" => Code::F10,
-        "F11" => Code::F11,
-        "F12" => Code::F12,
-        _ => return None,
-    })
-}
 
 // ── Double-tap + paste (platform dispatch) ────────────────────────────────
 
@@ -304,25 +89,41 @@ fn simulate_paste_platform() -> Result<(), String> {
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 mod rdev_impl {
     use super::*;
-    use std::sync::Arc;
     use std::time::Instant;
 
     use parking_lot::Mutex;
 
     const DOUBLE_TAP_MS: u128 = 300;
+    const TARGET_DISABLED: u8 = 0;
+    const TARGET_CTRL: u8 = 1;
+    const TARGET_SHIFT: u8 = 2;
+    const TARGET_ALT: u8 = 3;
+
+    static TARGET_KEY: AtomicU8 = AtomicU8::new(TARGET_DISABLED);
+    static RDEV_THREAD_STARTED: AtomicBool = AtomicBool::new(false);
 
     struct DoubleTapState {
         last_press: Option<Instant>,
         released: bool,
+        target: u8,
     }
 
-    fn key_name_to_rdev(key_name: &str) -> Option<rdev::Key> {
+    fn key_name_to_code(key_name: &str) -> Option<u8> {
         Some(match key_name {
-            "Ctrl" => rdev::Key::ControlLeft,
-            "Shift" => rdev::Key::ShiftLeft,
-            "Alt" => rdev::Key::Alt,
+            "Ctrl" => TARGET_CTRL,
+            "Shift" => TARGET_SHIFT,
+            "Alt" => TARGET_ALT,
             _ => return None,
         })
+    }
+
+    fn key_matches(code: u8, key: rdev::Key) -> bool {
+        matches!(
+            (code, key),
+            (TARGET_CTRL, rdev::Key::ControlLeft)
+                | (TARGET_SHIFT, rdev::Key::ShiftLeft)
+                | (TARGET_ALT, rdev::Key::Alt)
+        )
     }
 
     /// The modifier held during a synthetic paste — Ctrl on Windows, Cmd on
@@ -333,34 +134,46 @@ mod rdev_impl {
     const PASTE_MOD: rdev::Key = rdev::Key::MetaLeft;
 
     pub fn start_double_tap_listener(key_name: &str) -> Result<(), String> {
-        let target_key = key_name_to_rdev(key_name)
+        let target_code = key_name_to_code(key_name)
             .ok_or_else(|| format!("Unsupported double-tap key: {}", key_name))?;
-
-        if LISTENER_RUNNING.load(Ordering::SeqCst) {
-            stop_double_tap_listener();
-            std::thread::sleep(std::time::Duration::from_millis(200));
-        }
+        TARGET_KEY.store(target_code, Ordering::SeqCst);
         LISTENER_RUNNING.store(true, Ordering::SeqCst);
-        HELPER_CONNECTED.store(true, Ordering::SeqCst);
 
-        let state: Arc<Mutex<DoubleTapState>> = Arc::new(Mutex::new(DoubleTapState {
+        // rdev 0.5 exposes no cross-thread stop for its blocking event loop.
+        // Keep exactly one hook thread for the process lifetime and update its
+        // target atomically; spawning a replacement leaked the old hook and
+        // made both the old and new double-tap keys active.
+        if RDEV_THREAD_STARTED.swap(true, Ordering::SeqCst) {
+            HELPER_CONNECTED.store(true, Ordering::SeqCst);
+            return Ok(());
+        }
+
+        let state = Mutex::new(DoubleTapState {
             last_press: None,
             released: true,
-        }));
+            target: target_code,
+        });
 
         std::thread::Builder::new()
             .name("double-tap-listener".to_string())
             .spawn(move || {
-                log::write_log(&format!(
-                    "Starting rdev double-tap listener for key: {:?}",
-                    target_key
-                ));
+                log::write_log("Starting persistent rdev double-tap listener");
+                HELPER_CONNECTED.store(true, Ordering::SeqCst);
                 let result = rdev::grab(move |event| {
-                    if !LISTENER_RUNNING.load(Ordering::SeqCst) {
+                    let target = TARGET_KEY.load(Ordering::SeqCst);
+                    if target == TARGET_DISABLED {
                         return Some(event);
                     }
+                    {
+                        let mut s = state.lock();
+                        if s.target != target {
+                            s.target = target;
+                            s.last_press = None;
+                            s.released = true;
+                        }
+                    }
                     match event.event_type {
-                        rdev::EventType::KeyPress(key) if key == target_key => {
+                        rdev::EventType::KeyPress(key) if key_matches(target, key) => {
                             let now = Instant::now();
                             let mut s = state.lock();
                             if s.released {
@@ -378,7 +191,7 @@ mod rdev_impl {
                                 s.released = false;
                             }
                         }
-                        rdev::EventType::KeyRelease(key) if key == target_key => {
+                        rdev::EventType::KeyRelease(key) if key_matches(target, key) => {
                             state.lock().released = true;
                         }
                         _ => {}
@@ -391,17 +204,19 @@ mod rdev_impl {
                 }
                 HELPER_CONNECTED.store(false, Ordering::SeqCst);
                 LISTENER_RUNNING.store(false, Ordering::SeqCst);
+                RDEV_THREAD_STARTED.store(false, Ordering::SeqCst);
             })
-            .map_err(|e| format!("Failed to spawn double-tap listener thread: {}", e))?;
+            .map_err(|e| {
+                RDEV_THREAD_STARTED.store(false, Ordering::SeqCst);
+                LISTENER_RUNNING.store(false, Ordering::SeqCst);
+                format!("Failed to spawn double-tap listener thread: {}", e)
+            })?;
         Ok(())
     }
 
     pub fn stop_double_tap_listener() {
-        // rdev::grab returns when the callback stops returning Some / the
-        // listen loop ends; setting LISTENER_RUNNING=false makes the callback
-        // pass events through and the grab returns on its own on thread exit.
-        // There is no graceful cross-thread stop in rdev 0.5 besides letting
-        // the thread finish; the flag prevents further triggers.
+        TARGET_KEY.store(TARGET_DISABLED, Ordering::SeqCst);
+        HELPER_CONNECTED.store(false, Ordering::SeqCst);
     }
 
     pub fn simulate_paste() -> Result<(), String> {
@@ -409,14 +224,16 @@ mod rdev_impl {
         simulate(&EventType::KeyPress(PASTE_MOD))
             .map_err(|e| format!("Simulate modifier press failed: {:?}", e))?;
         std::thread::sleep(std::time::Duration::from_millis(30));
-        simulate(&EventType::KeyPress(Key::KeyV))
-            .map_err(|e| format!("Simulate V press failed: {:?}", e))?;
+        if let Err(e) = simulate(&EventType::KeyPress(Key::KeyV)) {
+            let _ = simulate(&EventType::KeyRelease(PASTE_MOD));
+            return Err(format!("Simulate V press failed: {:?}", e));
+        }
         std::thread::sleep(std::time::Duration::from_millis(30));
-        simulate(&EventType::KeyRelease(Key::KeyV))
-            .map_err(|e| format!("Simulate V release failed: {:?}", e))?;
+        let release_v = simulate(&EventType::KeyRelease(Key::KeyV));
         std::thread::sleep(std::time::Duration::from_millis(30));
-        simulate(&EventType::KeyRelease(PASTE_MOD))
-            .map_err(|e| format!("Simulate modifier release failed: {:?}", e))?;
+        let release_mod = simulate(&EventType::KeyRelease(PASTE_MOD));
+        release_v.map_err(|e| format!("Simulate V release failed: {:?}", e))?;
+        release_mod.map_err(|e| format!("Simulate modifier release failed: {:?}", e))?;
         Ok(())
     }
 }
@@ -424,9 +241,10 @@ mod rdev_impl {
 /// Linux double-tap + paste via the privileged `cliphist-evdev-helper`
 /// binary (plan 3.1). The main process binds a Unix socket in the user-private
 /// `$XDG_RUNTIME_DIR`, spawns the helper through `pkexec` (polkit prompts the
-/// user once), and reads one `0x01` byte per detected double-tap. The socket
-/// is bidirectional — `simulate_paste` writes `b'P'` and the root helper does
-/// the uinput/wtype injection. Ported from the old `linux_impl` in
+/// user once), and reads `b'D'` per detected double-tap. The socket is
+/// bidirectional: `simulate_paste` writes `b'P'`, then waits for the helper's
+/// `b'S'`/`b'F'` injection result instead of reporting unconditional success.
+/// Ported from the old `linux_impl` in
 /// `src-tauri/src/shortcut.rs`; the only change is the helper path: instead of
 /// re-entering `current_exe()` behind `--evdev-helper`, it resolves the
 /// standalone `cliphist-evdev-helper` binary (build-time override, exe-dir
@@ -437,13 +255,16 @@ mod linux_impl {
     use std::io::{Read, Write};
     use std::os::unix::net::{UnixListener, UnixStream};
     use std::process::{Child, Command, Stdio};
-    use std::sync::Mutex;
+    use std::sync::{mpsc, Mutex};
 
     /// Bidirectional stream to the root helper, kept so `simulate_paste` can
     /// send `b'P'` commands.
-    static PASTE_STREAM: Mutex<Option<UnixStream>> = Mutex::new(None);
-    static CHILD: Mutex<Option<Child>> = Mutex::new(None);
-    static SOCKET_PATH: Mutex<String> = Mutex::new(String::new());
+    static GENERATION: AtomicU64 = AtomicU64::new(0);
+    static PASTE_STREAM: Mutex<Option<(u64, UnixStream)>> = Mutex::new(None);
+    static PASTE_ACK: Mutex<Option<(u64, mpsc::Receiver<bool>)>> = Mutex::new(None);
+    static PASTE_REQUEST: Mutex<()> = Mutex::new(());
+    static CHILD: Mutex<Option<(u64, Child)>> = Mutex::new(None);
+    static SOCKET_PATH: Mutex<Option<(u64, String)>> = Mutex::new(None);
 
     /// Resolve the helper binary. Order:
     ///   1. `CLIPHIST_HELPER_PATH` build-time env override (M10 packaging pins
@@ -468,10 +289,11 @@ mod linux_impl {
     }
 
     pub fn start_linux_double_tap_listener(key_name: &str) -> Result<(), String> {
-        if LISTENER_RUNNING.load(Ordering::SeqCst) {
-            stop_linux_double_tap_listener();
-            std::thread::sleep(std::time::Duration::from_millis(200));
-        }
+        // Invalidate and reap the previous generation first. A generation id
+        // prevents a late cleanup from an old listener from clearing the new
+        // listener's child/socket/status after the setting changes quickly.
+        stop_linux_double_tap_listener();
+        let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
         LISTENER_RUNNING.store(true, Ordering::SeqCst);
 
         let key_name = key_name.to_string();
@@ -487,10 +309,19 @@ mod linux_impl {
             std::process::id()
         );
         let _ = std::fs::remove_file(&socket_path);
-        *SOCKET_PATH.lock().unwrap() = socket_path.clone();
+        *SOCKET_PATH.lock().unwrap() = Some((generation, socket_path.clone()));
 
-        let listener = UnixListener::bind(&socket_path)
-            .map_err(|e| format!("Failed to create Unix socket: {}", e))?;
+        let listener = match UnixListener::bind(&socket_path) {
+            Ok(listener) => listener,
+            Err(e) => {
+                cleanup_generation(generation, &socket_path);
+                return Err(format!("Failed to create Unix socket: {}", e));
+            }
+        };
+        if let Err(e) = listener.set_nonblocking(true) {
+            cleanup_generation(generation, &socket_path);
+            return Err(format!("Failed to configure Unix socket: {}", e));
+        }
 
         let helper = resolve_helper_path();
         let wayland_display =
@@ -514,42 +345,66 @@ mod linux_impl {
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .spawn()
-            .map_err(|e| format!("Failed to spawn pkexec: {}", e))?;
+            .spawn();
+        let child = match child {
+            Ok(child) => child,
+            Err(e) => {
+                cleanup_generation(generation, &socket_path);
+                return Err(format!("Failed to spawn pkexec: {}", e));
+            }
+        };
         log::write_log(&format!("pkexec helper spawned, pid: {}", child.id()));
-        *CHILD.lock().unwrap() = Some(child);
+        *CHILD.lock().unwrap() = Some((generation, child));
 
-        std::thread::Builder::new()
+        let spawn_result = std::thread::Builder::new()
             .name("double-tap-socket-listener".to_string())
             .spawn(move || {
                 log::write_log("Waiting for evdev helper to connect...");
-                let (mut stream, addr) = match listener.accept() {
-                    Ok(s) => s,
-                    Err(e) => {
-                        log::write_log(&format!("Failed to accept helper connection: {}", e));
-                        let _ = std::fs::remove_file(&socket_path);
-                        LISTENER_RUNNING.store(false, Ordering::SeqCst);
+                let (mut stream, addr) = loop {
+                    if GENERATION.load(Ordering::SeqCst) != generation {
+                        cleanup_generation(generation, &socket_path);
                         return;
                     }
+                    match listener.accept() {
+                        Ok(connection) => break connection,
+                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                            std::thread::sleep(std::time::Duration::from_millis(50));
+                        }
+                        Err(e) => {
+                            log::write_log(&format!("Failed to accept helper connection: {}", e));
+                            cleanup_generation(generation, &socket_path);
+                            return;
+                        }
+                    }
                 };
+                if GENERATION.load(Ordering::SeqCst) != generation {
+                    cleanup_generation(generation, &socket_path);
+                    return;
+                }
                 log::write_log(&format!("Evdev helper connected from {:?}", addr));
                 HELPER_CONNECTED.store(true, Ordering::SeqCst);
 
                 {
                     let mut paste_stream = PASTE_STREAM.lock().unwrap();
-                    *paste_stream = stream.try_clone().ok();
+                    *paste_stream = stream.try_clone().ok().map(|s| (generation, s));
                 }
+                let (ack_tx, ack_rx) = mpsc::channel();
+                *PASTE_ACK.lock().unwrap() = Some((generation, ack_rx));
 
                 let mut buf = [0u8; 1];
                 loop {
-                    if !LISTENER_RUNNING.load(Ordering::SeqCst) {
+                    if GENERATION.load(Ordering::SeqCst) != generation {
                         break;
                     }
                     match stream.read(&mut buf) {
-                        Ok(1) => {
+                        Ok(1) if buf[0] == b'D' => {
                             log::write_log("Double-tap notification from helper!");
                             state::request_window_action();
                         }
+                        Ok(1) if buf[0] == b'S' || buf[0] == b'F' => {
+                            let _ = ack_tx.send(buf[0] == b'S');
+                        }
+                        Ok(1) => log::write_log("Unknown response from evdev helper"),
                         Ok(0) => {
                             log::write_log("Evdev helper disconnected");
                             break;
@@ -563,58 +418,110 @@ mod linux_impl {
                 }
 
                 drop(stream);
-                {
-                    let mut paste_stream = PASTE_STREAM.lock().unwrap();
-                    *paste_stream = None;
-                }
-                let _ = std::fs::remove_file(&socket_path);
-                // Reap the helper (pkexec may stick around briefly).
-                let mut child_guard = CHILD.lock().unwrap();
-                if let Some(mut child) = child_guard.take() {
-                    let _ = child.wait();
-                }
-                HELPER_CONNECTED.store(false, Ordering::SeqCst);
-                LISTENER_RUNNING.store(false, Ordering::SeqCst);
+                cleanup_generation(generation, &socket_path);
                 log::write_log("Double-tap socket listener stopped");
-            })
-            .map_err(|e| format!("Failed to spawn socket listener thread: {}", e))?;
+            });
+        if let Err(e) = spawn_result {
+            stop_linux_double_tap_listener();
+            return Err(format!("Failed to spawn socket listener thread: {}", e));
+        }
 
         Ok(())
     }
 
+    fn cleanup_generation(generation: u64, socket_path: &str) {
+        {
+            let mut paste_stream = PASTE_STREAM.lock().unwrap();
+            if matches!(paste_stream.as_ref(), Some((g, _)) if *g == generation) {
+                *paste_stream = None;
+            }
+        }
+        {
+            let mut ack = PASTE_ACK.lock().unwrap();
+            if matches!(ack.as_ref(), Some((g, _)) if *g == generation) {
+                *ack = None;
+            }
+        }
+        {
+            let mut child_guard = CHILD.lock().unwrap();
+            if matches!(child_guard.as_ref(), Some((g, _)) if *g == generation) {
+                if let Some((_, mut child)) = child_guard.take() {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                }
+            }
+        }
+        {
+            let mut path_guard = SOCKET_PATH.lock().unwrap();
+            if matches!(path_guard.as_ref(), Some((g, _)) if *g == generation) {
+                *path_guard = None;
+            }
+        }
+        let _ = std::fs::remove_file(socket_path);
+        if GENERATION.load(Ordering::SeqCst) == generation {
+            HELPER_CONNECTED.store(false, Ordering::SeqCst);
+            LISTENER_RUNNING.store(false, Ordering::SeqCst);
+        }
+    }
+
     pub fn stop_linux_double_tap_listener() {
-        // Drop the paste stream + kill the helper so the socket thread exits.
+        // Invalidate the active listener before touching shared resources so
+        // its accept/read loop can no longer publish state.
+        GENERATION.fetch_add(1, Ordering::SeqCst);
+        LISTENER_RUNNING.store(false, Ordering::SeqCst);
+        HELPER_CONNECTED.store(false, Ordering::SeqCst);
         {
             let mut paste_stream = PASTE_STREAM.lock().unwrap();
             *paste_stream = None;
         }
+        *PASTE_ACK.lock().unwrap() = None;
         let mut child_guard = CHILD.lock().unwrap();
-        if let Some(mut child) = child_guard.take() {
+        if let Some((_, mut child)) = child_guard.take() {
             let _ = child.kill();
             let _ = child.wait();
         }
-        let path = SOCKET_PATH.lock().unwrap().clone();
-        if !path.is_empty() {
+        let path = SOCKET_PATH.lock().unwrap().take();
+        if let Some((_, path)) = path {
             let _ = std::fs::remove_file(&path);
         }
     }
 
     /// Send a paste command to the evdev helper via the bidirectional socket.
-    /// The helper (root) performs the uinput/wtype injection.
+    /// The helper (root) performs the uinput/wtype injection and acknowledges
+    /// the actual result. Serialize requests so acknowledgements cannot be
+    /// consumed by the wrong caller.
     pub fn linux_simulate_paste() -> Result<(), String> {
-        let mut guard = PASTE_STREAM
+        let _request = PASTE_REQUEST
             .lock()
-            .map_err(|e| format!("PASTE_STREAM lock poisoned: {}", e))?;
-        if let Some(stream) = guard.as_mut() {
+            .map_err(|e| format!("PASTE_REQUEST lock poisoned: {}", e))?;
+        let generation = {
+            let mut guard = PASTE_STREAM
+                .lock()
+                .map_err(|e| format!("PASTE_STREAM lock poisoned: {}", e))?;
+            let Some((generation, stream)) = guard.as_mut() else {
+                return Err("evdev helper 未连接，请先完成 Linux 授权".to_string());
+            };
             stream
                 .write_all(b"P")
                 .map_err(|e| format!("Failed to send paste command to helper: {}", e))?;
             log::write_log("Sent paste command to evdev helper");
-        } else {
-            log::write_log(
-                "No evdev helper connected; clipboard populated, user can paste manually",
-            );
+            *generation
+        };
+
+        let mut ack = PASTE_ACK
+            .lock()
+            .map_err(|e| format!("PASTE_ACK lock poisoned: {}", e))?;
+        let Some((ack_generation, receiver)) = ack.as_mut() else {
+            return Err("evdev helper 响应通道未连接".to_string());
+        };
+        if *ack_generation != generation {
+            return Err("evdev helper 已重启，请重试".to_string());
         }
-        Ok(())
+        match receiver.recv_timeout(std::time::Duration::from_secs(3)) {
+            Ok(true) => Ok(()),
+            Ok(false) => Err("系统拒绝了自动粘贴注入".to_string()),
+            Err(mpsc::RecvTimeoutError::Timeout) => Err("evdev helper 粘贴超时".to_string()),
+            Err(mpsc::RecvTimeoutError::Disconnected) => Err("evdev helper 已断开连接".to_string()),
+        }
     }
 }

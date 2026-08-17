@@ -17,32 +17,41 @@ import '../util/image_cache.dart';
 ///    Swap wholesale and drop the image cache (ids may be stale).
 ///  - `itemMovedToTop`: one id floated to the front (quick-paste path).
 ///    Rotate it to index 0 locally so the UI reorders before the next poll.
-List<StreamSubscription> subscribeClipboardStreams(ProviderContainer container) {
+List<StreamSubscription> subscribeClipboardStreams(
+  ProviderContainer container,
+) {
   final subs = <StreamSubscription>[];
 
-  subs.add(api_stream.streamClipboardChanged().listen((top5) {
-    final cur = container.read(historyProvider);
-    final topIds = top5.map((t) => t.id).toSet();
-    final rest = cur.where((hi) => !topIds.contains(hi.id)).toList();
-    final merged = [...top5, ...rest];
-    container.read(historyProvider.notifier).state =
-        merged.length > 500 ? merged.sublist(0, 500) : merged;
-  }));
+  subs.add(
+    api_stream.streamClipboardChanged().listen((top5) {
+      final cur = container.read(historyProvider);
+      final topIds = top5.map((t) => t.id).toSet();
+      final rest = cur.where((hi) => !topIds.contains(hi.id)).toList();
+      final merged = [...top5, ...rest];
+      container.read(historyProvider.notifier).state = merged.length > 500
+          ? merged.sublist(0, 500)
+          : merged;
+    }),
+  );
 
-  subs.add(api_stream.streamHistoryReplace().listen((full) {
-    container.read(historyProvider.notifier).state = full;
-    clearImageCache();
-  }));
+  subs.add(
+    api_stream.streamHistoryReplace().listen((full) {
+      container.read(historyProvider.notifier).state = full;
+      clearImageCache();
+    }),
+  );
 
-  subs.add(api_stream.streamItemMovedToTop().listen((id) {
-    final cur = container.read(historyProvider);
-    final i = cur.indexWhere((x) => x.id == id);
-    if (i <= 0) return;
-    final nh = [...cur];
-    final it = nh.removeAt(i);
-    nh.insert(0, it);
-    container.read(historyProvider.notifier).state = nh;
-  }));
+  subs.add(
+    api_stream.streamItemMovedToTop().listen((id) {
+      final cur = container.read(historyProvider);
+      final i = cur.indexWhere((x) => x.id == id);
+      if (i <= 0) return;
+      final nh = [...cur];
+      final it = nh.removeAt(i);
+      nh.insert(0, it);
+      container.read(historyProvider.notifier).state = nh;
+    }),
+  );
 
   return subs;
 }

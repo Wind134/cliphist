@@ -12,12 +12,24 @@ priority: optional
 section: x11
 installed_size: 30000
 
+dependencies:
+  - libc6
+  - libgtk-3-0
+  - libayatana-appindicator3-1
+  - libkeybinder-3.0-0
+  - libx11-6
+  - libxi6
+  - libxtst6
+  - libudev1
+
 # Ship the polkit policy that authorizes the privileged evdev helper. The file
 # is copied into the app bundle by the release CI hook-pre step, so it lands at
 # /opt/cliphist/com.ping.cliphist.policy; the postinstall installs it into the
 # polkit actions dir where `pkexec cliphist-evdev-helper` will find it.
 postinstall_scripts:
   - install -Dm644 /opt/cliphist/com.ping.cliphist.policy /usr/share/polkit-1/actions/com.ping.cliphist.policy
+postuninstall_scripts:
+  - rm -f /usr/share/polkit-1/actions/com.ping.cliphist.policy
 
 keywords:
   - clipboard

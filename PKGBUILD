@@ -5,26 +5,29 @@
 # to it (the polkit policy authorizes exactly that path).
 
 pkgname=cliphist
-pkgver=1.0.0
+pkgver=2.0.7
 pkgrel=1
 pkgdesc="Clipboard history manager with per-item paste injection (Flutter + Rust core)"
 arch=('x86_64')
-url="https://github.com/ping/cliphist"
+url="https://github.com/Wind134/cliphist"
 license=('MIT')
-depends=('gtk3' 'libevdev' 'polkit' 'libx11' 'libxrandr' 'libxcursor' 'libxinerama' 'libxi' 'libxext')
+depends=('gtk3' 'libappindicator-gtk3' 'keybinder3' 'libevdev' 'polkit' 'libx11' 'libxrandr' 'libxcursor' 'libxinerama' 'libxi' 'libxext')
 makedepends=('cargo' 'flutter' 'cmake' 'ninja' 'clang' 'pkg-config' 'libevdev' 'libudev' 'libxi' 'libxtst')
 conflicts=('cliphist-bin')
+source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz")
+sha256sums=('SKIP')
 
 build() {
-  cd "$srcdir/cliphist"
+  cd "$srcdir/cliphist-${pkgver}"
   # 1. Privileged evdev helper (standalone binary, plan 3.1).
   cargo build --release --locked --manifest-path rust/evdev-helper/Cargo.toml
   # 2. Flutter app (FRB crate builds via Cargokit inside `flutter build`).
+  cd flutter
   flutter build linux --release
 }
 
 package() {
-  cd "$srcdir/cliphist"
+  cd "$srcdir/cliphist-${pkgver}"
   local bindir="$pkgdir/opt/cliphist"
   install -d "$bindir"
 

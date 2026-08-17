@@ -16,7 +16,6 @@ chrono = { version = "0.4", features = ["serde"] }
 dirs = "5"
 image = "0.25"
 ammonia = "4"
-global-hotkey = "0.8"
 libc = "0.2"
 
 [target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
@@ -37,18 +36,3 @@ fs2 = "0.4"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
-
-# Cargokit builds the Rust crate as a `staticlib` (crate-type above) and lipo's
-# the per-arch slices into a fat archive for the Xcode link. With the default
-# `codegen-units = 16`, a large crate like `global-hotkey` (whose macOS backend
-# is one big `mod.rs` of objc2/Carbon FFI) gets split across many CGU objects,
-# and the staticlib+lipo assembly can drop one — which on macOS manifested as
-# `ld: Undefined symbols … GlobalHotKeyManager::new/register/unregister/
-# hotkey_handler/Drop` (the missing object also carried the Carbon/
-# CoreGraphics `extern` refs, which is why no framework symbols were listed).
-# Forcing a single codegen unit keeps the whole crate in one object so no CGU
-# can go missing. `lto = false` keeps the staticlib's symbols available for the
-# downstream Xcode link (LTO would internalize/remove them).
-[profile.release]
-codegen-units = 1
-lto = false

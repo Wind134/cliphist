@@ -17,43 +17,46 @@ class StatusBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 28,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      constraints: const BoxConstraints(minHeight: 36),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: const BoxDecoration(
         color: CliphistColors.surface,
         border: Border(
           top: BorderSide(color: CliphistColors.borderSubtle, width: 1),
         ),
       ),
-      child: Row(
-        children: [
-          _StatusDot(active: helperConnected),
-          const SizedBox(width: 6),
-          Text(
-            helperConnected ? '监听中' : '未连接',
-            style: TextStyle(
-              color: helperConnected
-                  ? CliphistColors.success
-                  : CliphistColors.textMuted,
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
+      child: LayoutBuilder(
+        builder: (context, constraints) => Row(
+          children: [
+            _StatusDot(active: helperConnected),
+            const SizedBox(width: 6),
+            Text(
+              helperConnected ? '监听中' : '基础监听',
+              style: TextStyle(
+                color: helperConnected
+                    ? CliphistColors.success
+                    : CliphistColors.textMuted,
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+              ),
             ),
-          ),
-          const SizedBox(width: 10),
-          Text(
-            '$count 条',
-            style: const TextStyle(
-              color: CliphistColors.textMuted,
-              fontSize: 11,
-              fontFeatures: [FontFeature.tabularFigures()],
+            const SizedBox(width: 10),
+            Text(
+              '$count 条',
+              style: const TextStyle(
+                color: CliphistColors.textMuted,
+                fontSize: 11,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
             ),
-          ),
-          const Spacer(),
-          const Text(
-            '双击 / Enter 复制 · 1–9 快捷',
-            style: TextStyle(color: CliphistColors.textMuted, fontSize: 11),
-          ),
-        ],
+            const Spacer(),
+            if (constraints.maxWidth > 330)
+              const Text(
+                '双击 / Enter 复制 · 1–9 快捷',
+                style: TextStyle(color: CliphistColors.textMuted, fontSize: 11),
+              ),
+          ],
+        ),
       ),
     );
   }

@@ -4,14 +4,16 @@
 # policy, icons, desktop entry) so no renaming is needed.
 
 pkgname=cliphist-bin
-pkgver=1.0.0
+pkgver=2.0.7
 pkgrel=1
 pkgdesc="Clipboard history manager with per-item paste injection (Flutter + Rust core, prebuilt binary)"
 arch=('x86_64')
-url="https://github.com/ping/cliphist"
+url="https://github.com/Wind134/cliphist"
 license=('MIT')
 depends=(
   'gtk3'
+  'libappindicator-gtk3'
+  'keybinder3'
   'libevdev'
   'polkit'
   'libx11'
@@ -23,12 +25,15 @@ depends=(
 )
 provides=('cliphist')
 conflicts=('cliphist')
-source=("${url}/releases/download/v${pkgver}/cliphist_${pkgver}_amd64.deb")
+source=("${url}/releases/download/v${pkgver}/cliphist-${pkgver}-linux.deb")
 sha256sums=('SKIP')
 
 package() {
-  # Extract data.tar.gz from deb archive, then extract the full payload
-  # (opt/ + usr/).
-  bsdtar -xf "${srcdir}/cliphist_${pkgver}_amd64.deb" -C "${srcdir}" data.tar.gz
-  bsdtar -xf "${srcdir}/data.tar.gz" -C "${pkgdir}"
+  # Debian payload compression can be gzip, xz, or zstd depending on the
+  # packager version. Extract the ar members first, then let bsdtar detect the
+  # actual data.tar.* compression instead of assuming data.tar.gz.
+  local deb_members="${srcdir}/cliphist-deb-${pkgver}"
+  install -d "$deb_members"
+  bsdtar -xf "${srcdir}/cliphist-${pkgver}-linux.deb" -C "$deb_members"
+  bsdtar -xf "$deb_members"/data.tar.* -C "${pkgdir}"
 }

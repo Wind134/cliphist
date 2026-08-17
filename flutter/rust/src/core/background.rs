@@ -102,8 +102,9 @@ fn clean_expired_history(history: &Arc<Mutex<Vec<ClipboardItem>>>, retention_day
 
     let mut history = history.lock();
     let before = history.len();
+    let mut next = history.clone();
     let mut removed_images: Vec<Option<String>> = Vec::new();
-    history.retain(|item| {
+    next.retain(|item| {
         let keep = if let Some(dt) = clipboard_engine::parse_timestamp(&item.timestamp) {
             dt >= cutoff.naive_local()
         } else {
@@ -114,13 +115,17 @@ fn clean_expired_history(history: &Arc<Mutex<Vec<ClipboardItem>>>, retention_day
         }
         keep
     });
-    if history.len() != before {
+    if next.len() != before {
         // Emit the full remaining history so the frontend can reconcile items
         // removed anywhere in the list (the incremental top-5 stream cannot
         // convey deletions beyond the head).
+        if let Err(e) = clipboard_engine::save_history(&next) {
+            log::write_log(&format!("Failed to persist expired-history cleanup: {}", e));
+            return;
+        }
+        let cleaned = before - next.len();
+        *history = next;
         let snapshot = history.clone();
-        clipboard_engine::save_history(&history);
-        let cleaned = before - history.len();
         drop(history);
         events::emit_history_replace(snapshot);
         for path in &removed_images {
@@ -147,6 +152,7 @@ fn poll_clipboard(history: Arc<Mutex<Vec<ClipboardItem>>>, counter: Arc<Mutex<us
     let mut last_save = Instant::now();
     let save_interval = Duration::from_millis(400);
     let mut pending_save = false;
+    let mut pending_delete_images: Vec<Option<String>> = Vec::new();
 
     loop {
         std::thread::sleep(Duration::from_millis(500));
@@ -155,9 +161,16 @@ fn poll_clipboard(history: Arc<Mutex<Vec<ClipboardItem>>>, counter: Arc<Mutex<us
         if pending_save && last_save.elapsed() >= save_interval {
             // Persist while holding the state lock so an older snapshot can
             // never overwrite a newer delete/clear operation.
-            clipboard_engine::save_history(&history.lock());
-            last_save = Instant::now();
-            pending_save = false;
+            match clipboard_engine::save_history(&history.lock()) {
+                Ok(()) => {
+                    last_save = Instant::now();
+                    pending_save = false;
+                    for image in pending_delete_images.drain(..) {
+                        clipboard_engine::delete_image_file(&image);
+                    }
+                }
+                Err(e) => log::write_log(&format!("Failed to save clipboard history: {}", e)),
+            }
         }
 
         // Some applications publish both bitmap and text representations for
@@ -166,8 +179,10 @@ fn poll_clipboard(history: Arc<Mutex<Vec<ClipboardItem>>>, counter: Arc<Mutex<us
         let current_image = clipboard.get_image().ok();
 
         if let Ok(text) = clipboard.get_text() {
-            let text = text.trim().to_string();
-            if !text.is_empty() && current_image.is_none() {
+            // Preserve the clipboard payload byte-for-byte. Trimming here
+            // corrupted indentation, trailing newlines, and editor selections;
+            // only use trim for the empty/whitespace-only decision and preview.
+            if !text.trim().is_empty() && current_image.is_none() {
                 let html_content = clipboard.get().html().ok().and_then(|h| {
                     // Sanitize at the add-stage (decision: ammonia in Rust).
                     // If everything was stripped (e.g. only a <script>),
@@ -215,30 +230,43 @@ fn poll_clipboard(history: Arc<Mutex<Vec<ClipboardItem>>>, counter: Arc<Mutex<us
                         html_content,
                     };
 
-                    let (top, excess_images) = {
+                    let (top, saved) = {
                         let mut history = history.lock();
                         history.insert(0, item);
-                        let excess_images: Vec<Option<String>> =
-                            if history.len() > consts::MAX_HISTORY {
-                                let excess = history.split_off(consts::MAX_HISTORY);
-                                excess.iter().map(|it| it.image_path.clone()).collect()
-                            } else {
-                                Vec::new()
-                            };
+                        if history.len() > consts::MAX_HISTORY {
+                            let excess = history.split_off(consts::MAX_HISTORY);
+                            pending_delete_images
+                                .extend(excess.into_iter().map(|it| it.image_path));
+                        }
                         let top = history[..std::cmp::min(5, history.len())].to_vec();
                         let now = Instant::now();
-                        if now.duration_since(last_save) >= save_interval {
+                        let saved = if now.duration_since(last_save) >= save_interval {
                             // Serialize while the lock is held to preserve mutation order.
-                            clipboard_engine::save_history(&history);
-                            last_save = now;
-                            pending_save = false;
+                            match clipboard_engine::save_history(&history) {
+                                Ok(()) => {
+                                    last_save = now;
+                                    pending_save = false;
+                                    true
+                                }
+                                Err(e) => {
+                                    pending_save = true;
+                                    log::write_log(&format!(
+                                        "Failed to save clipboard history: {}",
+                                        e
+                                    ));
+                                    false
+                                }
+                            }
                         } else {
                             pending_save = true;
-                        }
-                        (top, excess_images)
+                            false
+                        };
+                        (top, saved)
                     };
-                    for img in &excess_images {
-                        clipboard_engine::delete_image_file(img);
+                    if saved {
+                        for image in pending_delete_images.drain(..) {
+                            clipboard_engine::delete_image_file(&image);
+                        }
                     }
                     events::emit_clipboard_changed(top);
                 }
@@ -313,29 +341,38 @@ fn poll_clipboard(history: Arc<Mutex<Vec<ClipboardItem>>>, counter: Arc<Mutex<us
                     html_content: None,
                 };
 
-                let (top, excess_images) = {
+                let (top, saved) = {
                     let mut history = history.lock();
                     history.insert(0, item);
-                    let excess_images: Vec<Option<String>> = if history.len() > consts::MAX_HISTORY
-                    {
+                    if history.len() > consts::MAX_HISTORY {
                         let excess = history.split_off(consts::MAX_HISTORY);
-                        excess.iter().map(|it| it.image_path.clone()).collect()
-                    } else {
-                        Vec::new()
-                    };
+                        pending_delete_images.extend(excess.into_iter().map(|it| it.image_path));
+                    }
                     let top = history[..std::cmp::min(5, history.len())].to_vec();
                     let now = Instant::now();
-                    if now.duration_since(last_save) >= save_interval {
-                        clipboard_engine::save_history(&history);
-                        last_save = now;
-                        pending_save = false;
+                    let saved = if now.duration_since(last_save) >= save_interval {
+                        match clipboard_engine::save_history(&history) {
+                            Ok(()) => {
+                                last_save = now;
+                                pending_save = false;
+                                true
+                            }
+                            Err(e) => {
+                                pending_save = true;
+                                log::write_log(&format!("Failed to save clipboard history: {}", e));
+                                false
+                            }
+                        }
                     } else {
                         pending_save = true;
-                    }
-                    (top, excess_images)
+                        false
+                    };
+                    (top, saved)
                 };
-                for img in &excess_images {
-                    clipboard_engine::delete_image_file(img);
+                if saved {
+                    for image in pending_delete_images.drain(..) {
+                        clipboard_engine::delete_image_file(&image);
+                    }
                 }
                 events::emit_clipboard_changed(top);
             }

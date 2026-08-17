@@ -2,35 +2,35 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
-/// ClipHist visual tokens — a refined modern light theme. Departing from the
-/// 1:1 KDE-Breeze port (M3): the old palette read as cramped and "abstract"
-/// once Flutter rendered it on Windows (Roboto for Latin + a thin CJK
-/// fallback, all at 10–11px). This system widens the rhythm, softens the
-/// surfaces, and routes text through a platform CJK font so Chinese is crisp.
+/// ClipHist visual tokens: a calm indigo workspace with elevated white cards.
+/// The stronger hierarchy is deliberate for a utility that is usually opened
+/// for only a few seconds: search and the latest clips should read instantly.
 class CliphistColors {
   CliphistColors._();
 
   // ── Surfaces ────────────────────────────────────────────────────────────
-  static const bgBase = Color(0xFFF6F7F9); // app background
-  static const surface = Color(0xFFFFFFFF); // cards, search field
-  static const surfaceSubtle = Color(0xFFF1F3F6); // chips, badges, inputs
-  static const hover = Color(0xFFECEFF3);
-  static const selected = Color(0xFFE8EEFF); // soft accent tint
-  static const selectedRail = Color(0xFF4F7CFF);
+  static const bgBase = Color(0xFFF3F5FA);
+  static const surface = Color(0xFFFFFFFF);
+  static const surfaceSubtle = Color(0xFFF7F8FC);
+  static const hover = Color(0xFFF5F3FF);
+  static const selected = Color(0xFFEFEDFF);
+  static const selectedRail = Color(0xFF6C5CE7);
 
   // ── Text ─────────────────────────────────────────────────────────────────
-  static const textPrimary = Color(0xFF1B1F24);
-  static const textSecondary = Color(0xFF555B64);
-  static const textMuted = Color(0xFF939AA3);
+  static const textPrimary = Color(0xFF202533);
+  static const textSecondary = Color(0xFF5E6675);
+  static const textMuted = Color(0xFF9299A8);
 
   // ── Accent ───────────────────────────────────────────────────────────────
-  static const accent = Color(0xFF4F7CFF);
-  static const accentHover = Color(0xFF3A66F0);
-  static const accentSoft = Color(0xFFE8EEFF);
+  static const accent = Color(0xFF6C5CE7);
+  static const accentHover = Color(0xFF5848D7);
+  static const accentSoft = Color(0xFFEFEDFF);
+  static const brandStart = Color(0xFF6C5CE7);
+  static const brandEnd = Color(0xFF3D7BFF);
 
   // ── Lines ────────────────────────────────────────────────────────────────
-  static const border = Color(0xFFE6E9ED);
-  static const borderSubtle = Color(0xFFEEF1F4);
+  static const border = Color(0xFFE2E5ED);
+  static const borderSubtle = Color(0xFFEBEDF3);
 
   // ── Semantic ─────────────────────────────────────────────────────────────
   static const success = Color(0xFF16A34A);
@@ -49,6 +49,17 @@ class CliphistColors {
   static const radiusSm = 8.0;
   static const radius = 10.0;
   static const radiusLg = 14.0;
+  static const radiusXl = 20.0;
+
+  static const brandGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [brandStart, brandEnd],
+  );
+
+  static const cardShadow = <BoxShadow>[
+    BoxShadow(color: Color(0x100F172A), blurRadius: 18, offset: Offset(0, 6)),
+  ];
 }
 
 /// Per-type color + label, shared by the category chips and the row dot.
@@ -65,14 +76,7 @@ class ClipType {
   static const short = ClipType('short', '短文本', CliphistColors.typeShort);
   static const rich = ClipType('rich', '富文本', CliphistColors.typeRich);
 
-  static const byKey = <ClipType>[
-    all,
-    image,
-    text,
-    link,
-    short,
-    rich,
-  ];
+  static const byKey = <ClipType>[all, image, text, link, short, rich];
 
   static ClipType? of(String key) {
     for (final t in byKey) {
@@ -89,6 +93,7 @@ class ClipType {
 /// fallback already resolves CJK cleanly.
 String? get _platformFont {
   if (Platform.isWindows) return 'Microsoft YaHei UI';
+  if (Platform.isMacOS) return 'PingFang SC';
   return null;
 }
 
@@ -122,19 +127,41 @@ ThemeData cliphistTheme() {
         foregroundColor: WidgetStatePropertyAll(CliphistColors.textSecondary),
       ),
     ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        backgroundColor: CliphistColors.accent,
+        foregroundColor: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(CliphistColors.radius),
+        ),
+      ),
+    ),
+    dialogTheme: DialogThemeData(
+      backgroundColor: CliphistColors.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(CliphistColors.radiusXl),
+      ),
+    ),
+    tooltipTheme: TooltipThemeData(
+      decoration: BoxDecoration(
+        color: CliphistColors.textPrimary,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      textStyle: const TextStyle(color: Colors.white, fontSize: 11),
+    ),
     switchTheme: SwitchThemeData(
       thumbColor: const WidgetStatePropertyAll(CliphistColors.surface),
-      trackColor: WidgetStateProperty.resolveWith((s) =>
-          s.contains(WidgetState.selected)
-              ? CliphistColors.accent
-              : const Color(0xFFCBD2DA)),
+      trackColor: WidgetStateProperty.resolveWith(
+        (s) => s.contains(WidgetState.selected)
+            ? CliphistColors.accent
+            : const Color(0xFFCBD2DA),
+      ),
       trackOutlineColor: const WidgetStatePropertyAll(Colors.transparent),
     ),
     chipTheme: const ChipThemeData(
       backgroundColor: CliphistColors.surfaceSubtle,
       selectedColor: CliphistColors.accentSoft,
-      labelStyle: TextStyle(
-          color: CliphistColors.textSecondary, fontSize: 12),
+      labelStyle: TextStyle(color: CliphistColors.textSecondary, fontSize: 12),
     ),
   );
 }
