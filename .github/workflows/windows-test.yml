@@ -25,13 +25,6 @@ jobs:
           flutter-version: 3.44.9
           cache: true
 
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: 'flutter/rust -> target'
-          shared-key: windows-test
-
       - name: Set test package version
         shell: bash
         run: >-
@@ -47,6 +40,11 @@ jobs:
 
       # Build the native library separately so Rust diagnostics remain visible
       # if Cargokit's MSBuild integration fails later in the Flutter build.
+      - name: Verify runner Rust toolchain
+        run: |
+          rustc --version
+          cargo --version
+
       - name: Build Rust library
         working-directory: flutter/rust
         run: cargo build --release --locked
