@@ -93,7 +93,7 @@ mod rdev_impl {
 
     use parking_lot::Mutex;
 
-    const DOUBLE_TAP_MS: u128 = 300;
+    const DOUBLE_TAP_MS: u128 = 420;
     const TARGET_DISABLED: u8 = 0;
     const TARGET_CTRL: u8 = 1;
     const TARGET_SHIFT: u8 = 2;
@@ -121,8 +121,11 @@ mod rdev_impl {
         matches!(
             (code, key),
             (TARGET_CTRL, rdev::Key::ControlLeft)
+                | (TARGET_CTRL, rdev::Key::ControlRight)
                 | (TARGET_SHIFT, rdev::Key::ShiftLeft)
+                | (TARGET_SHIFT, rdev::Key::ShiftRight)
                 | (TARGET_ALT, rdev::Key::Alt)
+                | (TARGET_ALT, rdev::Key::AltGr)
         )
     }
 

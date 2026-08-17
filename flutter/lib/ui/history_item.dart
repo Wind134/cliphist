@@ -63,7 +63,7 @@ class _HistoryItemState extends State<HistoryItem> {
         onTap: widget.onTap,
         onDoubleTap: widget.onDoubleTap,
         child: Container(
-          margin: const EdgeInsets.only(bottom: 8),
+          margin: const EdgeInsets.only(bottom: 6),
           decoration: BoxDecoration(
             color: _rowBg,
             borderRadius: BorderRadius.circular(CliphistColors.radiusLg),
@@ -72,9 +72,7 @@ class _HistoryItemState extends State<HistoryItem> {
                   ? CliphistColors.accent.withValues(alpha: 0.38)
                   : CliphistColors.borderSubtle,
             ),
-            boxShadow: _hovered || widget.selected
-                ? CliphistColors.cardShadow
-                : null,
+            boxShadow: null,
           ),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(
@@ -238,10 +236,11 @@ class _TypeBadge extends StatelessWidget {
       height: 30,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: type.color.withValues(alpha: 0.10),
+        color: CliphistColors.surfaceSubtle,
         borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: CliphistColors.borderSubtle),
       ),
-      child: Icon(_icon, size: 16, color: type.color),
+      child: Icon(_icon, size: 16, color: CliphistColors.textSecondary),
     );
   }
 }

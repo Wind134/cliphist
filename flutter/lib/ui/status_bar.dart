@@ -31,10 +31,10 @@ class StatusBar extends StatelessWidget {
             _StatusDot(active: helperConnected),
             const SizedBox(width: 6),
             Text(
-              helperConnected ? '监听中' : '基础监听',
+              helperConnected ? '双击键已就绪' : '双击键未启用',
               style: TextStyle(
                 color: helperConnected
-                    ? CliphistColors.success
+                    ? CliphistColors.accent
                     : CliphistColors.textMuted,
                 fontSize: 11,
                 fontWeight: FontWeight.w500,
@@ -72,12 +72,12 @@ class _StatusDot extends StatelessWidget {
       width: 7,
       height: 7,
       decoration: BoxDecoration(
-        color: active ? CliphistColors.success : CliphistColors.textMuted,
+        color: active ? CliphistColors.accent : CliphistColors.textMuted,
         borderRadius: BorderRadius.circular(4),
         boxShadow: active
             ? const [
                 BoxShadow(
-                  color: Color(0x5516A34A),
+                  color: Color(0x44356AE6),
                   blurRadius: 5,
                   spreadRadius: 0.5,
                 ),

@@ -293,7 +293,7 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
                   ? _EmptyState(query: query, category: category)
                   : ListView.builder(
                       controller: _scrollCtrl,
-                      padding: const EdgeInsets.fromLTRB(10, 4, 10, 10),
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
                       itemCount: filtered.length,
                       itemExtentBuilder: (i, _) =>
                           _itemExtent(filtered[i], zoom),
@@ -333,20 +333,21 @@ class _HeroHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 10, 14),
-      decoration: const BoxDecoration(gradient: CliphistColors.brandGradient),
+      constraints: const BoxConstraints(minHeight: 62),
+      padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+      decoration: const BoxDecoration(
+        color: CliphistColors.surface,
+        border: Border(bottom: BorderSide(color: CliphistColors.borderSubtle)),
+      ),
       child: Row(
         children: [
           Container(
-            width: 42,
-            height: 42,
-            padding: const EdgeInsets.all(6),
+            width: 36,
+            height: 36,
+            padding: const EdgeInsets.all(5),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.94),
-              borderRadius: BorderRadius.circular(13),
-              boxShadow: const [
-                BoxShadow(color: Color(0x24000000), blurRadius: 12),
-              ],
+              color: CliphistColors.accentSoft,
+              borderRadius: BorderRadius.circular(10),
             ),
             child: Image.asset('assets/icon/app.png'),
           ),
@@ -356,19 +357,19 @@ class _HeroHeader extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  '剪贴板',
+                  'ClipHist',
                   style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
+                    color: CliphistColors.textPrimary,
+                    fontSize: 16,
                     fontWeight: FontWeight.w700,
-                    letterSpacing: -0.2,
+                    letterSpacing: -0.1,
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '$count 条历史记录 · 实时同步',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.78),
+                  '$count 条剪贴板记录',
+                  style: const TextStyle(
+                    color: CliphistColors.textMuted,
                     fontSize: 11.5,
                   ),
                 ),
@@ -408,10 +409,11 @@ class _HeaderAction extends StatelessWidget {
       message: tooltip,
       child: IconButton(
         onPressed: onTap,
-        icon: Icon(icon, color: Colors.white, size: 19),
+        icon: Icon(icon, color: CliphistColors.textSecondary, size: 18),
         style: IconButton.styleFrom(
-          backgroundColor: Colors.white.withValues(alpha: 0.14),
-          hoverColor: Colors.white.withValues(alpha: 0.22),
+          backgroundColor: CliphistColors.surfaceSubtle,
+          hoverColor: CliphistColors.hover,
+          side: const BorderSide(color: CliphistColors.borderSubtle),
         ),
       ),
     );
@@ -495,8 +497,8 @@ class _SearchBar extends StatelessWidget {
     if (controller.text != value) controller.text = value;
     final hasText = value.isNotEmpty;
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-      color: CliphistColors.bgBase,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+      color: CliphistColors.surface,
       child: Row(
         children: [
           Expanded(
@@ -505,7 +507,6 @@ class _SearchBar extends StatelessWidget {
                 color: CliphistColors.surface,
                 borderRadius: BorderRadius.circular(CliphistColors.radiusLg),
                 border: Border.all(color: CliphistColors.border),
-                boxShadow: CliphistColors.cardShadow,
               ),
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Row(

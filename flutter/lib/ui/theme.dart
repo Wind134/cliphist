@@ -2,54 +2,54 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
-/// ClipHist visual tokens: a calm indigo workspace with elevated white cards.
-/// The stronger hierarchy is deliberate for a utility that is usually opened
-/// for only a few seconds: search and the latest clips should read instantly.
+/// ClipHist visual tokens: neutral workspace surfaces with one blue accent.
+/// Keeping the palette deliberately narrow prevents the header, filters and
+/// content-type badges from competing for attention in a compact utility UI.
 class CliphistColors {
   CliphistColors._();
 
   // ── Surfaces ────────────────────────────────────────────────────────────
-  static const bgBase = Color(0xFFF3F5FA);
+  static const bgBase = Color(0xFFF5F7FA);
   static const surface = Color(0xFFFFFFFF);
-  static const surfaceSubtle = Color(0xFFF7F8FC);
-  static const hover = Color(0xFFF5F3FF);
-  static const selected = Color(0xFFEFEDFF);
-  static const selectedRail = Color(0xFF6C5CE7);
+  static const surfaceSubtle = Color(0xFFF8FAFC);
+  static const hover = Color(0xFFF1F5F9);
+  static const selected = Color(0xFFEAF1FF);
+  static const selectedRail = Color(0xFF356AE6);
 
   // ── Text ─────────────────────────────────────────────────────────────────
-  static const textPrimary = Color(0xFF202533);
-  static const textSecondary = Color(0xFF5E6675);
-  static const textMuted = Color(0xFF9299A8);
+  static const textPrimary = Color(0xFF1D2733);
+  static const textSecondary = Color(0xFF526171);
+  static const textMuted = Color(0xFF8995A3);
 
   // ── Accent ───────────────────────────────────────────────────────────────
-  static const accent = Color(0xFF6C5CE7);
-  static const accentHover = Color(0xFF5848D7);
-  static const accentSoft = Color(0xFFEFEDFF);
-  static const brandStart = Color(0xFF6C5CE7);
-  static const brandEnd = Color(0xFF3D7BFF);
+  static const accent = Color(0xFF356AE6);
+  static const accentHover = Color(0xFF2858C8);
+  static const accentSoft = Color(0xFFEAF1FF);
+  static const brandStart = Color(0xFF356AE6);
+  static const brandEnd = Color(0xFF356AE6);
 
   // ── Lines ────────────────────────────────────────────────────────────────
-  static const border = Color(0xFFE2E5ED);
-  static const borderSubtle = Color(0xFFEBEDF3);
+  static const border = Color(0xFFDEE5EC);
+  static const borderSubtle = Color(0xFFE9EDF2);
 
   // ── Semantic ─────────────────────────────────────────────────────────────
-  static const success = Color(0xFF16A34A);
-  static const warning = Color(0xFFD97706);
-  static const danger = Color(0xFFDC2626);
+  static const success = Color(0xFF27815C);
+  static const warning = Color(0xFFB86A16);
+  static const danger = Color(0xFFC43B45);
 
   // ── Per-type accents (used for the type dot + chip tint) ──────────────────
-  static const typeAll = Color(0xFF64748B);
-  static const typeText = Color(0xFF2563EB);
-  static const typeLink = Color(0xFFDC2626);
-  static const typeImage = Color(0xFF0891B2);
-  static const typeShort = Color(0xFF7C3AED);
-  static const typeRich = Color(0xFFDB2777);
+  static const typeAll = Color(0xFF667585);
+  static const typeText = Color(0xFF356AE6);
+  static const typeLink = Color(0xFF356AE6);
+  static const typeImage = Color(0xFF317A82);
+  static const typeShort = Color(0xFF667585);
+  static const typeRich = Color(0xFF6E63A8);
 
   // ── Radii ─────────────────────────────────────────────────────────────────
   static const radiusSm = 8.0;
   static const radius = 10.0;
-  static const radiusLg = 14.0;
-  static const radiusXl = 20.0;
+  static const radiusLg = 12.0;
+  static const radiusXl = 16.0;
 
   static const brandGradient = LinearGradient(
     begin: Alignment.topLeft,
@@ -58,7 +58,7 @@ class CliphistColors {
   );
 
   static const cardShadow = <BoxShadow>[
-    BoxShadow(color: Color(0x100F172A), blurRadius: 18, offset: Offset(0, 6)),
+    BoxShadow(color: Color(0x0A17212B), blurRadius: 10, offset: Offset(0, 3)),
   ];
 }
 

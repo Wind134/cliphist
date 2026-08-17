@@ -20,11 +20,14 @@ class CategoryTabs extends StatelessWidget {
   Widget build(BuildContext context) {
     final scale = MediaQuery.textScalerOf(context).scale(1);
     return Container(
-      height: 44 + (scale - 1).clamp(0, 1).toDouble() * 12,
-      color: CliphistColors.bgBase,
+      height: 42 + (scale - 1).clamp(0, 1).toDouble() * 12,
+      decoration: const BoxDecoration(
+        color: CliphistColors.surface,
+        border: Border(bottom: BorderSide(color: CliphistColors.borderSubtle)),
+      ),
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+        padding: const EdgeInsets.fromLTRB(12, 4, 12, 7),
         itemCount: ClipType.byKey.length,
         separatorBuilder: (_, _) => const SizedBox(width: 6),
         itemBuilder: (_, i) {
@@ -32,7 +35,6 @@ class CategoryTabs extends StatelessWidget {
           final active = t.key == current;
           return _Chip(
             label: t.label,
-            color: t.color,
             active: active,
             onTap: () => onChanged(t.key),
           );
@@ -43,15 +45,9 @@ class CategoryTabs extends StatelessWidget {
 }
 
 class _Chip extends StatelessWidget {
-  const _Chip({
-    required this.label,
-    required this.color,
-    required this.active,
-    required this.onTap,
-  });
+  const _Chip({required this.label, required this.active, required this.onTap});
 
   final String label;
-  final Color color;
   final bool active;
   final VoidCallback onTap;
 
@@ -66,21 +62,23 @@ class _Chip extends StatelessWidget {
           duration: const Duration(milliseconds: 120),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: active
-                ? CliphistColors.accentSoft
-                : CliphistColors.surfaceSubtle,
+            color: active ? CliphistColors.accentSoft : CliphistColors.surface,
             borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
             border: Border.all(
               color: active
                   ? CliphistColors.accent.withValues(alpha: 0.35)
-                  : Colors.transparent,
+                  : CliphistColors.borderSubtle,
               width: 1,
             ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _Dot(color: active ? CliphistColors.accent : color),
+              _Dot(
+                color: active
+                    ? CliphistColors.accent
+                    : CliphistColors.textMuted,
+              ),
               const SizedBox(width: 6),
               Text(
                 label,

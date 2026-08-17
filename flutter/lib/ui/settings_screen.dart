@@ -112,7 +112,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+              padding: const EdgeInsets.fromLTRB(14, 8, 14, 24),
               children: [
                 _SectionLabel('通用'),
                 _ToggleCard(
@@ -181,9 +181,12 @@ class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: const BoxConstraints(minHeight: 64),
-      padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
-      decoration: const BoxDecoration(gradient: CliphistColors.brandGradient),
+      constraints: const BoxConstraints(minHeight: 62),
+      padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+      decoration: const BoxDecoration(
+        color: CliphistColors.surface,
+        border: Border(bottom: BorderSide(color: CliphistColors.borderSubtle)),
+      ),
       child: Row(
         children: [
           Container(
@@ -191,13 +194,13 @@ class _Header extends StatelessWidget {
             height: 38,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.16),
-              borderRadius: BorderRadius.circular(12),
+              color: CliphistColors.accentSoft,
+              borderRadius: BorderRadius.circular(10),
             ),
             child: const Icon(
               Icons.tune_rounded,
               size: 19,
-              color: Colors.white,
+              color: CliphistColors.accent,
             ),
           ),
           const SizedBox(width: 11),
@@ -209,7 +212,7 @@ class _Header extends StatelessWidget {
                 Text(
                   '偏好设置',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: CliphistColors.textPrimary,
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
                   ),
@@ -217,16 +220,20 @@ class _Header extends StatelessWidget {
                 SizedBox(height: 2),
                 Text(
                   '自定义你的剪贴板工作流',
-                  style: TextStyle(color: Color(0xCCFFFFFF), fontSize: 11),
+                  style: TextStyle(
+                    color: CliphistColors.textMuted,
+                    fontSize: 11,
+                  ),
                 ),
               ],
             ),
           ),
           IconButton(
             icon: const Icon(Icons.close_rounded, size: 18),
-            color: Colors.white,
+            color: CliphistColors.textSecondary,
             style: IconButton.styleFrom(
-              backgroundColor: Colors.white.withValues(alpha: 0.14),
+              backgroundColor: CliphistColors.surfaceSubtle,
+              side: const BorderSide(color: CliphistColors.borderSubtle),
             ),
             splashRadius: 16,
             onPressed: onClose,
@@ -283,13 +290,12 @@ class _CardShell extends StatelessWidget {
           ],
         );
         return Container(
-          margin: const EdgeInsets.only(bottom: 9),
-          padding: const EdgeInsets.fromLTRB(14, 13, 12, 13),
+          margin: const EdgeInsets.only(bottom: 7),
+          padding: const EdgeInsets.fromLTRB(12, 12, 11, 12),
           decoration: BoxDecoration(
             color: CliphistColors.surface,
             borderRadius: BorderRadius.circular(CliphistColors.radiusLg),
             border: Border.all(color: CliphistColors.borderSubtle),
-            boxShadow: CliphistColors.cardShadow,
           ),
           child: stacked
               ? Column(

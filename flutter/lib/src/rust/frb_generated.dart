@@ -73,7 +73,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -833829845;
+  int get rustContentHash => 322327816;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -118,6 +118,8 @@ abstract class RustLibApi extends BaseApi {
   Stream<BigInt> crateApiStreamStreamItemMovedToTop();
 
   Stream<WindowActionKind> crateApiStreamStreamWindowAction();
+
+  bool crateApiStreamTakePendingWindowAction();
 
   Future<Settings> crateApiSettingsUpdateSettings({
     required SettingsPatch patch,
@@ -629,6 +631,31 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  bool crateApiStreamTakePendingWindowAction() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 18)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiStreamTakePendingWindowActionConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiStreamTakePendingWindowActionConstMeta =>
+      const TaskConstMeta(
+        debugName: "take_pending_window_action",
+        argNames: [],
+      );
+
+  @override
   Future<Settings> crateApiSettingsUpdateSettings({
     required SettingsPatch patch,
   }) {
@@ -640,7 +667,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 18,
+            funcId: 19,
             port: port_,
           );
         },
@@ -665,7 +692,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(hotkey, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 19)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 20)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bool,

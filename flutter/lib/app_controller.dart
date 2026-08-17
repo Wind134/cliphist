@@ -13,7 +13,6 @@ import 'src/rust/api/clipboard.dart' as api_clipboard;
 import 'src/rust/api/history.dart' as api_history;
 import 'src/rust/api/settings.dart' as api_settings;
 import 'src/rust/api/stream.dart' as api_stream;
-import 'src/rust/core/events.dart' show WindowActionKind;
 import 'src/rust/core/settings_store.dart' show SettingsPatch;
 import 'state/providers.dart';
 import 'update/update_service.dart';
@@ -25,21 +24,23 @@ import 'util/toast.dart';
 /// decision 3.2 — the Rust core owns no window handle).
 ///
 /// The actual window-action *trigger* still originates in Rust (M7 hotkey /
-/// M8 double-tap call `request_window_action`, which emits a
-/// `WindowActionKind.showAndRaise` event); the Dart-side tray path calls
-/// [performWindowDance] directly. Both converge on the same sequence.
+/// M8 double-tap call `request_window_action`; Dart consumes the coalesced
+/// pending flag on its UI isolate. The Dart-side tray path calls
+/// [performWindowDance] directly, and both converge on the same sequence.
 class ClipHistController with WindowListener, TrayListener {
   ClipHistController._();
   static final ClipHistController instance = ClipHistController._();
 
   late final ProviderContainer container;
 
-  StreamSubscription<WindowActionKind>? _windowActionSub;
-  StreamSubscription<bool>? _helperStatusSub;
-  List<StreamSubscription> _clipboardSubs = const [];
+  final List<StreamSubscription<dynamic>> _subscriptions = [];
+  Timer? _windowActionPoller;
   int _lastResizeSave = 0;
   HotKey? _registeredHotKey;
   bool _quitting = false;
+  bool _windowDanceRunning = false;
+  bool _windowDanceQueued = false;
+  bool _windowActionPollErrorLogged = false;
 
   Future<void> start(ProviderContainer c, {bool forceVisible = false}) async {
     container = c;
@@ -104,24 +105,21 @@ class ClipHistController with WindowListener, TrayListener {
       api_clipboard.feLog(message: '_setupTray failed: $e\n$stack');
     }
 
-    // Rust → Dart streams. Each group is best-effort so one broken sink
-    // (e.g. helper-status on a platform without the helper) doesn't drop
-    // the others.
+    // Native wake events must be consumed on the Flutter UI isolate. The old
+    // permanent FRB stream could silently stop delivering on Windows even
+    // though the rdev hook logged successful double-taps. Polling one atomic
+    // pending flag is deterministic, cheap, and coalesces bursty triggers.
+    _windowActionPoller?.cancel();
+    _windowActionPoller = Timer.periodic(
+      const Duration(milliseconds: 80),
+      _pollPendingWindowAction,
+    );
     try {
-      _windowActionSub = api_stream.streamWindowAction().listen((kind) {
-        if (kind == WindowActionKind.showAndRaise) {
-          performWindowDance();
-        }
-      });
-    } catch (e, stack) {
-      api_clipboard.feLog(
-        message: 'streamWindowAction subscribe failed: $e\n$stack',
+      _subscriptions.add(
+        api_stream.streamHelperStatus().listen((connected) {
+          container.read(helperConnectedProvider.notifier).state = connected;
+        }),
       );
-    }
-    try {
-      _helperStatusSub = api_stream.streamHelperStatus().listen((connected) {
-        container.read(helperConnectedProvider.notifier).state = connected;
-      });
     } catch (e, stack) {
       api_clipboard.feLog(
         message: 'streamHelperStatus subscribe failed: $e\n$stack',
@@ -130,7 +128,7 @@ class ClipHistController with WindowListener, TrayListener {
 
     // History-bearing streams → history provider.
     try {
-      _clipboardSubs = subscribeClipboardStreams(container);
+      _subscriptions.addAll(subscribeClipboardStreams(container));
     } catch (e, stack) {
       api_clipboard.feLog(
         message: 'subscribeClipboardStreams failed: $e\n$stack',
@@ -142,18 +140,56 @@ class ClipHistController with WindowListener, TrayListener {
     unawaited(checkForUpdates(silent: true));
   }
 
-  /// The "pop to top" window-action dance, ported from the old Tauri worker:
-  /// pin on top, hide, show + focus, then release always-on-top. Bounces
-  /// always_on_top + hide/show because some compositors ignore a bare
-  /// set_focus and leave the window below.
-  Future<void> performWindowDance() async {
-    await windowManager.setAlwaysOnTop(true);
-    await windowManager.hide();
-    await Future<void>.delayed(const Duration(milliseconds: 30));
-    await windowManager.show();
-    await windowManager.focus();
-    await Future<void>.delayed(const Duration(milliseconds: 500));
-    await windowManager.setAlwaysOnTop(false);
+  /// Consume native wake requests on Flutter's UI isolate.
+  void _pollPendingWindowAction(Timer _) {
+    if (_quitting) return;
+    try {
+      if (api_stream.takePendingWindowAction()) {
+        unawaited(performWindowDance(source: 'native trigger'));
+      }
+    } catch (e, stack) {
+      if (_windowActionPollErrorLogged) return;
+      _windowActionPollErrorLogged = true;
+      api_clipboard.feLog(message: 'window action poll failed: $e\n$stack');
+    }
+  }
+
+  /// Show and restore the window, briefly pulse always-on-top, then focus it.
+  /// This raises a hidden Windows window without hiding it a second time first.
+  Future<void> performWindowDance({String source = 'app'}) async {
+    if (_quitting) return;
+    if (_windowDanceRunning) {
+      _windowDanceQueued = true;
+      return;
+    }
+
+    _windowDanceRunning = true;
+    try {
+      do {
+        _windowDanceQueued = false;
+        api_clipboard.feLog(message: 'window dance: start ($source)');
+        try {
+          // Showing/restoring before the temporary top-most pulse is more
+          // reliable on Windows than hiding an already-hidden window first.
+          await windowManager.show();
+          await windowManager.restore();
+          await windowManager.setAlwaysOnTop(true);
+          await windowManager.focus();
+          await Future<void>.delayed(const Duration(milliseconds: 180));
+          api_clipboard.feLog(message: 'window dance: completed ($source)');
+        } catch (e, stack) {
+          api_clipboard.feLog(
+            message: 'window dance failed ($source): $e\n$stack',
+          );
+        } finally {
+          try {
+            await windowManager.setAlwaysOnTop(false);
+          } catch (_) {}
+        }
+      } while (_windowDanceQueued && !_quitting);
+    } finally {
+      _windowDanceRunning = false;
+    }
   }
 
   /// Hide the window to the tray (no quit). Used after a copy when
@@ -206,7 +242,8 @@ class ClipHistController with WindowListener, TrayListener {
     try {
       await hotKeyManager.register(
         next,
-        keyDownHandler: (_) => unawaited(performWindowDance()),
+        keyDownHandler: (_) =>
+            unawaited(performWindowDance(source: 'global hotkey')),
       );
       _registeredHotKey = next;
       api_clipboard.feLog(message: 'Registered native hotkey: $shortcut');
@@ -215,7 +252,8 @@ class ClipHistController with WindowListener, TrayListener {
         try {
           await hotKeyManager.register(
             previous,
-            keyDownHandler: (_) => unawaited(performWindowDance()),
+            keyDownHandler: (_) =>
+                unawaited(performWindowDance(source: 'hotkey rollback')),
           );
           _registeredHotKey = previous;
         } catch (rollbackError) {
@@ -434,7 +472,7 @@ class ClipHistController with WindowListener, TrayListener {
             label: '显示窗口',
             onClick: (_) {
               api_clipboard.feLog(message: 'tray menu: 显示窗口');
-              unawaited(performWindowDance());
+              unawaited(performWindowDance(source: 'tray show'));
             },
           ),
           MenuItem(
@@ -442,7 +480,7 @@ class ClipHistController with WindowListener, TrayListener {
             onClick: (_) async {
               api_clipboard.feLog(message: 'tray menu: 设置');
               container.read(settingsOpenProvider.notifier).state = true;
-              await performWindowDance();
+              await performWindowDance(source: 'tray settings');
             },
           ),
           MenuItem(
@@ -461,7 +499,7 @@ class ClipHistController with WindowListener, TrayListener {
             label: '检查更新',
             onClick: (_) async {
               container.read(settingsOpenProvider.notifier).state = true;
-              await performWindowDance();
+              await performWindowDance(source: 'tray update');
               await checkForUpdates();
             },
           ),
@@ -470,7 +508,7 @@ class ClipHistController with WindowListener, TrayListener {
             label: '退出',
             onClick: (_) {
               api_clipboard.feLog(message: 'tray menu: 退出');
-              unawaited(quit());
+              quit();
             },
           ),
         ],
@@ -487,7 +525,7 @@ class ClipHistController with WindowListener, TrayListener {
     if (visible) {
       await windowManager.hide();
     } else {
-      await performWindowDance();
+      await performWindowDance(source: 'tray icon');
     }
   }
 
@@ -515,7 +553,7 @@ class ClipHistController with WindowListener, TrayListener {
     if (closeToTray) {
       await windowManager.hide();
     } else {
-      await quit();
+      quit();
     }
   }
 
@@ -550,61 +588,22 @@ class ClipHistController with WindowListener, TrayListener {
     if (container.read(settingsProvider).closeToTray) {
       await windowManager.hide();
     } else {
-      await quit();
+      quit();
     }
   }
 
-  Future<void> quit() async {
+  void quit() {
     if (_quitting) return;
     _quitting = true;
-    api_clipboard.feLog(message: 'quit() invoked');
-    // Best-effort cleanup — every step is guarded so a failure can never
-    // prevent the hard `exit(0)` below. The OS reclaims all resources (window,
-    // sockets, threads) on process exit regardless; we only bother destroying
-    // the tray icon explicitly so it does not linger in the Windows
-    // notification area after the process is gone (a classic Windows tray
-    // quirk). Crucially, `windowManager.destroy()` can be intercepted by our
-    // own `onWindowClose` (when close-to-tray is on), and stream cancels can
-    // throw — without the try/catch the unawaited Future's error would be
-    // swallowed by the zone and `exit(0)` would never run, which is exactly
-    // why the tray "退出" item appeared to do nothing.
+    // Do not await cancellation of permanent FRB streams here. Their Rust
+    // producers intentionally live for the process lifetime, so `cancel()` can
+    // wait forever. The Windows log proved quit previously stopped on the very
+    // first cancellation and never reached exit(0). A process exit is the
+    // cleanup boundary; Windows reclaims the window, hooks, threads and tray
+    // handle, while Explorer clears the icon on its next notification refresh.
     try {
-      await _windowActionSub?.cancel();
-    } catch (e) {
-      api_clipboard.feLog(message: 'quit: windowActionSub cancel failed: $e');
-    }
-    try {
-      await _helperStatusSub?.cancel();
-    } catch (e) {
-      api_clipboard.feLog(message: 'quit: helperStatusSub cancel failed: $e');
-    }
-    for (final s in _clipboardSubs) {
-      try {
-        await s.cancel();
-      } catch (e) {
-        api_clipboard.feLog(message: 'quit: clipboardSub cancel failed: $e');
-      }
-    }
-    try {
-      trayManager.removeListener(this);
+      api_clipboard.feLog(message: 'quit: immediate exit(0)');
     } catch (_) {}
-    try {
-      windowManager.removeListener(this);
-    } catch (_) {}
-    try {
-      await trayManager.destroy();
-    } catch (e) {
-      api_clipboard.feLog(message: 'quit: tray destroy failed: $e');
-    }
-    try {
-      await hotKeyManager.unregisterAll();
-    } catch (e) {
-      api_clipboard.feLog(message: 'quit: hotkey unregister failed: $e');
-    }
-    // Skip windowManager.destroy() — it can route through onWindowClose
-    // (close-to-tray) and hide instead of destroying, which delays/loses the
-    // exit. The OS tears the window down on exit(0) anyway.
-    api_clipboard.feLog(message: 'quit: calling exit(0)');
     exit(0);
   }
 }

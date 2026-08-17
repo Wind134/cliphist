@@ -78,7 +78,7 @@ void main() {
     );
     await tester.pump();
     expect(tester.takeException(), isNull);
-    expect(find.text('剪贴板'), findsOneWidget);
+    expect(find.text('ClipHist'), findsOneWidget);
   });
 
   testWidgets('settings cards stay usable at minimum width and 200% zoom', (

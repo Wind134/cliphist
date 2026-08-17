@@ -15,9 +15,8 @@ final settingsProvider = StateProvider<Settings>(
 /// Escape/Esc key). The history list is shown when false.
 final settingsOpenProvider = StateProvider<bool>((ref) => false);
 
-/// Whether the privileged evdev double-tap helper is connected (Linux). Driven
-/// by `streamHelperStatus`; shown in the settings panel (M5) as the
-/// "authorized / needs authorization" indicator.
+/// Whether the privileged evdev double-tap helper is connected on Linux.
+/// Windows and macOS use their native listener and report readiness separately.
 final helperConnectedProvider = StateProvider<bool>((ref) => false);
 
 /// Ephemeral toast message (M4 wires the toast widget). Held as state so any

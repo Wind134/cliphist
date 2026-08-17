@@ -29,3 +29,9 @@ Stream<bool> streamHelperStatus() =>
 /// the always-on-top restack dance on receipt.
 Stream<WindowActionKind> streamWindowAction() =>
     RustLib.instance.api.crateApiStreamStreamWindowAction();
+
+/// Reliable UI-isolate hand-off for native hotkey/double-tap/single-instance
+/// wake requests. The stream above remains for compatibility, while the Dart
+/// controller uses this synchronous coalescing poll on desktop platforms.
+bool takePendingWindowAction() =>
+    RustLib.instance.api.crateApiStreamTakePendingWindowAction();

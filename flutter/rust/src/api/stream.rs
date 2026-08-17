@@ -40,3 +40,11 @@ pub fn stream_window_action(sink: StreamSink<WindowActionKind>) -> Result<(), St
     events::register_window_action(sink);
     Ok(())
 }
+
+/// Reliable UI-isolate hand-off for native hotkey/double-tap/single-instance
+/// wake requests. The stream above remains for compatibility, while the Dart
+/// controller uses this synchronous coalescing poll on desktop platforms.
+#[flutter_rust_bridge::frb(sync)]
+pub fn take_pending_window_action() -> bool {
+    crate::core::state::take_pending_window_action()
+}
