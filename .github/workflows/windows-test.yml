@@ -1,6 +1,9 @@
 name: Windows Test Package
 
 on:
+  push:
+    branches:
+      - feat/flutter-rust-migration
   workflow_dispatch:
 
 permissions:
