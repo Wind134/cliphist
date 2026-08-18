@@ -15,6 +15,11 @@ final settingsProvider = StateProvider<Settings>(
 /// Escape/Esc key). The history list is shown when false.
 final settingsOpenProvider = StateProvider<bool>((ref) => false);
 
+/// Monotonically increases after the main window has been raised and focused.
+/// The history view listens to this signal so a previously-focused search box
+/// cannot swallow the 1–9 quick-paste keys after a tray/hotkey wake.
+final windowWakeGenerationProvider = StateProvider<int>((ref) => 0);
+
 /// Whether the privileged evdev double-tap helper is connected on Linux.
 /// Windows and macOS use their native listener and report readiness separately.
 final helperConnectedProvider = StateProvider<bool>((ref) => false);

@@ -38,12 +38,12 @@ class CliphistColors {
   static const danger = Color(0xFFC43B45);
 
   // ── Per-type accents (used for the type dot + chip tint) ──────────────────
-  static const typeAll = Color(0xFF667585);
+  static const typeAll = Color(0xFF64748B);
   static const typeText = Color(0xFF356AE6);
-  static const typeLink = Color(0xFF356AE6);
-  static const typeImage = Color(0xFF317A82);
-  static const typeShort = Color(0xFF667585);
-  static const typeRich = Color(0xFF6E63A8);
+  static const typeLink = Color(0xFFC26A24);
+  static const typeImage = Color(0xFF168393);
+  static const typeShort = Color(0xFF7662B3);
+  static const typeRich = Color(0xFFB55278);
 
   // ── Radii ─────────────────────────────────────────────────────────────────
   static const radiusSm = 8.0;

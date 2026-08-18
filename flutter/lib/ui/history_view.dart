@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -28,7 +30,9 @@ import 'theme.dart';
 ///  - When the search box is NOT focused: digits 1-9 quick-paste the nth row.
 ///  - Arrow/Enter also work when the search is not focused.
 class HistoryView extends ConsumerStatefulWidget {
-  const HistoryView({super.key});
+  const HistoryView({super.key, this.onQuickPaste});
+
+  final ValueChanged<BigInt>? onQuickPaste;
 
   @override
   ConsumerState<HistoryView> createState() => _HistoryViewState();
@@ -98,15 +102,8 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
   KeyEventResult _onViewKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final key = event.logicalKey;
-    if (key == LogicalKeyboardKey.digit1) return _quickPaste(1);
-    if (key == LogicalKeyboardKey.digit2) return _quickPaste(2);
-    if (key == LogicalKeyboardKey.digit3) return _quickPaste(3);
-    if (key == LogicalKeyboardKey.digit4) return _quickPaste(4);
-    if (key == LogicalKeyboardKey.digit5) return _quickPaste(5);
-    if (key == LogicalKeyboardKey.digit6) return _quickPaste(6);
-    if (key == LogicalKeyboardKey.digit7) return _quickPaste(7);
-    if (key == LogicalKeyboardKey.digit8) return _quickPaste(8);
-    if (key == LogicalKeyboardKey.digit9) return _quickPaste(9);
+    final quickPasteIndex = quickPasteIndexForKey(key);
+    if (quickPasteIndex != null) return _quickPaste(quickPasteIndex);
     if (key == LogicalKeyboardKey.arrowUp) {
       _moveSelection(-1);
       return KeyEventResult.handled;
@@ -127,7 +124,12 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
     final items = _filtered;
     if (n < 1 || n > items.length || n > 9) return KeyEventResult.ignored;
     final item = items[n - 1];
-    ClipHistController.instance.quickPaste(item.id);
+    final override = widget.onQuickPaste;
+    if (override != null) {
+      override(item.id);
+    } else {
+      unawaited(ClipHistController.instance.quickPaste(item.id));
+    }
     return KeyEventResult.handled;
   }
 
@@ -251,6 +253,12 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
   // ── Build ──────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
+    ref.listen<int>(windowWakeGenerationProvider, (_, _) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || ref.read(settingsOpenProvider)) return;
+        _viewFocus.requestFocus();
+      });
+    });
     final filtered = ref.watch(filteredHistoryProvider);
     final selected = ref.watch(selectedIndexProvider);
     final query = ref.watch(searchQueryProvider);
@@ -376,24 +384,21 @@ class _HeroHeader extends StatelessWidget {
               ],
             ),
           ),
-          _HeaderAction(
+          _HeaderIconAction(
             icon: Icons.delete_sweep_outlined,
             tooltip: '清空历史',
             onTap: onClearHistory,
           ),
-          _HeaderAction(
-            icon: Icons.tune_rounded,
-            tooltip: '设置',
-            onTap: onSettings,
-          ),
+          const SizedBox(width: 8),
+          _SettingsAction(onTap: onSettings),
         ],
       ),
     );
   }
 }
 
-class _HeaderAction extends StatelessWidget {
-  const _HeaderAction({
+class _HeaderIconAction extends StatelessWidget {
+  const _HeaderIconAction({
     required this.icon,
     required this.tooltip,
     required this.onTap,
@@ -407,17 +412,98 @@ class _HeaderAction extends StatelessWidget {
   Widget build(BuildContext context) {
     return Tooltip(
       message: tooltip,
-      child: IconButton(
-        onPressed: onTap,
-        icon: Icon(icon, color: CliphistColors.textSecondary, size: 18),
-        style: IconButton.styleFrom(
-          backgroundColor: CliphistColors.surfaceSubtle,
-          hoverColor: CliphistColors.hover,
-          side: const BorderSide(color: CliphistColors.borderSubtle),
+      child: SizedBox.square(
+        dimension: 32,
+        child: IconButton(
+          onPressed: onTap,
+          icon: Icon(icon, color: CliphistColors.textSecondary, size: 17),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+          style: IconButton.styleFrom(
+            backgroundColor: CliphistColors.surfaceSubtle,
+            hoverColor: CliphistColors.hover,
+            side: const BorderSide(color: CliphistColors.borderSubtle),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
         ),
       ),
     );
   }
+}
+
+class _SettingsAction extends StatelessWidget {
+  const _SettingsAction({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final compact =
+        MediaQuery.sizeOf(context).width < 380 ||
+        MediaQuery.textScalerOf(context).scale(1) > 1.4;
+    if (compact) {
+      return _HeaderIconAction(
+        icon: Icons.settings_outlined,
+        tooltip: '设置',
+        onTap: onTap,
+      );
+    }
+    return Tooltip(
+      message: '设置',
+      child: SizedBox(
+        height: 32,
+        child: TextButton.icon(
+          onPressed: onTap,
+          icon: const Icon(Icons.settings_outlined, size: 16),
+          label: const Text('设置'),
+          style: TextButton.styleFrom(
+            foregroundColor: CliphistColors.accent,
+            backgroundColor: CliphistColors.accentSoft,
+            padding: const EdgeInsets.symmetric(horizontal: 9),
+            minimumSize: const Size(0, 32),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            textStyle: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            side: BorderSide(
+              color: CliphistColors.accent.withValues(alpha: 0.18),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+int? quickPasteIndexForKey(LogicalKeyboardKey key) {
+  final keys = <LogicalKeyboardKey, int>{
+    LogicalKeyboardKey.digit1: 1,
+    LogicalKeyboardKey.digit2: 2,
+    LogicalKeyboardKey.digit3: 3,
+    LogicalKeyboardKey.digit4: 4,
+    LogicalKeyboardKey.digit5: 5,
+    LogicalKeyboardKey.digit6: 6,
+    LogicalKeyboardKey.digit7: 7,
+    LogicalKeyboardKey.digit8: 8,
+    LogicalKeyboardKey.digit9: 9,
+    LogicalKeyboardKey.numpad1: 1,
+    LogicalKeyboardKey.numpad2: 2,
+    LogicalKeyboardKey.numpad3: 3,
+    LogicalKeyboardKey.numpad4: 4,
+    LogicalKeyboardKey.numpad5: 5,
+    LogicalKeyboardKey.numpad6: 6,
+    LogicalKeyboardKey.numpad7: 7,
+    LogicalKeyboardKey.numpad8: 8,
+    LogicalKeyboardKey.numpad9: 9,
+  };
+  return keys[key];
 }
 
 class _UpdateBanner extends StatelessWidget {

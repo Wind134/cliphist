@@ -236,11 +236,11 @@ class _TypeBadge extends StatelessWidget {
       height: 30,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: CliphistColors.surfaceSubtle,
+        color: type.color.withValues(alpha: 0.09),
         borderRadius: BorderRadius.circular(9),
-        border: Border.all(color: CliphistColors.borderSubtle),
+        border: Border.all(color: type.color.withValues(alpha: 0.18)),
       ),
-      child: Icon(_icon, size: 16, color: CliphistColors.textSecondary),
+      child: Icon(_icon, size: 16, color: type.color),
     );
   }
 }

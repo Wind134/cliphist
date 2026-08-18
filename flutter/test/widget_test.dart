@@ -6,6 +6,7 @@ import 'package:cliphist/ui/history_view.dart';
 import 'package:cliphist/ui/settings_screen.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:cliphist/ui/theme.dart';
@@ -48,6 +49,53 @@ void main() {
     expect(cliphistTheme(), isNotNull);
     expect(CliphistColors.bgBase, isNot(CliphistColors.surface));
     expect(CliphistColors.accent, isNot(CliphistColors.textPrimary));
+  });
+
+  test('quick-paste keys include the number row and numeric keypad', () {
+    expect(quickPasteIndexForKey(LogicalKeyboardKey.digit1), 1);
+    expect(quickPasteIndexForKey(LogicalKeyboardKey.digit9), 9);
+    expect(quickPasteIndexForKey(LogicalKeyboardKey.numpad1), 1);
+    expect(quickPasteIndexForKey(LogicalKeyboardKey.numpad9), 9);
+    expect(quickPasteIndexForKey(LogicalKeyboardKey.digit0), isNull);
+  });
+
+  testWidgets('window wake returns focus to numeric quick-paste', (
+    tester,
+  ) async {
+    final container = ProviderContainer(
+      overrides: [
+        settingsProvider.overrideWith((ref) => testSettings),
+        historyProvider.overrideWith((ref) => testHistory),
+      ],
+    );
+    addTearDown(container.dispose);
+    BigInt? pastedId;
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: cliphistTheme(),
+          home: Scaffold(
+            body: HistoryView(onQuickPaste: (id) => pastedId = id),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).focusNode?.hasFocus,
+      isTrue,
+    );
+
+    container.read(windowWakeGenerationProvider.notifier).state++;
+    await tester.pump();
+    await tester.pump();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.digit2);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.digit2);
+
+    expect(pastedId, BigInt.two);
   });
 
   testWidgets('history view fits the minimum window at 200% zoom', (

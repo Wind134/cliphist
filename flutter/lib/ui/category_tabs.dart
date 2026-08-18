@@ -33,11 +33,7 @@ class CategoryTabs extends StatelessWidget {
         itemBuilder: (_, i) {
           final t = ClipType.byKey[i];
           final active = t.key == current;
-          return _Chip(
-            label: t.label,
-            active: active,
-            onTap: () => onChanged(t.key),
-          );
+          return _Chip(type: t, active: active, onTap: () => onChanged(t.key));
         },
       ),
     );
@@ -45,9 +41,9 @@ class CategoryTabs extends StatelessWidget {
 }
 
 class _Chip extends StatelessWidget {
-  const _Chip({required this.label, required this.active, required this.onTap});
+  const _Chip({required this.type, required this.active, required this.onTap});
 
-  final String label;
+  final ClipType type;
   final bool active;
   final VoidCallback onTap;
 
@@ -62,30 +58,22 @@ class _Chip extends StatelessWidget {
           duration: const Duration(milliseconds: 120),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: active ? CliphistColors.accentSoft : CliphistColors.surface,
+            color: type.color.withValues(alpha: active ? 0.12 : 0.055),
             borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
             border: Border.all(
-              color: active
-                  ? CliphistColors.accent.withValues(alpha: 0.35)
-                  : CliphistColors.borderSubtle,
+              color: type.color.withValues(alpha: active ? 0.32 : 0.14),
               width: 1,
             ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _Dot(
-                color: active
-                    ? CliphistColors.accent
-                    : CliphistColors.textMuted,
-              ),
+              _Dot(color: type.color.withValues(alpha: active ? 1 : 0.72)),
               const SizedBox(width: 6),
               Text(
-                label,
+                type.label,
                 style: TextStyle(
-                  color: active
-                      ? CliphistColors.accentHover
-                      : CliphistColors.textSecondary,
+                  color: type.color.withValues(alpha: active ? 1 : 0.88),
                   fontSize: 12,
                   fontWeight: active ? FontWeight.w600 : FontWeight.w500,
                   height: 1.2,

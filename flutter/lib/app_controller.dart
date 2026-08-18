@@ -175,6 +175,9 @@ class ClipHistController with WindowListener, TrayListener {
           await windowManager.restore();
           await windowManager.setAlwaysOnTop(true);
           await windowManager.focus();
+          final wakeGeneration = container.read(windowWakeGenerationProvider);
+          container.read(windowWakeGenerationProvider.notifier).state =
+              wakeGeneration + 1;
           await Future<void>.delayed(const Duration(milliseconds: 180));
           api_clipboard.feLog(message: 'window dance: completed ($source)');
         } catch (e, stack) {
@@ -418,9 +421,11 @@ class ClipHistController with WindowListener, TrayListener {
   /// accessibility permission is surfaced as a toast instead of a silent
   /// no-op.
   Future<void> quickPaste(BigInt id) async {
+    api_clipboard.feLog(message: 'quick paste: start id=$id');
     try {
       await api_clipboard.copyToClipboard(id: id);
     } catch (e) {
+      api_clipboard.feLog(message: 'quick paste: copy failed id=$id: $e');
       showToast(container, '复制失败: $e');
       return;
     }
@@ -430,10 +435,13 @@ class ClipHistController with WindowListener, TrayListener {
       // Non-fatal — the copy already succeeded.
     }
     await windowManager.hide();
+    api_clipboard.feLog(message: 'quick paste: window hidden id=$id');
     await Future<void>.delayed(const Duration(milliseconds: 200));
     try {
       await api_clipboard.simulatePasteCmd();
+      api_clipboard.feLog(message: 'quick paste: completed id=$id');
     } catch (e) {
+      api_clipboard.feLog(message: 'quick paste: injection failed id=$id: $e');
       showToast(container, '自动粘贴暂不可用: $e');
     }
   }
