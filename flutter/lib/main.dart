@@ -14,7 +14,7 @@ import 'src/rust/frb_generated.dart';
 
 /// ClipHist entry point.
 ///
-/// Boot order (mirrors the old Tauri `run()` setup):
+/// Boot order:
 ///   1. Flutter binding + window_manager init.
 ///   2. FRB `RustLib.init()` (loads the Rust cdylib).
 ///   3. `initAppState()` — load history/settings, install panic hook, spawn
@@ -55,8 +55,8 @@ Future<void> main() async {
 
   // Configure the auto-launch helper with the running executable so the
   // settings "开机自动启动" toggle can register/unregister a login entry.
-  // The path is the resolved exe; M10 packaging may override with a fixed
-  // installed path.
+  // The path is the resolved executable; packaging may override it with a
+  // fixed installed path.
   launchAtStartup.setup(appName: 'cliphist', appPath: Platform.executable);
 
   // Route Flutter framework errors (widget build throws, rendering errors)

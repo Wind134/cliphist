@@ -1,24 +1,23 @@
 //! Rust → Dart event plumbing.
 //!
-//! Each Tauri `app.emit(event, payload)` from the old stack becomes a
-//! `StreamSink<T>` here. The api-side `stream_*` functions register a sink
-//! (called from Dart when it subscribes); the background tasks and commands
-//! call the `emit_*` helpers to push events. A sink living in a `parking_lot`
-//! `Mutex<Option<..>>` is fine because FRB's `StreamSink` is `Send` (the spike
-//! moved one into a spawned thread); the emit path no-ops when no Dart side is
-//! subscribed, so a headless `cargo test` never blocks.
+//! Each cross-language event uses a `StreamSink<T>`. The api-side `stream_*`
+//! functions register a sink when Dart subscribes; background tasks and
+//! commands call the `emit_*` helpers to push events. A sink living in a
+//! `parking_lot::Mutex<Option<..>>` is safe because FRB's `StreamSink` is
+//! `Send`; the emit path no-ops when Dart has not subscribed, so a headless
+//! `cargo test` never blocks.
 
 use crate::core::clipboard_engine::ClipboardItem;
 use crate::frb_generated::StreamSink;
 use parking_lot::Mutex;
 
 /// A window-action request pushed to Dart. The Rust core owns no window
-/// handle (decision 3.2), so the actual always-on-top restack dance runs in
+/// handle, so the actual always-on-top restack dance runs in
 /// Dart via `window_manager` — this enum is the trigger.
 #[derive(Clone)]
 pub enum WindowActionKind {
     /// Pin on top, hide, show + focus, then release always-on-top. The full
-    /// dance sequence is implemented in the Dart listener (M3).
+    /// dance sequence is implemented in the Dart listener.
     ShowAndRaise,
 }
 

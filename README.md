@@ -48,7 +48,7 @@ cargo test
 - 存储：JSON 文件（图片为 `images/<id>.png`）
 - 剪贴板：arboard
 
-原 Tauri/Svelte 代码暂保留在仓库根目录供迁移对照，发布产物均由 `flutter/` 生成。
+应用源码与桌面发布产物均由 `flutter/` 构建；Linux 的特权键盘辅助进程位于 `rust/evdev-helper/`。
 
 ## 快捷键
 

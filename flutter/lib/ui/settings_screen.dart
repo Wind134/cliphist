@@ -9,8 +9,7 @@ import '../update/update_service.dart';
 import '../util/toast.dart';
 import 'theme.dart';
 
-/// Settings panel, ported from `src/lib/settings-panel.svelte` (449 lines).
-/// Modernized: one scrollable column of rounded cards with a leading icon,
+/// Settings panel: one scrollable column of rounded cards with a leading icon,
 /// a title + description, and the control on the trailing side. Every change
 /// persists immediately through `updateSettings` (atomically in Rust) and
 /// refreshes [settingsProvider] with the returned snapshot.

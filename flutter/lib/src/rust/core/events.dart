@@ -7,10 +7,10 @@ import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 /// A window-action request pushed to Dart. The Rust core owns no window
-/// handle (decision 3.2), so the actual always-on-top restack dance runs in
+/// handle, so the actual always-on-top restack dance runs in
 /// Dart via `window_manager` — this enum is the trigger.
 enum WindowActionKind {
   /// Pin on top, hide, show + focus, then release always-on-top. The full
-  /// dance sequence is implemented in the Dart listener (M3).
+  /// dance sequence is implemented in the Dart listener.
   showAndRaise,
 }

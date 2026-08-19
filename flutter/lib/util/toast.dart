@@ -4,8 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../state/providers.dart';
 
-/// Toast helper, ported from the old Svelte `toast` store: set the message,
-/// auto-clear after 2s. Any caller can fire it via the shared [ProviderContainer].
+/// Set the toast message and clear it automatically after two seconds. Any
+/// caller can fire it via the shared [ProviderContainer].
 Timer? _toastTimer;
 
 void showToast(ProviderContainer container, String message) {

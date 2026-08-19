@@ -19,12 +19,11 @@ import 'update/update_service.dart';
 import 'util/toast.dart';
 
 /// Process-singleton owning the native window + tray lifecycle and the
-/// Rust→Dart stream subscriptions. Replaces the old Tauri `tray.rs` + the
-/// window-action worker's native half (the dance runs here in Dart, per
-/// decision 3.2 — the Rust core owns no window handle).
+/// Rust→Dart stream subscriptions. The window-action dance runs here because
+/// the Rust core deliberately owns no native window handle.
 ///
-/// The actual window-action *trigger* still originates in Rust (M7 hotkey /
-/// M8 double-tap call `request_window_action`; Dart consumes the coalesced
+/// The actual window-action *trigger* still originates in Rust (the hotkey and
+/// double-tap paths call `request_window_action`); Dart consumes the coalesced
 /// pending flag on its UI isolate. The Dart-side tray path calls
 /// [performWindowDance] directly, and both converge on the same sequence.
 class ClipHistController with WindowListener, TrayListener {
@@ -56,8 +55,7 @@ class ClipHistController with WindowListener, TrayListener {
       const WindowOptions(
         title: 'ClipHist',
         minimumSize: Size(320, 400),
-        titleBarStyle:
-            TitleBarStyle.normal, // OS-native decorations (decision 3.6)
+        titleBarStyle: TitleBarStyle.normal, // OS-native window decorations
         skipTaskbar: false,
       ),
       () async {
@@ -413,7 +411,7 @@ class ClipHistController with WindowListener, TrayListener {
     }
   }
 
-  /// Quick-paste path (ported from `handleQuickPaste`): copy the item, float
+  /// Quick-paste path: copy the item, float
   /// it to the top, hide the window, wait 200ms for the target app to regain
   /// focus, then simulate Ctrl+V. The window is hidden unconditionally
   /// (paste is meaningless with the history window in the way). The
@@ -568,7 +566,7 @@ class ClipHistController with WindowListener, TrayListener {
   @override
   void onWindowResized() async {
     final now = DateTime.now().millisecondsSinceEpoch;
-    // Throttle to 500ms — mirrors the old Tauri resize handler.
+    // Throttle resize persistence to 500ms.
     if (now - _lastResizeSave < 500) return;
     _lastResizeSave = now;
     final size = await windowManager.getSize();
@@ -586,8 +584,8 @@ class ClipHistController with WindowListener, TrayListener {
     }
   }
 
-  /// Escape behavior (ported from app.svelte `handleKeydown`): if settings is
-  /// open, close it; else hide (close-to-tray) or quit.
+  /// Escape behavior: close settings first; otherwise hide when close-to-tray
+  /// is enabled, or quit.
   Future<void> onEscape() async {
     if (container.read(settingsOpenProvider)) {
       container.read(settingsOpenProvider.notifier).state = false;

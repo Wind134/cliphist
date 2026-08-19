@@ -24,8 +24,8 @@ final windowWakeGenerationProvider = StateProvider<int>((ref) => 0);
 /// Windows and macOS use their native listener and report readiness separately.
 final helperConnectedProvider = StateProvider<bool>((ref) => false);
 
-/// Ephemeral toast message (M4 wires the toast widget). Held as state so any
-/// part of the UI can surface feedback.
+/// Ephemeral toast message. Held as state so any part of the UI can surface
+/// feedback.
 final toastMessageProvider = StateProvider<String>((ref) => '');
 
 /// Result of the latest GitHub Releases update check. The controller performs

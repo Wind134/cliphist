@@ -1,18 +1,16 @@
 //! Background tasks.
 //!
-//! Four resident threads, matching the old Tauri stack's worker set:
+//! Four resident threads:
 //!   1. `clipboard-poll`     — 500ms arboard polling, dedup, image/rich capture
 //!   2. `window-action-worker` — drains window-action requests, emits a
-//!      `WindowActionKind` event for Dart (the dance itself is Dart-side, M3)
+//!      `WindowActionKind` event for Dart (the dance itself is Dart-side)
 //!   3. `helper-status-monitor` — 200ms poll of the evdev helper connection
 //!      state, emits on change
 //!   4. `clean-expired`      — runs once at startup, then hourly, dropping
 //!      items older than `retention_days`
 //!
-//! Deviation from the plan: the plan called for a tokio runtime, but the old
-//! stack is plain `std::thread` + `mpsc` + sleep loops with no async IO, so a
-//! faithful port stays on `std::thread` and avoids a tokio dependency and any
-//! FRB-runtime friction. The four-task shape is unchanged.
+//! These jobs use `std::thread`, `mpsc`, and sleep loops because they perform no
+//! async IO; this also avoids an unnecessary Tokio runtime.
 
 use crate::core::clipboard_engine::ClipboardItem;
 use crate::core::{clipboard_engine, consts, events, log, sanitize, settings_store, state};

@@ -1,4 +1,4 @@
-// M2+ real API surface.
+// Public Flutter Rust Bridge API surface.
 pub mod clipboard;
 pub mod history;
 pub mod init;

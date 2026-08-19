@@ -1,6 +1,5 @@
-//! Rust → Dart event streams — the 5 `StreamSink` registrations that replace
-//! the old Tauri `app.emit(...)` calls. Dart subscribes to one of these and
-//! receives events pushed from the background tasks / commands via
+//! Rust → Dart event streams. Dart subscribes to these `StreamSink`
+//! registrations and receives events pushed from background tasks / commands via
 //! `core::events::emit_*`. Each registration simply stashes the sink; the
 //! matching emit helper no-ops when nothing is subscribed, so a headless test
 //! run never blocks.

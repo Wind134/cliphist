@@ -1,14 +1,13 @@
-//! Double-tap detection + paste injection, ported from the old
-//! `src-tauri/src/shortcut.rs` minus the Tauri plugin layer. Global hotkeys
-//! are registered by Dart's native plugin on the platform event-loop thread.
+//! Double-tap detection + paste injection. Global hotkeys are registered by
+//! Dart's native plugin on the platform event-loop thread.
 //!
-//! Scope by platform (matches the old split):
+//! Scope by platform:
 //!  - **Double-tap**: Windows + macOS both use `rdev::grab` (a global key
 //!    tap listener); macOS requires the app to be granted Accessibility
 //!    permission or `grab` errors out. Linux double-tap goes through the
-//!    privileged evdev helper (M8).
+//!    privileged evdev helper.
 //!  - **simulate_paste**: Windows `rdev` Ctrl+V, macOS `rdev` Cmd+V, Linux
-//!    through the evdev helper (M8). Other platforms return `Err`.
+//!    through the evdev helper. Other platforms return `Err`.
 #[cfg(target_os = "linux")]
 use std::sync::atomic::AtomicU64;
 #[cfg(any(target_os = "windows", target_os = "macos"))]
@@ -242,16 +241,13 @@ mod rdev_impl {
 }
 
 /// Linux double-tap + paste via the privileged `cliphist-evdev-helper`
-/// binary (plan 3.1). The main process binds a Unix socket in the user-private
+/// binary. The main process binds a Unix socket in the user-private
 /// `$XDG_RUNTIME_DIR`, spawns the helper through `pkexec` (polkit prompts the
 /// user once), and reads `b'D'` per detected double-tap. The socket is
 /// bidirectional: `simulate_paste` writes `b'P'`, then waits for the helper's
 /// `b'S'`/`b'F'` injection result instead of reporting unconditional success.
-/// Ported from the old `linux_impl` in
-/// `src-tauri/src/shortcut.rs`; the only change is the helper path: instead of
-/// re-entering `current_exe()` behind `--evdev-helper`, it resolves the
-/// standalone `cliphist-evdev-helper` binary (build-time override, exe-dir
-/// neighbor, then `PATH`).
+/// The helper path resolves a standalone `cliphist-evdev-helper` binary using
+/// a build-time override, an executable-directory neighbor, then `PATH`.
 #[cfg(target_os = "linux")]
 mod linux_impl {
     use super::*;
@@ -270,8 +266,8 @@ mod linux_impl {
     static SOCKET_PATH: Mutex<Option<(u64, String)>> = Mutex::new(None);
 
     /// Resolve the helper binary. Order:
-    ///   1. `CLIPHIST_HELPER_PATH` build-time env override (M10 packaging pins
-    ///      the installed absolute path).
+    ///   1. `CLIPHIST_HELPER_PATH` build-time environment override (packaging
+    ///      pins the installed absolute path).
     ///   2. next to the running executable (`<exe_dir>/cliphist-evdev-helper`).
     ///   3. bare `cliphist-evdev-helper` (resolved via `PATH`).
     fn resolve_helper_path() -> String {

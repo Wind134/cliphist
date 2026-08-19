@@ -18,9 +18,8 @@ class ClipHistApp extends ConsumerWidget {
       title: 'ClipHist',
       debugShowCheckedModeBanner: false,
       theme: cliphistTheme(),
-      // Apply the persisted zoom level as a text scaler (preferred over
-      // Transform.scale — keeps text crisp, reflows layout). The Svelte
-      // version used CSS `transform: scale`; this is the Flutter analogue.
+      // Apply the persisted zoom level as a text scaler so text stays crisp
+      // and the layout reflows instead of scaling a rasterized widget tree.
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(
           context,
@@ -34,7 +33,7 @@ class ClipHistApp extends ConsumerWidget {
 
 /// App shell: swaps between the history view and the settings panel, hosts
 /// the Escape shortcut and the toast overlay. The OS-native title bar
-/// (decision 3.6) already carries the window title, so there is no separate
+/// already carries the window title, so there is no separate
 /// in-app top bar — each screen owns its own chrome (the search row for the
 /// history view, the header for settings).
 class MainScreen extends ConsumerWidget {

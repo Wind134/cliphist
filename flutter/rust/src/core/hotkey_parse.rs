@@ -1,12 +1,10 @@
 //! Pure-string shortcut validator.
 //!
-//! Mirrors `src-tauri shortcut::parse_shortcut`'s accepted/rejected set
-//! without depending on `tauri_plugin_global_shortcut` types. Real
-//! registration via the `global-hotkey` crate lands in M7 — M2 only needs the
-//! boolean "is this a plausible hotkey" check for `validate_hotkey` and for
-//! the hotkey field of `update_settings`.
+//! Keeps validation independent from the platform hotkey plugin. It provides
+//! the boolean "is this a plausible hotkey" check used by `validate_hotkey`
+//! and the hotkey field of `update_settings`.
 //!
-//! Semantics (matching the original): split on `+`, each part is a modifier
+//! Semantics: split on `+`, each part is a modifier
 //! alias or a key name. The shortcut is valid iff it has at least one
 //! modifier AND the *last* key-typed part is a recognized key. So
 //! `Ctrl+V` ✅, `V` ❌ (no modifier), `Ctrl+DefinitelyNotAKey` ❌,

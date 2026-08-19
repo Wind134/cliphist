@@ -6,9 +6,8 @@ use std::sync::mpsc;
 use std::sync::{Arc, OnceLock};
 
 /// Process-wide engine state. Owned once via [`STATE`] and reached through
-/// [`st()`], replacing Tauri's managed `tauri::State`. Holding the fields
-/// behind `Arc<Mutex<..>>` lets the background tasks share them with the
-/// (later) Flutter-side commands without re-fetching the global.
+/// [`st()`]. Holding the fields behind `Arc<Mutex<..>>` lets the background
+/// tasks share them with Flutter-side commands without re-fetching the global.
 pub struct AppState {
     pub history: Arc<Mutex<Vec<ClipboardItem>>>,
     pub counter: Arc<Mutex<usize>>,
@@ -46,7 +45,6 @@ pub fn st() -> &'static AppState {
 
 /// Internal: request the "pop to top" window-action dance. Feeds the resident
 /// worker, which emits a `WindowActionKind::ShowAndRaise` event for Dart.
-/// M3 wires hotkey / tray / double-tap triggers here.
 pub fn request_window_action() {
     // A permanent FRB StreamSink proved unreliable for window wake events on
     // Windows: the native hook detected the double-tap, but Dart sometimes

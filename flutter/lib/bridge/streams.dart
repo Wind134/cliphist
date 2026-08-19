@@ -11,8 +11,7 @@ import '../util/image_cache.dart';
 /// returned subscriptions are cancelled on quit.
 ///
 ///  - `clipboardChanged`: top-5 snapshot after a new entry is recorded. Merge
-///    by id (new items win, duplicates deduped) and cap at 500 — faithful to
-///    the old Svelte merge.
+///    by id (new items win, duplicates deduped) and cap at 500.
 ///  - `historyReplace`: full snapshot pushed by the retention sweep / clear.
 ///    Swap wholesale and drop the image cache (ids may be stale).
 ///  - `itemMovedToTop`: one id floated to the front (quick-paste path).

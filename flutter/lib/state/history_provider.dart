@@ -5,15 +5,14 @@ import '../src/rust/core/clipboard_engine.dart' show ClipboardItem;
 
 /// Full in-memory history. Seeded synchronously from [api_history.getHistory]
 /// (the Rust core already loaded `history.json` during `initAppState`); the
-/// three clipboard streams merge / replace / reorder it afterwards. Mirrors the
-/// old Svelte `history` store.
+/// three clipboard streams merge / replace / reorder it afterwards.
 final historyProvider = StateProvider<List<ClipboardItem>>(
   (ref) => api_history.getHistory(),
 );
 
 /// Index into [filteredHistoryProvider] of the highlighted row, or -1.
-/// Reset to -1 when the search query or category changes (matches the old
-/// Svelte behavior where refiltering invalidates the selection).
+/// Reset to -1 when the search query or category changes because refiltering
+/// invalidates the current row selection.
 final selectedIndexProvider = StateProvider<int>((ref) => -1);
 
 /// Live search-box text.

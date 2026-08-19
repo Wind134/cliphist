@@ -5,8 +5,8 @@ import '../src/rust/api/history.dart' as api_history;
 /// Tiny LRU image cache. The Rust core stores images as external PNGs and only
 /// hands back raw bytes on demand ([api_history.getImageData]); we memoize the
 /// decode bytes per item id so scrolling/re-clicking does not re-cross the FFI
-/// boundary. Replaces the old Svelte-side base64 LRU (`src/stores/clipboard.ts`)
-/// — images are now raw `Uint8List`, never data URLs.
+/// boundary. Images stay as raw `Uint8List` values and are never converted to
+/// data URLs.
 const int _kMaxEntries = 50;
 
 final Map<BigInt, Uint8List> _cache = {};

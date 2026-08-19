@@ -19,12 +19,10 @@ import 'status_bar.dart';
 import 'theme.dart';
 
 /// Full history screen (search + category tabs + list + empty states +
-/// keyboard nav), ported from `src/lib/history-list.svelte` and redesigned
-/// with a modern chrome: the search field carries the clear/settings
-/// actions (the old separate toolbar + the app-level top bar were redundant
-/// with the OS title bar).
+/// keyboard navigation). The search field also carries the clear/settings
+/// actions so the layout stays compact alongside the OS title bar.
 ///
-/// Keyboard model (faithful to the Svelte version):
+/// Keyboard model:
 ///  - When the search box is focused: ↑/↓ move selection, Enter copies the
 ///    selected row, Escape blurs the search box (does NOT hide the app).
 ///  - When the search box is NOT focused: digits 1-9 quick-paste the nth row.

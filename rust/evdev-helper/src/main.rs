@@ -11,9 +11,8 @@
 //! `b'S'`/`b'F'` success acknowledgement. When the socket closes, the helper
 //! exits cleanly.
 //!
-//! Ported verbatim from `src-tauri/src/evdev_helper.rs`; the only change is
-//! standing alone (own arg parsing, inline `DoubleTapState`) instead of
-//! re-entering the main binary behind a `--evdev-helper` flag (plan 3.1).
+//! It is a standalone binary with its own argument parsing and inline
+//! `DoubleTapState`, keeping privileged input access outside the main process.
 
 use std::fs::{self, File};
 use std::io::{Read, Write};
