@@ -14,168 +14,250 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  ubuntu:
+  # Block the build matrix until the generated FRB bindings are in sync.
+  frb-codegen-check:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        # Pinned to the Flutter version used to generate + validate the FRB
+        # bindings locally. The codegen runs `dart format` on its output, and
+        # import grouping drifted between Dart SDK versions — the frb-codegen-check
+        # diff gate must compare against the same formatter.
         with:
-          node-version: 24
-
-      - name: Install system dependencies
+          channel: stable
+          flutter-version: 3.44.9
+          cache: true
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install flutter_rust_bridge_codegen 2.12.0
+        run: cargo install flutter_rust_bridge_codegen --version 2.12.0 --locked
+      - name: Install Linux build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev libgtk-3-dev libayatana-appindicator3-dev libevdev-dev
+          sudo apt-get install -y libgtk-3-dev libevdev-dev libudev-dev libxi-dev libxtst-dev libayatana-appindicator3-dev
+      - name: Regenerate FRB bindings
+        working-directory: flutter
+        run: flutter_rust_bridge_codegen generate
+      - name: Verify generated files are in sync
+        run: git diff --exit-code
+
+  build-linux:
+    needs: frb-codegen-check
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        # Pinned to the Flutter version used to generate + validate the FRB
+        # bindings locally. The codegen runs `dart format` on its output, and
+        # import grouping drifted between Dart SDK versions — the frb-codegen-check
+        # diff gate must compare against the same formatter.
+        with:
+          channel: stable
+          flutter-version: 3.44.9
+          cache: true
 
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: './src-tauri -> target'
-          shared-key: ubuntu
+          workspaces: 'flutter/rust -> target'
+          shared-key: linux
+
+      - name: Install Linux build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libevdev-dev libudev-dev libxi-dev libxtst-dev libayatana-appindicator3-dev libkeybinder-3.0-dev librsvg2-dev desktop-file-utils
 
       - name: Set version from tag
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
-          sed -i 's/^version = ".*"/version = "'"$VERSION"'"/' src-tauri/Cargo.toml
-          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" package.json
+          sed -i "s/^version: .*/version: $VERSION+${{ github.run_number }}/" flutter/pubspec.yaml
 
-      - run: npm ci
-      - run: npm run tauri build
+      - name: Build evdev helper (release)
+        working-directory: rust/evdev-helper
+        run: cargo build --release --locked
 
+      - name: Install fastforge
+        run: dart pub global activate fastforge 0.6.12
+
+      # The appimage maker invokes `appimagetool` from PATH (no auto-download).
+      # GitHub runners have no FUSE, so extract the AppImage and use the inner
+      # binary directly. appimagetool shells out to `mksquashfs`, which it
+      # locates at <bindir>/../lib/appimagekit/mksquashfs — so copy the binary
+      # to /usr/local/bin and the appimagekit/ subdir to /usr/local/lib/.
+      # Copying the whole extracted usr/ tree is wrong: it also dumps the
+      # AppImage's bundled libstdc++/libgcc_s into /usr/local/lib (a standard
+      # linker path), which the `flutter build linux` link then picks up and
+      # fails with "clang: error: linker command failed with exit code 1".
+      - name: Install appimagetool
+        run: |
+          cd /tmp
+          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool.AppImage
+          chmod +x appimagetool.AppImage
+          ./appimagetool.AppImage --appimage-extract >/dev/null
+          sudo cp squashfs-root/usr/bin/appimagetool /usr/local/bin/
+          sudo mkdir -p /usr/local/lib/appimagekit
+          sudo cp squashfs-root/usr/lib/appimagekit/* /usr/local/lib/appimagekit/
+          test -x /usr/local/bin/appimagetool && test -x /usr/local/lib/appimagekit/mksquashfs
+
+      # --hook-pre runs after `flutter build` and before the makers, so the
+      # privileged helper + polkit policy get packed into the bundle (they land
+      # in /opt/cliphist/ of the deb; the deb postinstall moves the policy to
+      # /usr/share/polkit-1/actions/). The AppImage ignores them (see
+      # linux/packaging/appimage/make_config.yaml).
+      - name: Build Linux packages
+        working-directory: flutter
+        run: |
+          dart pub global run fastforge:main package --platform linux --targets deb,appimage \
+            --artifact-name '{{name}}-{{build_name}}-linux.{{ext}}' \
+            --hook-pre 'cp ../rust/evdev-helper/target/release/cliphist-evdev-helper build/linux/x64/release/bundle/ && cp assets/polkit/com.ping.cliphist.policy build/linux/x64/release/bundle/'
       - name: Upload deb
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: cliphist-linux-amd64-deb
-          path: src-tauri/target/release/bundle/deb/*.deb
+          path: flutter/dist/**/*.deb
           retention-days: 5
-
       - name: Upload AppImage
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: cliphist-linux-amd64-appimage
-          path: src-tauri/target/release/bundle/appimage/*.AppImage
+          path: flutter/dist/**/*.AppImage
           retention-days: 5
 
-  windows:
+  build-windows:
+    needs: frb-codegen-check
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        # Pinned to the Flutter version used to generate + validate the FRB
+        # bindings locally. The codegen runs `dart format` on its output, and
+        # import grouping drifted between Dart SDK versions — the frb-codegen-check
+        # diff gate must compare against the same formatter.
         with:
-          node-version: 24
-
+          channel: stable
+          flutter-version: 3.44.9
+          cache: true
       - uses: dtolnay/rust-toolchain@stable
-
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: './src-tauri -> target'
+          workspaces: 'flutter/rust -> target'
           shared-key: windows
-
       - name: Set version from tag
         shell: bash
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
-          sed -i 's/^version = ".*"/version = "'"$VERSION"'"/' src-tauri/Cargo.toml
-          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" package.json
-
-      - run: npm ci
-      - run: npm run tauri build
-
-      - name: Upload NSIS
-        uses: actions/upload-artifact@v7
+          sed -i "s/^version: .*/version: $VERSION+${{ github.run_number }}/" flutter/pubspec.yaml
+          sed -i "s/^  msix_version: .*/  msix_version: $VERSION.${{ github.run_number }}/" flutter/pubspec.yaml
+          sed -i "s/^msix_version: .*/msix_version: $VERSION.${{ github.run_number }}/" flutter/windows/packaging/msix/make_config.yaml
+      - name: Install fastforge
+        run: dart pub global activate fastforge 0.6.12
+      # The exe maker needs Inno Setup 6 (ISCC.exe) — it does not auto-install.
+      - name: Install Inno Setup 6
+        run: choco install innosetup --yes --no-progress
+      # Diagnostic: build the Rust cdylib directly so any cargo compile/link
+      # error is streamed to this log. Cargokit (invoked by `flutter build
+      # windows` below) runs cargo via Process.runSync, which captures
+      # stdout/stderr and only re-emits it on failure via a Dart log.severe —
+      # but MSBuild's VS-generator custom-build step redirects that to a
+      # build log the runner never surfaces, so a Cargokit cargo failure shows
+      # only as a context-free MSB8066 "exited with code -1". Building here
+      # with the host target (x86_64-pc-windows-msvc, same as Cargokit's
+      # windows-x64) reproduces the compile faithfully; cargo writes errors to
+      # stderr which Actions captures. If this step is green but the fastforge
+      # step still fails, the problem is Cargokit plumbing, not the Rust code.
+      - name: Build Rust library (surfaces cargo errors Cargokit hides)
+        working-directory: flutter/rust
+        run: cargo build --release
+      - name: Build Windows packages
+        working-directory: flutter
+        run: |
+          dart pub global run fastforge:main package --platform windows --targets exe,msix
+      - name: Upload NSIS setup
+        uses: actions/upload-artifact@v4
         with:
           name: cliphist-windows-x64-setup
-          path: src-tauri/target/release/bundle/nsis/*.exe
+          path: flutter/dist/**/*.exe
           retention-days: 5
-
-      - name: Upload MSI
-        uses: actions/upload-artifact@v7
+      - name: Upload MSIX
+        uses: actions/upload-artifact@v4
         with:
-          name: cliphist-windows-x64-msi
-          path: src-tauri/target/release/bundle/msi/*.msi
+          name: cliphist-windows-x64-msix
+          path: flutter/dist/**/*.msix
           retention-days: 5
 
-  macos:
+  build-macos:
+    needs: frb-codegen-check
     runs-on: macos-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: aarch64-apple-darwin
-            suffix: macos-arm64
-          - target: x86_64-apple-darwin
-            suffix: macos-x64
     steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        # Pinned to the Flutter version used to generate + validate the FRB
+        # bindings locally. The codegen runs `dart format` on its output, and
+        # import grouping drifted between Dart SDK versions — the frb-codegen-check
+        # diff gate must compare against the same formatter.
         with:
-          node-version: 24
-
+          channel: stable
+          flutter-version: 3.44.9
+          cache: true
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: './src-tauri -> target'
-          shared-key: macos-${{ matrix.target }}
-
+          workspaces: 'flutter/rust -> target'
+          shared-key: macos
       - name: Set version from tag
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          sed -i '' 's/"version": "[^"]*"/"version": "'"$VERSION"'"/' src-tauri/tauri.conf.json
-          sed -i '' 's/^version = ".*"/version = "'"$VERSION"'"/' src-tauri/Cargo.toml
-          sed -i '' 's/"version": "[^"]*"/"version": "'"$VERSION"'"/' package.json
-
-      - run: npm ci
-      - run: npm run tauri build -- --target ${{ matrix.target }}
-
+          sed -i '' 's/^version: .*/version: '"$VERSION"'+${{ github.run_number }}/' flutter/pubspec.yaml
+      - name: Install fastforge
+        run: dart pub global activate fastforge 0.6.12
+      # The dmg maker requires `appdmg` and auto-installs it via `pnpm`, which
+      # is not on the macos runner — pre-install with npm so the requirement
+      # check passes.
+      - name: Install appdmg
+        run: npm install -g appdmg
+      # Native arch only (macos-latest = arm64). An x86_64 dmg would need a
+      # full x64 cross toolchain (Rust + Flutter) — tracked as a follow-up.
+      - name: Build macOS dmg
+        working-directory: flutter
+        run: |
+          dart pub global run fastforge:main package --platform macos --targets dmg
       - name: Upload DMG
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
-          name: cliphist-${{ matrix.suffix }}
-          path: src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+          name: cliphist-macos-arm64
+          path: flutter/dist/**/*.dmg
           retention-days: 5
 
   checksums:
-    needs: [ubuntu, windows, macos]
+    needs: [build-linux, build-windows, build-macos]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v4
         with:
           path: artifacts
-
       - name: Generate SHA256 checksums
         run: |
           cd artifacts
           find . -type f -not -name '*.sha256' -exec sha256sum {} \; | sort > checksums.sha256
-
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v4
         with:
           name: checksums
           path: artifacts/checksums.sha256
           retention-days: 5
 
   release:
-    needs: [ubuntu, windows, macos, checksums]
+    needs: [build-linux, build-windows, build-macos, checksums]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/download-artifact@v8
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
           path: artifacts
-
       - name: Generate release notes
         run: |
           git log --oneline --no-decorate $(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || git rev-list --max-parents=0 HEAD)..HEAD > changelog.txt
-
       - name: Create Release
         uses: softprops/action-gh-release@v3
         with:

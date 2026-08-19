@@ -1,0 +1,4 @@
+# fastforge distribute options. `output` is where packaged artifacts land
+# (per-version subfolder). Kept minimal — jobs are driven by the release CI
+# via `fastforge package --platform <os> --targets <list>`.
+output: dist/

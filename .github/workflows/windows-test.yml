@@ -1,0 +1,113 @@
+name: Windows Test Package
+
+on:
+  push:
+    branches:
+      - feat/flutter-rust-migration
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.44.9
+          cache: true
+
+      - name: Set test package version
+        shell: bash
+        run: >-
+          sed -i
+          "s/^version: .*/version: 2.0.8+${{ github.run_number }}/"
+          flutter/pubspec.yaml
+
+      - name: Install Fastforge
+        run: dart pub global activate fastforge 0.6.12
+
+      - name: Install Inno Setup 6
+        run: choco install innosetup --yes --no-progress
+
+      # Build the native library separately so Rust diagnostics remain visible
+      # if Cargokit's MSBuild integration fails later in the Flutter build.
+      - name: Verify runner Rust toolchain
+        run: |
+          rustc --version
+          cargo --version
+
+      - name: Build Rust library
+        working-directory: flutter/rust
+        run: cargo build --release --locked
+
+      - name: Build Windows EXE installer
+        working-directory: flutter
+        run: |
+          dart pub global run fastforge:main package `
+            --platform windows `
+            --targets exe `
+            --skip-clean `
+            --artifact-name 'cliphist-{{build_name}}-windows-x64-setup.{{ext}}'
+
+      - name: Generate installer checksum
+        shell: pwsh
+        run: |
+          $installers = @(Get-ChildItem 'flutter/dist' -Filter '*-setup.exe' -Recurse)
+          if ($installers.Count -ne 1) {
+            throw "Expected exactly one EXE installer, found $($installers.Count)"
+          }
+
+          $installer = $installers[0]
+          $checksum = "$($installer.FullName).sha256"
+          $hash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $($installer.Name)" | Set-Content -Path $checksum -Encoding ascii
+
+          Get-Item $installer.FullName | Select-Object FullName, Length
+          Get-Content $checksum
+
+      - name: Create portable test package
+        shell: pwsh
+        run: |
+          $bundle = 'flutter/build/windows/x64/runner/Release'
+          $output = 'artifacts'
+          $zip = Join-Path $output 'cliphist-2.0.8-windows-x64-test.zip'
+          $checksum = "$zip.sha256"
+
+          if (-not (Test-Path (Join-Path $bundle 'cliphist.exe'))) {
+            throw "Windows release bundle was not produced at $bundle"
+          }
+
+          New-Item -ItemType Directory -Path $output -Force | Out-Null
+          Compress-Archive -Path "$bundle/*" -DestinationPath $zip -CompressionLevel Optimal
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $(Split-Path $zip -Leaf)" | Set-Content -Path $checksum -Encoding ascii
+
+          Get-ChildItem $bundle -Recurse | Select-Object FullName, Length
+          Get-Content $checksum
+
+      - name: Upload Windows test package
+        uses: actions/upload-artifact@v4
+        with:
+          name: cliphist-2.0.8-windows-x64-test
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload Windows EXE installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: cliphist-2.0.8-windows-x64-setup
+          path: |
+            flutter/dist/**/*-setup.exe
+            flutter/dist/**/*-setup.exe.sha256
+          if-no-files-found: error
+          retention-days: 7

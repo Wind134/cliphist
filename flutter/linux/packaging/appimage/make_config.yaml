@@ -1,0 +1,25 @@
+# AppImage config for `fastforge package --platform linux --targets appimage`.
+#
+# Note: the AppImage is self-contained and the double-tap helper / polkit
+# policy are NOT bundled here (the maker only supports bundling shared
+# libraries via `include`). Double-tap + paste injection on Linux therefore
+# requires the deb / PKGBUILD install, which places `cliphist-evdev-helper`
+# at a stable absolute path. When missing, the app still works — the helper
+# status shows "未连接" and the UI points to the package install.
+display_name: ClipHist
+
+icon: assets/icon/app.png
+
+keywords:
+  - clipboard
+  - history
+  - manager
+
+generic_name: Clipboard History Manager
+
+categories:
+  - Utility
+
+startup_notify: true
+
+include: []

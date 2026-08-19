@@ -14,15 +14,58 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  quality:
+  # Regenerate the FRB bindings and fail if they are not committed in sync.
+  # Catches the classic "edited generated files / stale codegen" drift.
+  frb-codegen-check:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: subosito/flutter-action@v2
+        # Pinned to the Flutter used to generate the FRB bindings locally — the
+        # codegen's `dart format` import grouping differs across Dart versions,
+        # and the diff gate must compare against the same formatter.
         with:
-          node-version: 22
-          cache: npm
+          channel: stable
+          flutter-version: 3.44.9
+          cache: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install flutter_rust_bridge_codegen 2.12.0
+        run: cargo install flutter_rust_bridge_codegen --version 2.12.0 --locked
+
+      - name: Install Linux build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libevdev-dev libudev-dev libxi-dev libxtst-dev libayatana-appindicator3-dev
+
+      - name: Regenerate FRB bindings
+        working-directory: flutter
+        run: flutter_rust_bridge_codegen generate
+
+      - name: Verify generated files are in sync
+        run: git diff --exit-code
+
+  # Three-platform quality matrix for the new Flutter + Rust core stack.
+  quality:
+    needs: frb-codegen-check
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        # Pinned to the Flutter used to generate the FRB bindings locally — the
+        # codegen's `dart format` import grouping differs across Dart versions,
+        # and the diff gate must compare against the same formatter.
+        with:
+          channel: stable
+          flutter-version: 3.44.9
+          cache: true
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -30,15 +73,38 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: './src-tauri -> target'
+          workspaces: 'flutter/rust -> target'
 
-      - name: Install Linux dependencies
+      - name: Install Linux build deps
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev libgtk-3-dev libayatana-appindicator3-dev libevdev-dev
+          sudo apt-get install -y libgtk-3-dev libevdev-dev libudev-dev libxi-dev libxtst-dev libayatana-appindicator3-dev
 
-      - run: npm ci
-      - run: npm run build
-      - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
-      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-      - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: flutter analyze
+        working-directory: flutter
+        run: flutter analyze
+
+      - name: flutter test
+        working-directory: flutter
+        run: flutter test
+
+      - name: cargo fmt
+        working-directory: flutter/rust
+        run: cargo fmt -- --check
+
+      - name: cargo clippy
+        working-directory: flutter/rust
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: cargo test
+        working-directory: flutter/rust
+        run: cargo test --locked
+
+      - name: Build evdev helper (Linux only)
+        if: runner.os == 'Linux'
+        working-directory: rust/evdev-helper
+        run: |
+          cargo fmt -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
