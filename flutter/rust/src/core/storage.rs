@@ -185,8 +185,8 @@ fn replace_file(source: &Path, target: &Path) -> Result<(), String> {
         .map_err(|e| format!("Failed to atomically replace {target:?}: {e}"))
 }
 
+#[cfg(unix)]
 fn sync_parent(path: &Path) -> Result<(), String> {
-    #[cfg(unix)]
     if let Some(parent) = path.parent() {
         let directory = File::open(parent)
             .map_err(|e| format!("Failed to open parent directory {parent:?}: {e}"))?;
@@ -194,6 +194,11 @@ fn sync_parent(path: &Path) -> Result<(), String> {
             .sync_all()
             .map_err(|e| format!("Failed to sync parent directory {parent:?}: {e}"))?;
     }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn sync_parent(_path: &Path) -> Result<(), String> {
     Ok(())
 }
 
