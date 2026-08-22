@@ -11,21 +11,10 @@ use crate::core::clipboard_engine::ClipboardItem;
 use crate::frb_generated::StreamSink;
 use parking_lot::Mutex;
 
-/// A window-action request pushed to Dart. The Rust core owns no window
-/// handle, so the actual always-on-top restack dance runs in
-/// Dart via `window_manager` — this enum is the trigger.
-#[derive(Clone)]
-pub enum WindowActionKind {
-    /// Pin on top, hide, show + focus, then release always-on-top. The full
-    /// dance sequence is implemented in the Dart listener.
-    ShowAndRaise,
-}
-
 static CLIPBOARD_CHANGED_SINK: Mutex<Option<StreamSink<Vec<ClipboardItem>>>> = Mutex::new(None);
 static HISTORY_REPLACE_SINK: Mutex<Option<StreamSink<Vec<ClipboardItem>>>> = Mutex::new(None);
 static ITEM_MOVED_TO_TOP_SINK: Mutex<Option<StreamSink<usize>>> = Mutex::new(None);
 static HELPER_STATUS_SINK: Mutex<Option<StreamSink<bool>>> = Mutex::new(None);
-static WINDOW_ACTION_SINK: Mutex<Option<StreamSink<WindowActionKind>>> = Mutex::new(None);
 
 pub(crate) fn register_clipboard_changed(sink: StreamSink<Vec<ClipboardItem>>) {
     *CLIPBOARD_CHANGED_SINK.lock() = Some(sink);
@@ -38,9 +27,6 @@ pub(crate) fn register_item_moved_to_top(sink: StreamSink<usize>) {
 }
 pub(crate) fn register_helper_status(sink: StreamSink<bool>) {
     *HELPER_STATUS_SINK.lock() = Some(sink);
-}
-pub(crate) fn register_window_action(sink: StreamSink<WindowActionKind>) {
-    *WINDOW_ACTION_SINK.lock() = Some(sink);
 }
 
 /// Top-5 snapshot after a new item is recorded (incremental update).
@@ -65,17 +51,10 @@ pub(crate) fn emit_item_moved_to_top(id: usize) {
     }
 }
 
-/// Whether the privileged evdev helper is currently authorized/connected
-/// (Linux double-tap indicator).
+/// Whether the platform double-tap listener is currently available. On Linux
+/// this is the privileged evdev helper connection.
 pub(crate) fn emit_helper_status(connected: bool) {
     if let Some(sink) = HELPER_STATUS_SINK.lock().as_ref() {
         let _ = sink.add(connected);
-    }
-}
-
-/// Request the window-action dance be performed on the Dart side.
-pub(crate) fn emit_window_action(kind: WindowActionKind) {
-    if let Some(sink) = WINDOW_ACTION_SINK.lock().as_ref() {
-        let _ = sink.add(kind);
     }
 }

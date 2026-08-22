@@ -1,4 +1,9 @@
 pub const MAX_HISTORY: usize = 500;
 pub const MAX_IMAGE_SIZE: usize = 10 * 1024 * 1024; // 10MB
+pub const MAX_IMAGE_FILE_SIZE: u64 = 12 * 1024 * 1024; // PNG overhead allowance
+pub const MAX_TEXT_SIZE: usize = 2 * 1024 * 1024; // 2 MiB UTF-8
+pub const MAX_HTML_SIZE: usize = 4 * 1024 * 1024; // 4 MiB UTF-8
+pub const MAX_HISTORY_PAYLOAD_SIZE: usize = 16 * 1024 * 1024; // excludes image files
+pub const MAX_HISTORY_FILE_SIZE: u64 = 24 * 1024 * 1024;
 pub const MIN_ZOOM_LEVEL: f32 = 0.5;
 pub const MAX_ZOOM_LEVEL: f32 = 2.0;

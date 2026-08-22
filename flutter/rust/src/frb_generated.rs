@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 322327816;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 742015412;
 
 // Section: executor
 
@@ -177,16 +177,15 @@ fn wire__crate__api__history__delete_item_impl(
     )
 }
 fn wire__crate__api__clipboard__fe_log_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
     data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
             debug_name: "fe_log",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
         },
         move || {
             let message = unsafe {
@@ -200,14 +199,12 @@ fn wire__crate__api__clipboard__fe_log_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_message = <String>::sse_decode(&mut deserializer);
             deserializer.end();
-            move |context| {
-                transform_result_sse::<_, ()>((move || {
-                    let output_ok = Result::<_, ()>::Ok({
-                        crate::api::clipboard::fe_log(api_message);
-                    })?;
-                    Ok(output_ok)
-                })())
-            }
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Result::<_, ()>::Ok({
+                    crate::api::clipboard::fe_log(api_message);
+                })?;
+                Ok(output_ok)
+            })())
         },
     )
 }
@@ -578,42 +575,6 @@ fn wire__crate__api__stream__stream_item_moved_to_top_impl(
         },
     )
 }
-fn wire__crate__api__stream__stream_window_action_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "stream_window_action",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_sink = <StreamSink<
-                crate::core::events::WindowActionKind,
-                flutter_rust_bridge::for_generated::SseCodec,
-            >>::sse_decode(&mut deserializer);
-            deserializer.end();
-            move |context| {
-                transform_result_sse::<_, String>((move || {
-                    let output_ok = crate::api::stream::stream_window_action(api_sink)?;
-                    Ok(output_ok)
-                })())
-            }
-        },
-    )
-}
 fn wire__crate__api__stream__take_pending_window_action_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -749,19 +710,6 @@ impl SseDecode for StreamSink<usize, flutter_rust_bridge::for_generated::SseCode
     }
 }
 
-impl SseDecode
-    for StreamSink<
-        crate::core::events::WindowActionKind,
-        flutter_rust_bridge::for_generated::SseCodec,
-    >
-{
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut inner = <String>::sse_decode(deserializer);
-        return StreamSink::deserialize(inner);
-    }
-}
-
 impl SseDecode for String {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -790,6 +738,7 @@ impl SseDecode for crate::core::clipboard_engine::ClipboardItem {
         let mut var_imageWidth = <Option<u32>>::sse_decode(deserializer);
         let mut var_imageHeight = <Option<u32>>::sse_decode(deserializer);
         let mut var_htmlContent = <Option<String>>::sse_decode(deserializer);
+        let mut var_contentHash = <Option<String>>::sse_decode(deserializer);
         return crate::core::clipboard_engine::ClipboardItem {
             id: var_id,
             content: var_content,
@@ -801,6 +750,7 @@ impl SseDecode for crate::core::clipboard_engine::ClipboardItem {
             image_width: var_imageWidth,
             image_height: var_imageHeight,
             html_content: var_htmlContent,
+            content_hash: var_contentHash,
         };
     }
 }
@@ -809,13 +759,6 @@ impl SseDecode for f32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         deserializer.cursor.read_f32::<NativeEndian>().unwrap()
-    }
-}
-
-impl SseDecode for i32 {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        deserializer.cursor.read_i32::<NativeEndian>().unwrap()
     }
 }
 
@@ -994,14 +937,10 @@ impl SseDecode for usize {
     }
 }
 
-impl SseDecode for crate::core::events::WindowActionKind {
+impl SseDecode for i32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut inner = <i32>::sse_decode(deserializer);
-        return match inner {
-            0 => crate::core::events::WindowActionKind::ShowAndRaise,
-            _ => unreachable!("Invalid variant for WindowActionKind: {}", inner),
-        };
+        deserializer.cursor.read_i32::<NativeEndian>().unwrap()
     }
 }
 
@@ -1018,7 +957,6 @@ fn pde_ffi_dispatcher_primary_impl(
         2 => wire__crate__api__history__clear_history_impl(port, ptr, rust_vec_len, data_len),
         3 => wire__crate__api__clipboard__copy_to_clipboard_impl(port, ptr, rust_vec_len, data_len),
         4 => wire__crate__api__history__delete_item_impl(port, ptr, rust_vec_len, data_len),
-        5 => wire__crate__api__clipboard__fe_log_impl(port, ptr, rust_vec_len, data_len),
         7 => wire__crate__api__history__get_image_data_impl(port, ptr, rust_vec_len, data_len),
         9 => wire__crate__api__init__init_app_impl(port, ptr, rust_vec_len, data_len),
         10 => wire__crate__api__init__init_app_state_impl(port, ptr, rust_vec_len, data_len),
@@ -1044,10 +982,7 @@ fn pde_ffi_dispatcher_primary_impl(
             rust_vec_len,
             data_len,
         ),
-        17 => {
-            wire__crate__api__stream__stream_window_action_impl(port, ptr, rust_vec_len, data_len)
-        }
-        19 => wire__crate__api__settings__update_settings_impl(port, ptr, rust_vec_len, data_len),
+        18 => wire__crate__api__settings__update_settings_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1060,12 +995,13 @@ fn pde_ffi_dispatcher_sync_impl(
 ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
+        5 => wire__crate__api__clipboard__fe_log_impl(ptr, rust_vec_len, data_len),
         6 => wire__crate__api__history__get_history_impl(ptr, rust_vec_len, data_len),
         8 => wire__crate__api__settings__get_settings_impl(ptr, rust_vec_len, data_len),
-        18 => {
+        17 => {
             wire__crate__api__stream__take_pending_window_action_impl(ptr, rust_vec_len, data_len)
         }
-        20 => wire__crate__api__settings__validate_hotkey_impl(ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__settings__validate_hotkey_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1086,6 +1022,7 @@ impl flutter_rust_bridge::IntoDart for crate::core::clipboard_engine::ClipboardI
             self.image_width.into_into_dart().into_dart(),
             self.image_height.into_into_dart().into_dart(),
             self.html_content.into_into_dart().into_dart(),
+            self.content_hash.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -1180,26 +1117,6 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::init::SingleInstanceResult>
         self
     }
 }
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::core::events::WindowActionKind {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        match self {
-            Self::ShowAndRaise => 0.into_dart(),
-            _ => unreachable!(),
-        }
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::core::events::WindowActionKind
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::core::events::WindowActionKind>
-    for crate::core::events::WindowActionKind
-{
-    fn into_into_dart(self) -> crate::core::events::WindowActionKind {
-        self
-    }
-}
 
 impl SseEncode for flutter_rust_bridge::for_generated::anyhow::Error {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -1234,18 +1151,6 @@ impl SseEncode for StreamSink<usize, flutter_rust_bridge::for_generated::SseCode
     }
 }
 
-impl SseEncode
-    for StreamSink<
-        crate::core::events::WindowActionKind,
-        flutter_rust_bridge::for_generated::SseCodec,
-    >
-{
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        unimplemented!("")
-    }
-}
-
 impl SseEncode for String {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -1273,6 +1178,7 @@ impl SseEncode for crate::core::clipboard_engine::ClipboardItem {
         <Option<u32>>::sse_encode(self.image_width, serializer);
         <Option<u32>>::sse_encode(self.image_height, serializer);
         <Option<String>>::sse_encode(self.html_content, serializer);
+        <Option<String>>::sse_encode(self.content_hash, serializer);
     }
 }
 
@@ -1280,13 +1186,6 @@ impl SseEncode for f32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         serializer.cursor.write_f32::<NativeEndian>(self).unwrap();
-    }
-}
-
-impl SseEncode for i32 {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        serializer.cursor.write_i32::<NativeEndian>(self).unwrap();
     }
 }
 
@@ -1429,18 +1328,10 @@ impl SseEncode for usize {
     }
 }
 
-impl SseEncode for crate::core::events::WindowActionKind {
+impl SseEncode for i32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i32>::sse_encode(
-            match self {
-                crate::core::events::WindowActionKind::ShowAndRaise => 0,
-                _ => {
-                    unimplemented!("");
-                }
-            },
-            serializer,
-        );
+        serializer.cursor.write_i32::<NativeEndian>(self).unwrap();
     }
 }
 

@@ -54,7 +54,7 @@ Rust API ── Rust Core ── history.json / images / settings.json
 
 - `api/` 定义 FRB 公开边界：初始化、历史读写、剪贴板操作、设置更新和事件流。
 - `core/state.rs` 持有进程内唯一状态；历史、设置和窗口唤醒请求都通过该状态协调。
-- 四个常驻任务负责 500ms 剪贴板轮询、窗口动作转发、Linux helper 状态监控和过期历史清理。
+- 三个常驻任务负责 500ms 剪贴板轮询、Linux helper 状态监控和过期历史清理；窗口唤醒通过原子合并标记交给 Flutter UI isolate。
 - 文本和图片按内容去重；图片保存为独立 PNG，UI 仅在需要显示时读取字节。
 
 ## 关键流程
@@ -79,10 +79,11 @@ Rust API ── Rust Core ── history.json / images / settings.json
 
 ## 数据与安全
 
-- 历史：`history.json`
+- 历史：`history.json`（保留上一版 `.bak`，损坏时隔离并恢复）
 - 图片：`images/<id>.png`
-- 设置：`settings.json`
-- 日志：`cliphist.log`
+- 设置：`settings.json`（支持缺字段迁移、集中校验和备份恢复）
+- 日志：`cliphist.log`（5 MiB 轮转）
+- 数据目录与文件在 Unix 上分别固定为 `0700` / `0600`；JSON 和图片均使用同步临时文件后原子替换。
 - 富文本在持久化前使用 `ammonia` 清理。
 - 更新检查只请求 GitHub Releases API，不上传剪贴板数据。
 
@@ -105,4 +106,4 @@ cargo clippy --all-targets -- -D warnings
 cargo test
 ```
 
-CI 会重新生成 FRB 绑定并检查工作树无差异，然后在 Linux、Windows 和 macOS 构建发布产物。
+CI 会重新生成 FRB 绑定并检查工作树无差异，执行严格 Flutter 分析、Rust Clippy、测试和 RustSec 审计；发布标签必须通过同一套三平台门禁后才会构建产物。

@@ -38,6 +38,12 @@ cd rust
 cargo fmt -- --check
 cargo clippy --all-targets -- -D warnings
 cargo test
+
+# Linux 特权辅助进程
+cd ../../rust/evdev-helper
+cargo fmt -- --check
+cargo clippy --all-targets -- -D warnings
+cargo test
 ```
 
 ## 技术架构
@@ -66,3 +72,11 @@ cargo test
 - Linux X11 直接支持全局快捷键；Wayland 请在桌面环境中将系统快捷键绑定到 `cliphist --toggle-window`。
 - Linux 的双击修饰键和自动粘贴依赖 evdev helper，安装 `.deb` 或 AUR 包后首次使用会弹出授权提示；AppImage 不包含该权限组件。
 - macOS 上双击键监听和自动粘贴需要在“系统设置 → 隐私与安全性 → 辅助功能”中授权。
+
+## 数据安全
+
+历史和设置使用私有权限、原子替换及上一版备份；损坏 JSON 会先隔离再尝试恢复，不会静默清空。文本、HTML、图片与历史总量均有上限，日志超过 5 MiB 自动轮转。Linux 特权 helper 会校验调用用户、Socket、运行时目录和对端身份。
+
+## 许可证
+
+本项目采用 [MIT License](LICENSE)。

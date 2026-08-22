@@ -18,8 +18,8 @@ import 'src/rust/frb_generated.dart';
 ///   1. Flutter binding + window_manager init.
 ///   2. FRB `RustLib.init()` (loads the Rust cdylib).
 ///   3. `initAppState()` — load history/settings, install panic hook, spawn
-///      the four background tasks (clipboard poll / window-action worker /
-///      helper-status monitor / clean-expired).
+///      the three background tasks (clipboard poll / helper-status monitor /
+///      clean-expired). Window actions use a coalescing atomic hand-off.
 ///   4. Wire a Dart-side error sink: `FlutterError.onError` +
 ///      `runZonedGuarded` route uncaught Flutter/async errors to the Rust log
 ///      (`cliphist.log`) via `feLog`. Release builds show no red error screen,

@@ -8,18 +8,19 @@ import '../util/image_cache.dart';
 
 /// Subscribe the three history-bearing Rust streams to the Riverpod
 /// [historyProvider]. Called once from [ClipHistController.start]; the
-/// returned subscriptions are cancelled on quit.
+/// returned subscriptions remain alive until the process exits.
 ///
 ///  - `clipboardChanged`: top-5 snapshot after a new entry is recorded. Merge
 ///    by id (new items win, duplicates deduped) and cap at 500.
-///  - `historyReplace`: full snapshot pushed by the retention sweep / clear.
+///  - `historyReplace`: full snapshot pushed by deletion, retention, clear,
+///    or a capture that trims multiple tail entries.
 ///    Swap wholesale and drop the image cache (ids may be stale).
 ///  - `itemMovedToTop`: one id floated to the front (quick-paste path).
 ///    Rotate it to index 0 locally so the UI reorders before the next poll.
-List<StreamSubscription> subscribeClipboardStreams(
+List<StreamSubscription<dynamic>> subscribeClipboardStreams(
   ProviderContainer container,
 ) {
-  final subs = <StreamSubscription>[];
+  final subs = <StreamSubscription<dynamic>>[];
 
   subs.add(
     api_stream.streamClipboardChanged().listen((top5) {

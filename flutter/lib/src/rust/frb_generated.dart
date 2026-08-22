@@ -9,7 +9,6 @@ import 'api/init.dart';
 import 'api/settings.dart';
 import 'api/stream.dart';
 import 'core/clipboard_engine.dart';
-import 'core/events.dart';
 import 'core/settings_store.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -73,7 +72,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 322327816;
+  int get rustContentHash => 742015412;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -93,7 +92,7 @@ abstract class RustLibApi extends BaseApi {
 
   Future<void> crateApiHistoryDeleteItem({required BigInt id});
 
-  Future<void> crateApiClipboardFeLog({required String message});
+  void crateApiClipboardFeLog({required String message});
 
   List<ClipboardItem> crateApiHistoryGetHistory();
 
@@ -116,8 +115,6 @@ abstract class RustLibApi extends BaseApi {
   Stream<List<ClipboardItem>> crateApiStreamStreamHistoryReplace();
 
   Stream<BigInt> crateApiStreamStreamItemMovedToTop();
-
-  Stream<WindowActionKind> crateApiStreamStreamWindowAction();
 
   bool crateApiStreamTakePendingWindowAction();
 
@@ -247,18 +244,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "delete_item", argNames: ["id"]);
 
   @override
-  Future<void> crateApiClipboardFeLog({required String message}) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
+  void crateApiClipboardFeLog({required String message}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(message, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 5,
-            port: port_,
-          );
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 5)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -596,47 +588,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Stream<WindowActionKind> crateApiStreamStreamWindowAction() {
-    final sink = RustStreamSink<WindowActionKind>();
-    unawaited(
-      handler.executeNormal(
-        NormalTask(
-          callFfi: (port_) {
-            final serializer = SseSerializer(generalizedFrbRustBinding);
-            sse_encode_StreamSink_window_action_kind_Sse(sink, serializer);
-            pdeCallFfi(
-              generalizedFrbRustBinding,
-              serializer,
-              funcId: 17,
-              port: port_,
-            );
-          },
-          codec: SseCodec(
-            decodeSuccessData: sse_decode_unit,
-            decodeErrorData: sse_decode_String,
-          ),
-          constMeta: kCrateApiStreamStreamWindowActionConstMeta,
-          argValues: [sink],
-          apiImpl: this,
-        ),
-      ),
-    );
-    return sink.stream;
-  }
-
-  TaskConstMeta get kCrateApiStreamStreamWindowActionConstMeta =>
-      const TaskConstMeta(
-        debugName: "stream_window_action",
-        argNames: ["sink"],
-      );
-
-  @override
   bool crateApiStreamTakePendingWindowAction() {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 18)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 17)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bool,
@@ -667,7 +624,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 19,
+            funcId: 18,
             port: port_,
           );
         },
@@ -692,7 +649,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(hotkey, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 20)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 19)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bool,
@@ -729,14 +686,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @protected
   RustStreamSink<BigInt> dco_decode_StreamSink_usize_Sse(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    throw UnimplementedError();
-  }
-
-  @protected
-  RustStreamSink<WindowActionKind> dco_decode_StreamSink_window_action_kind_Sse(
-    dynamic raw,
-  ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     throw UnimplementedError();
   }
@@ -781,8 +730,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ClipboardItem dco_decode_clipboard_item(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 10)
-      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
+    if (arr.length != 11)
+      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
     return ClipboardItem(
       id: dco_decode_usize(arr[0]),
       content: dco_decode_String(arr[1]),
@@ -794,6 +743,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       imageWidth: dco_decode_opt_box_autoadd_u_32(arr[7]),
       imageHeight: dco_decode_opt_box_autoadd_u_32(arr[8]),
       htmlContent: dco_decode_opt_String(arr[9]),
+      contentHash: dco_decode_opt_String(arr[10]),
     );
   }
 
@@ -801,12 +751,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   double dco_decode_f_32(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as double;
-  }
-
-  @protected
-  int dco_decode_i_32(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return raw as int;
   }
 
   @protected
@@ -928,12 +872,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  WindowActionKind dco_decode_window_action_kind(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return WindowActionKind.values[raw as int];
-  }
-
-  @protected
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_String(deserializer);
@@ -957,14 +895,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @protected
   RustStreamSink<BigInt> sse_decode_StreamSink_usize_Sse(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    throw UnimplementedError('Unreachable ()');
-  }
-
-  @protected
-  RustStreamSink<WindowActionKind> sse_decode_StreamSink_window_action_kind_Sse(
     SseDeserializer deserializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -1023,6 +953,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_imageWidth = sse_decode_opt_box_autoadd_u_32(deserializer);
     var var_imageHeight = sse_decode_opt_box_autoadd_u_32(deserializer);
     var var_htmlContent = sse_decode_opt_String(deserializer);
+    var var_contentHash = sse_decode_opt_String(deserializer);
     return ClipboardItem(
       id: var_id,
       content: var_content,
@@ -1034,6 +965,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       imageWidth: var_imageWidth,
       imageHeight: var_imageHeight,
       htmlContent: var_htmlContent,
+      contentHash: var_contentHash,
     );
   }
 
@@ -1041,12 +973,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   double sse_decode_f_32(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getFloat32();
-  }
-
-  @protected
-  int sse_decode_i_32(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return deserializer.buffer.getInt32();
   }
 
   @protected
@@ -1216,10 +1142,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  WindowActionKind sse_decode_window_action_kind(SseDeserializer deserializer) {
+  int sse_decode_i_32(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    var inner = sse_decode_i_32(deserializer);
-    return WindowActionKind.values[inner];
+    return deserializer.buffer.getInt32();
   }
 
   @protected
@@ -1283,23 +1208,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_StreamSink_window_action_kind_Sse(
-    RustStreamSink<WindowActionKind> self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_String(
-      self.setupAndSerialize(
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_window_action_kind,
-          decodeErrorData: sse_decode_AnyhowException,
-        ),
-      ),
-      serializer,
-    );
-  }
-
-  @protected
   void sse_encode_String(String self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_list_prim_u_8_strict(utf8.encoder.convert(self), serializer);
@@ -1351,18 +1259,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_box_autoadd_u_32(self.imageWidth, serializer);
     sse_encode_opt_box_autoadd_u_32(self.imageHeight, serializer);
     sse_encode_opt_String(self.htmlContent, serializer);
+    sse_encode_opt_String(self.contentHash, serializer);
   }
 
   @protected
   void sse_encode_f_32(double self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putFloat32(self);
-  }
-
-  @protected
-  void sse_encode_i_32(int self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    serializer.buffer.putInt32(self);
   }
 
   @protected
@@ -1504,11 +1407,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_window_action_kind(
-    WindowActionKind self,
-    SseSerializer serializer,
-  ) {
+  void sse_encode_i_32(int self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_i_32(self.index, serializer);
+    serializer.buffer.putInt32(self);
   }
 }

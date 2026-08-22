@@ -4,7 +4,6 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../core/clipboard_engine.dart';
-import '../core/events.dart';
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
@@ -13,7 +12,7 @@ Stream<List<ClipboardItem>> streamClipboardChanged() =>
     RustLib.instance.api.crateApiStreamStreamClipboardChanged();
 
 /// Full history snapshot, pushed when items are removed anywhere in the list
-/// (retention sweep).
+/// (explicit deletion, retention, clear, or aggregate-limit trimming).
 Stream<List<ClipboardItem>> streamHistoryReplace() =>
     RustLib.instance.api.crateApiStreamStreamHistoryReplace();
 
@@ -25,13 +24,7 @@ Stream<BigInt> streamItemMovedToTop() =>
 Stream<bool> streamHelperStatus() =>
     RustLib.instance.api.crateApiStreamStreamHelperStatus();
 
-/// Window-action request (the Rust core owns no window handle). Dart performs
-/// the always-on-top restack dance on receipt.
-Stream<WindowActionKind> streamWindowAction() =>
-    RustLib.instance.api.crateApiStreamStreamWindowAction();
-
 /// Reliable UI-isolate hand-off for native hotkey/double-tap/single-instance
-/// wake requests. The stream above remains for compatibility, while the Dart
-/// controller uses this synchronous coalescing poll on desktop platforms.
+/// wake requests.
 bool takePendingWindowAction() =>
     RustLib.instance.api.crateApiStreamTakePendingWindowAction();

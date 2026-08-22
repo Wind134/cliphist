@@ -564,7 +564,7 @@ class _DoubleTapCard extends StatelessWidget {
 
   final String value;
   final bool helperConnected;
-  final ValueChanged<String> onChanged;
+  final Future<bool> Function(String) onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -619,7 +619,7 @@ class _DoubleTapCard extends StatelessWidget {
 class _RetentionCard extends StatelessWidget {
   const _RetentionCard({required this.value, required this.onChanged});
   final int value;
-  final ValueChanged<int> onChanged;
+  final Future<bool> Function(int) onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -641,7 +641,7 @@ class _RetentionCard extends StatelessWidget {
   }
 }
 
-class _Select extends StatelessWidget {
+class _Select extends StatefulWidget {
   const _Select({
     required this.value,
     required this.items,
@@ -650,7 +650,15 @@ class _Select extends StatelessWidget {
 
   final String value;
   final List<(String, String)> items;
-  final ValueChanged<String> onChanged;
+  final Future<bool> Function(String) onChanged;
+
+  @override
+  State<_Select> createState() => _SelectState();
+}
+
+class _SelectState extends State<_Select> {
+  int _revision = 0;
+  bool _saving = false;
 
   @override
   Widget build(BuildContext context) {
@@ -658,7 +666,8 @@ class _Select extends StatelessWidget {
     return SizedBox(
       width: scale > 1.35 ? 200 : 130,
       child: DropdownButtonFormField<String>(
-        initialValue: value,
+        key: ValueKey((widget.value, _revision)),
+        initialValue: widget.value,
         isDense: true,
         style: const TextStyle(color: CliphistColors.textPrimary, fontSize: 12),
         dropdownColor: CliphistColors.surface,
@@ -684,12 +693,21 @@ class _Select extends StatelessWidget {
             borderSide: BorderSide.none,
           ),
         ),
-        items: items
+        items: widget.items
             .map((i) => DropdownMenuItem(value: i.$1, child: Text(i.$2)))
             .toList(),
-        onChanged: (v) {
-          if (v != null) onChanged(v);
-        },
+        onChanged: _saving
+            ? null
+            : (value) async {
+                if (value == null) return;
+                setState(() => _saving = true);
+                final saved = await widget.onChanged(value);
+                if (!mounted) return;
+                setState(() {
+                  _saving = false;
+                  if (!saved) _revision++;
+                });
+              },
       ),
     );
   }

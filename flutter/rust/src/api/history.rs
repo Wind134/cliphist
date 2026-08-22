@@ -45,8 +45,10 @@ pub fn delete_item(id: usize) -> Result<(), String> {
     let removed = next.remove(pos);
     clipboard_engine::save_history(&next)?;
     *history = next;
+    let snapshot = history.clone();
     drop(history);
     clipboard_engine::delete_image_file(&removed.image_path);
+    events::emit_history_replace(snapshot);
     Ok(())
 }
 

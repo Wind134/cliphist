@@ -1,7 +1,11 @@
+use crate::core::{consts, hotkey_parse, storage};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+const MAX_SETTINGS_FILE_SIZE: u64 = 1024 * 1024;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Settings {
     pub close_to_tray: bool,
     pub zoom_level: f32,
@@ -51,41 +55,90 @@ impl Default for Settings {
 }
 
 pub fn get_settings_path() -> PathBuf {
-    let data_dir = dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("ClipHist");
-    std::fs::create_dir_all(&data_dir).ok();
-    data_dir.join("settings.json")
+    storage::app_data_dir().join("settings.json")
 }
 
 pub fn load_settings() -> Settings {
     let path = get_settings_path();
-    if let Ok(json) = std::fs::read_to_string(&path) {
-        if let Ok(s) = serde_json::from_str::<Settings>(&json) {
-            return s;
+    let loaded = match storage::load_json_with_backup::<Settings>(&path, MAX_SETTINGS_FILE_SIZE) {
+        Ok(Some(settings)) => settings,
+        Ok(None) => return Settings::default(),
+        Err(error) => {
+            crate::core::log::write_log(&format!(
+                "Failed to load settings from {path:?}; using defaults: {error}"
+            ));
+            return Settings::default();
         }
-        crate::core::log::write_log(&format!("Failed to parse settings from {:?}", path));
-    } else {
-        crate::core::log::write_log(&format!("No settings file at {:?}, using defaults", path));
+    };
+    let (settings, changed) = normalize_loaded_settings(loaded);
+    if changed {
+        crate::core::log::write_log("Normalized invalid or obsolete persisted settings");
+        if let Err(error) = save_settings(&settings) {
+            crate::core::log::write_log(&format!("Failed to persist normalized settings: {error}"));
+        }
     }
-    Settings::default()
+    settings
 }
 
 pub fn save_settings(settings: &Settings) -> Result<(), String> {
+    validate_settings(settings)?;
     let json = serde_json::to_string_pretty(settings)
-        .map_err(|e| format!("Failed to serialize settings: {}", e))?;
+        .map_err(|e| format!("Failed to serialize settings: {e}"))?;
     let path = get_settings_path();
-    // Atomic: temp sibling + rename, so a crash mid-write cannot leave a
-    // corrupt settings.json (which would silently fall back to defaults).
-    let tmp = path.with_extension("json.tmp");
-    if std::fs::write(&tmp, &json).is_ok() && std::fs::rename(&tmp, &path).is_ok() {
-        return Ok(());
+    storage::atomic_write(&path, json.as_bytes())
+}
+
+pub fn validate_settings(settings: &Settings) -> Result<(), String> {
+    if !settings.zoom_level.is_finite()
+        || !(consts::MIN_ZOOM_LEVEL..=consts::MAX_ZOOM_LEVEL).contains(&settings.zoom_level)
+    {
+        return Err(format!("缩放比例超出范围: {}", settings.zoom_level));
     }
-    // Fallback: direct write if the temp+rename path failed.
-    let _ = std::fs::remove_file(&tmp);
-    std::fs::write(&path, &json)
-        .map_err(|e| format!("Failed to save settings to {:?}: {}", path, e))?;
+    if settings.retention_days > 365 {
+        return Err(format!("保留天数超出范围: {}", settings.retention_days));
+    }
+    if !(320..=9999).contains(&settings.window_width) {
+        return Err(format!("窗口宽度超出范围: {}", settings.window_width));
+    }
+    if !(400..=9999).contains(&settings.window_height) {
+        return Err(format!("窗口高度超出范围: {}", settings.window_height));
+    }
+    if !hotkey_parse::validate_shortcut(&settings.hotkey) {
+        return Err(format!("无效的快捷键格式: {}", settings.hotkey));
+    }
+    if !["", "Ctrl", "Shift", "Alt"].contains(&settings.double_tap_key.as_str()) {
+        return Err(format!("无效的双击键: {}", settings.double_tap_key));
+    }
     Ok(())
+}
+
+fn normalize_loaded_settings(mut settings: Settings) -> (Settings, bool) {
+    if validate_settings(&settings).is_ok() {
+        return (settings, false);
+    }
+
+    let defaults = Settings::default();
+    if !settings.zoom_level.is_finite()
+        || !(consts::MIN_ZOOM_LEVEL..=consts::MAX_ZOOM_LEVEL).contains(&settings.zoom_level)
+    {
+        settings.zoom_level = defaults.zoom_level;
+    }
+    if settings.retention_days > 365 {
+        settings.retention_days = defaults.retention_days;
+    }
+    if !(320..=9999).contains(&settings.window_width) {
+        settings.window_width = defaults.window_width;
+    }
+    if !(400..=9999).contains(&settings.window_height) {
+        settings.window_height = defaults.window_height;
+    }
+    if !hotkey_parse::validate_shortcut(&settings.hotkey) {
+        settings.hotkey = defaults.hotkey;
+    }
+    if !["", "Ctrl", "Shift", "Alt"].contains(&settings.double_tap_key.as_str()) {
+        settings.double_tap_key = defaults.double_tap_key;
+    }
+    (settings, true)
 }
 
 #[cfg(test)]
@@ -119,5 +172,28 @@ mod tests {
         let back: Settings = serde_json::from_str(&json).unwrap();
         assert_eq!(s.hotkey, back.hotkey);
         assert_eq!(s.retention_days, back.retention_days);
+    }
+
+    #[test]
+    fn missing_fields_migrate_to_defaults() {
+        let settings: Settings = serde_json::from_str(r#"{"close_to_tray":false}"#).unwrap();
+        assert!(!settings.close_to_tray);
+        assert_eq!(settings.hotkey, Settings::default().hotkey);
+        assert_eq!(settings.window_width, Settings::default().window_width);
+    }
+
+    #[test]
+    fn invalid_loaded_fields_are_normalized_individually() {
+        let settings = Settings {
+            zoom_level: f32::NAN,
+            hotkey: "nope".to_string(),
+            retention_days: 999,
+            window_width: 1,
+            ..Settings::default()
+        };
+        let (normalized, changed) = normalize_loaded_settings(settings);
+        assert!(changed);
+        assert!(validate_settings(&normalized).is_ok());
+        assert_eq!(normalized, Settings::default());
     }
 }

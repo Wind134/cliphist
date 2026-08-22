@@ -4,9 +4,9 @@
 # policy, icons, desktop entry) so no renaming is needed.
 
 pkgname=cliphist-bin
-pkgver=2.0.7
+pkgver=1.2.1
 pkgrel=1
-pkgdesc="Clipboard history manager with per-item paste injection (Flutter + Rust core, prebuilt binary)"
+pkgdesc="Clipboard history manager with per-item paste injection (latest published prebuilt binary)"
 arch=('x86_64')
 url="https://github.com/Wind134/cliphist"
 license=('MIT')
@@ -25,8 +25,8 @@ depends=(
 )
 provides=('cliphist')
 conflicts=('cliphist')
-source=("${url}/releases/download/v${pkgver}/cliphist-${pkgver}-linux.deb")
-sha256sums=('SKIP')
+source=("${url}/releases/download/v${pkgver}/ClipHist_${pkgver}_amd64.deb")
+sha256sums=('a42cb08bc5190c497407b0da835410c4ab138656ff4186c96534007aa3bd511a')
 
 package() {
   # Debian payload compression can be gzip, xz, or zstd depending on the
@@ -34,6 +34,6 @@ package() {
   # actual data.tar.* compression instead of assuming data.tar.gz.
   local deb_members="${srcdir}/cliphist-deb-${pkgver}"
   install -d "$deb_members"
-  bsdtar -xf "${srcdir}/cliphist-${pkgver}-linux.deb" -C "$deb_members"
+  bsdtar -xf "${srcdir}/ClipHist_${pkgver}_amd64.deb" -C "$deb_members"
   bsdtar -xf "$deb_members"/data.tar.* -C "${pkgdir}"
 }

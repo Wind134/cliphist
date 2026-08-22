@@ -6,9 +6,9 @@
 //!
 //! Semantics: split on `+`, each part is a modifier
 //! alias or a key name. The shortcut is valid iff it has at least one
-//! modifier AND the *last* key-typed part is a recognized key. So
+//! modifier AND exactly one recognized key. So
 //! `Ctrl+V` ✅, `V` ❌ (no modifier), `Ctrl+DefinitelyNotAKey` ❌,
-//! `Ctrl+BadKey+V` ✅ (last key wins), `Ctrl+V+BadKey` ❌.
+//! `Ctrl+BadKey+V` ❌, and `Ctrl+V+X` ❌.
 
 #[derive(Default)]
 struct Parsed {
@@ -16,11 +16,7 @@ struct Parsed {
     has_meta: bool,
     has_shift: bool,
     has_alt: bool,
-    /// `None` = no key-typed part yet; `Some(true)` = last key-typed part was
-    /// a known key; `Some(false)` = last key-typed part was unknown. Overwritten
-    /// on every key-typed part so the last one wins, exactly like the original
-    /// `code` accumulator.
-    last_key_known: Option<bool>,
+    has_key: bool,
 }
 
 pub fn validate_shortcut(shortcut_str: &str) -> bool {
@@ -28,19 +24,24 @@ pub fn validate_shortcut(shortcut_str: &str) -> bool {
 }
 
 fn parse(shortcut_str: &str) -> Option<Parsed> {
-    let parts: Vec<&str> = shortcut_str.split('+').collect();
-    if parts.is_empty() {
+    if shortcut_str.is_empty() {
         return None;
     }
 
     let mut p = Parsed::default();
-    for part in parts {
+    for part in shortcut_str.split('+') {
+        if part.trim().is_empty() {
+            return None;
+        }
         match part.trim().to_uppercase().as_str() {
-            "COMMANDORCONTROL" | "CMDORCTRL" | "CTRL" => p.has_ctrl = true,
-            "COMMAND" | "CMD" | "SUPER" | "META" | "WIN" => p.has_meta = true,
-            "SHIFT" => p.has_shift = true,
-            "ALT" => p.has_alt = true,
-            k => p.last_key_known = Some(is_known_key(k)),
+            "COMMANDORCONTROL" | "CMDORCTRL" | "CTRL" | "CONTROL" if !p.has_ctrl => {
+                p.has_ctrl = true;
+            }
+            "COMMAND" | "CMD" | "SUPER" | "META" | "WIN" if !p.has_meta => p.has_meta = true,
+            "SHIFT" if !p.has_shift => p.has_shift = true,
+            "ALT" | "OPTION" if !p.has_alt => p.has_alt = true,
+            key if !p.has_key && is_known_key(key) => p.has_key = true,
+            _ => return None,
         }
     }
 
@@ -48,10 +49,10 @@ fn parse(shortcut_str: &str) -> Option<Parsed> {
     if !has_modifier {
         return None;
     }
-    // Require a known key as the last key-typed part.
-    match p.last_key_known {
-        Some(true) => Some(p),
-        _ => None,
+    if p.has_key {
+        Some(p)
+    } else {
+        None
     }
 }
 
@@ -99,6 +100,19 @@ fn is_known_key(k: &str) -> bool {
             | "ESCAPE"
             | "ESC"
             | "TAB"
+            | "BACKSPACE"
+            | "F1"
+            | "F2"
+            | "F3"
+            | "F4"
+            | "F5"
+            | "F6"
+            | "F7"
+            | "F8"
+            | "F9"
+            | "F10"
+            | "F11"
+            | "F12"
     )
 }
 
@@ -125,13 +139,21 @@ mod tests {
     }
 
     #[test]
-    fn last_key_wins() {
-        assert!(validate_shortcut("Ctrl+BadKey+V"));
+    fn rejects_multiple_or_empty_keys() {
+        assert!(!validate_shortcut("Ctrl+BadKey+V"));
         assert!(!validate_shortcut("Ctrl+V+BadKey"));
+        assert!(!validate_shortcut("Ctrl+V+X"));
+        assert!(!validate_shortcut("Ctrl++V"));
     }
 
     #[test]
     fn modifier_only_is_invalid() {
         assert!(!validate_shortcut("Ctrl+Shift"));
+    }
+
+    #[test]
+    fn matches_frontend_named_keys_and_aliases() {
+        assert!(validate_shortcut("Control+Backspace"));
+        assert!(validate_shortcut("Option+F12"));
     }
 }

@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 2.0.7+1
+version: 2.0.8+1
 
 environment:
   sdk: ^3.12.2
@@ -41,8 +41,11 @@ dependencies:
   tray_manager: ^0.5.3
   hotkey_manager: ^0.2.3
   flutter_riverpod: ^2.5.1
-  launch_at_startup: ^0.3.1
+  launch_at_startup: ^0.5.1
   flutter_widget_from_html: ^0.17.2
+  # 10.x requires win32 6.x, which conflicts with launch_at_startup 0.5.x's
+  # win32_registry constraint. Keep the newest compatible major until that
+  # upstream constraint is relaxed.
   package_info_plus: ^9.0.1
   url_launcher: ^6.3.2
 
@@ -67,7 +70,7 @@ msix_config:
   publisher_display_name: ping
   publisher: CN=ping
   identity_name: com.ping.cliphist
-  msix_version: 2.0.7.0
+  msix_version: 2.0.8.0
   logo_path: assets/icon/app.png
   capabilities: internetClient
   languages: zh-CN

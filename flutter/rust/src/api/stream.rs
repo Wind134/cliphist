@@ -5,7 +5,7 @@
 //! run never blocks.
 
 use crate::core::clipboard_engine::ClipboardItem;
-use crate::core::events::{self, WindowActionKind};
+use crate::core::events;
 use crate::frb_generated::StreamSink;
 
 /// Top-5 clipboard snapshot after a new entry is recorded.
@@ -15,7 +15,7 @@ pub fn stream_clipboard_changed(sink: StreamSink<Vec<ClipboardItem>>) -> Result<
 }
 
 /// Full history snapshot, pushed when items are removed anywhere in the list
-/// (retention sweep).
+/// (explicit deletion, retention, clear, or aggregate-limit trimming).
 pub fn stream_history_replace(sink: StreamSink<Vec<ClipboardItem>>) -> Result<(), String> {
     events::register_history_replace(sink);
     Ok(())
@@ -33,16 +33,8 @@ pub fn stream_helper_status(sink: StreamSink<bool>) -> Result<(), String> {
     Ok(())
 }
 
-/// Window-action request (the Rust core owns no window handle). Dart performs
-/// the always-on-top restack dance on receipt.
-pub fn stream_window_action(sink: StreamSink<WindowActionKind>) -> Result<(), String> {
-    events::register_window_action(sink);
-    Ok(())
-}
-
 /// Reliable UI-isolate hand-off for native hotkey/double-tap/single-instance
-/// wake requests. The stream above remains for compatibility, while the Dart
-/// controller uses this synchronous coalescing poll on desktop platforms.
+/// wake requests.
 #[flutter_rust_bridge::frb(sync)]
 pub fn take_pending_window_action() -> bool {
     crate::core::state::take_pending_window_action()

@@ -19,9 +19,9 @@ jobs:
   frb-codegen-check:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         # Pinned to the Flutter used to generate the FRB bindings locally — the
         # codegen's `dart format` import grouping differs across Dart versions,
         # and the diff gate must compare against the same formatter.
@@ -30,7 +30,7 @@ jobs:
           flutter-version: 3.44.9
           cache: true
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
 
       - name: Install flutter_rust_bridge_codegen 2.12.0
         run: cargo install flutter_rust_bridge_codegen --version 2.12.0 --locked
@@ -56,9 +56,9 @@ jobs:
         os: [ubuntu-22.04, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         # Pinned to the Flutter used to generate the FRB bindings locally — the
         # codegen's `dart format` import grouping differs across Dart versions,
         # and the diff gate must compare against the same formatter.
@@ -67,11 +67,11 @@ jobs:
           flutter-version: 3.44.9
           cache: true
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
         with:
           components: rustfmt, clippy
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
         with:
           workspaces: 'flutter/rust -> target'
 
@@ -83,11 +83,13 @@ jobs:
 
       - name: flutter analyze
         working-directory: flutter
-        run: flutter analyze
+        run: |
+          flutter pub get --enforce-lockfile
+          flutter analyze --no-pub
 
       - name: flutter test
         working-directory: flutter
-        run: flutter test
+        run: flutter test --no-pub
 
       - name: cargo fmt
         working-directory: flutter/rust
@@ -100,6 +102,13 @@ jobs:
       - name: cargo test
         working-directory: flutter/rust
         run: cargo test --locked
+
+      - name: cargo audit
+        if: runner.os == 'Linux'
+        working-directory: flutter/rust
+        run: |
+          cargo install cargo-audit --version 0.22.2 --locked
+          cargo audit --deny warnings
 
       - name: Build evdev helper (Linux only)
         if: runner.os == 'Linux'

@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show Size;
 
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:launch_at_startup/launch_at_startup.dart';
@@ -16,6 +16,7 @@ import 'src/rust/api/stream.dart' as api_stream;
 import 'src/rust/core/settings_store.dart' show SettingsPatch;
 import 'state/providers.dart';
 import 'update/update_service.dart';
+import 'util/hotkey_parser.dart';
 import 'util/toast.dart';
 
 /// Process-singleton owning the native window + tray lifecycle and the
@@ -34,7 +35,7 @@ class ClipHistController with WindowListener, TrayListener {
 
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   Timer? _windowActionPoller;
-  int _lastResizeSave = 0;
+  Timer? _resizeSaveTimer;
   HotKey? _registeredHotKey;
   bool _quitting = false;
   bool _windowDanceRunning = false;
@@ -223,7 +224,7 @@ class ClipHistController with WindowListener, TrayListener {
   /// event loop, while Windows hotkey handles are thread-affine.
   Future<void> applyHotkey(String shortcut) async {
     final previous = _registeredHotKey;
-    final next = _parseHotKey(shortcut);
+    final next = parseHotKey(shortcut);
 
     await hotKeyManager.unregisterAll();
     _registeredHotKey = null;
@@ -265,112 +266,6 @@ class ClipHistController with WindowListener, TrayListener {
       }
       rethrow;
     }
-  }
-
-  HotKey _parseHotKey(String shortcut) {
-    final parts = shortcut
-        .split('+')
-        .map((part) => part.trim().toUpperCase())
-        .where((part) => part.isNotEmpty)
-        .toList();
-    final modifiers = <HotKeyModifier>[];
-    PhysicalKeyboardKey? key;
-    for (final part in parts) {
-      switch (part) {
-        case 'COMMANDORCONTROL':
-        case 'CMDORCTRL':
-        case 'CTRL':
-        case 'CONTROL':
-          modifiers.add(HotKeyModifier.control);
-        case 'COMMAND':
-        case 'CMD':
-        case 'SUPER':
-        case 'META':
-        case 'WIN':
-          modifiers.add(HotKeyModifier.meta);
-        case 'SHIFT':
-          modifiers.add(HotKeyModifier.shift);
-        case 'ALT':
-        case 'OPTION':
-          modifiers.add(HotKeyModifier.alt);
-        default:
-          key = _physicalKey(part);
-      }
-    }
-    if (key == null || modifiers.isEmpty) {
-      throw FormatException('无效的快捷键: $shortcut');
-    }
-    return HotKey(
-      key: key,
-      modifiers: modifiers.toSet().toList(),
-      scope: HotKeyScope.system,
-    );
-  }
-
-  PhysicalKeyboardKey? _physicalKey(String value) {
-    if (value.length == 1) {
-      const letters = <String, PhysicalKeyboardKey>{
-        'A': PhysicalKeyboardKey.keyA,
-        'B': PhysicalKeyboardKey.keyB,
-        'C': PhysicalKeyboardKey.keyC,
-        'D': PhysicalKeyboardKey.keyD,
-        'E': PhysicalKeyboardKey.keyE,
-        'F': PhysicalKeyboardKey.keyF,
-        'G': PhysicalKeyboardKey.keyG,
-        'H': PhysicalKeyboardKey.keyH,
-        'I': PhysicalKeyboardKey.keyI,
-        'J': PhysicalKeyboardKey.keyJ,
-        'K': PhysicalKeyboardKey.keyK,
-        'L': PhysicalKeyboardKey.keyL,
-        'M': PhysicalKeyboardKey.keyM,
-        'N': PhysicalKeyboardKey.keyN,
-        'O': PhysicalKeyboardKey.keyO,
-        'P': PhysicalKeyboardKey.keyP,
-        'Q': PhysicalKeyboardKey.keyQ,
-        'R': PhysicalKeyboardKey.keyR,
-        'S': PhysicalKeyboardKey.keyS,
-        'T': PhysicalKeyboardKey.keyT,
-        'U': PhysicalKeyboardKey.keyU,
-        'V': PhysicalKeyboardKey.keyV,
-        'W': PhysicalKeyboardKey.keyW,
-        'X': PhysicalKeyboardKey.keyX,
-        'Y': PhysicalKeyboardKey.keyY,
-        'Z': PhysicalKeyboardKey.keyZ,
-        '0': PhysicalKeyboardKey.digit0,
-        '1': PhysicalKeyboardKey.digit1,
-        '2': PhysicalKeyboardKey.digit2,
-        '3': PhysicalKeyboardKey.digit3,
-        '4': PhysicalKeyboardKey.digit4,
-        '5': PhysicalKeyboardKey.digit5,
-        '6': PhysicalKeyboardKey.digit6,
-        '7': PhysicalKeyboardKey.digit7,
-        '8': PhysicalKeyboardKey.digit8,
-        '9': PhysicalKeyboardKey.digit9,
-      };
-      return letters[value];
-    }
-    const named = <String, PhysicalKeyboardKey>{
-      'SPACE': PhysicalKeyboardKey.space,
-      'ENTER': PhysicalKeyboardKey.enter,
-      'RETURN': PhysicalKeyboardKey.enter,
-      'TAB': PhysicalKeyboardKey.tab,
-      'ESC': PhysicalKeyboardKey.escape,
-      'ESCAPE': PhysicalKeyboardKey.escape,
-      'BACKSPACE': PhysicalKeyboardKey.backspace,
-      'F1': PhysicalKeyboardKey.f1,
-      'F2': PhysicalKeyboardKey.f2,
-      'F3': PhysicalKeyboardKey.f3,
-      'F4': PhysicalKeyboardKey.f4,
-      'F5': PhysicalKeyboardKey.f5,
-      'F6': PhysicalKeyboardKey.f6,
-      'F7': PhysicalKeyboardKey.f7,
-      'F8': PhysicalKeyboardKey.f8,
-      'F9': PhysicalKeyboardKey.f9,
-      'F10': PhysicalKeyboardKey.f10,
-      'F11': PhysicalKeyboardKey.f11,
-      'F12': PhysicalKeyboardKey.f12,
-    };
-    return named[value];
   }
 
   Future<void> checkForUpdates({bool silent = false}) async {
@@ -526,7 +421,11 @@ class ClipHistController with WindowListener, TrayListener {
 
   // ── TrayListener ────────────────────────────────────────────────────────
   @override
-  void onTrayIconMouseDown() async {
+  void onTrayIconMouseDown() {
+    unawaited(_handleTrayIconMouseDown());
+  }
+
+  Future<void> _handleTrayIconMouseDown() async {
     final visible = await windowManager.isVisible();
     if (visible) {
       await windowManager.hide();
@@ -536,7 +435,11 @@ class ClipHistController with WindowListener, TrayListener {
   }
 
   @override
-  void onTrayIconRightMouseDown() async {
+  void onTrayIconRightMouseDown() {
+    unawaited(_handleTrayIconRightMouseDown());
+  }
+
+  Future<void> _handleTrayIconRightMouseDown() async {
     // Windows does not auto-show the context menu on a right-click — the
     // native tray_manager plugin only fires this event (WM_RBUTTONUP →
     // "onTrayIconRightMouseDown"). Pop the menu explicitly so the tray
@@ -554,7 +457,11 @@ class ClipHistController with WindowListener, TrayListener {
 
   // ── WindowListener ──────────────────────────────────────────────────────
   @override
-  void onWindowClose() async {
+  void onWindowClose() {
+    unawaited(_handleWindowClose());
+  }
+
+  Future<void> _handleWindowClose() async {
     final closeToTray = container.read(settingsProvider).closeToTray;
     if (closeToTray) {
       await windowManager.hide();
@@ -564,11 +471,16 @@ class ClipHistController with WindowListener, TrayListener {
   }
 
   @override
-  void onWindowResized() async {
-    final now = DateTime.now().millisecondsSinceEpoch;
-    // Throttle resize persistence to 500ms.
-    if (now - _lastResizeSave < 500) return;
-    _lastResizeSave = now;
+  void onWindowResized() {
+    // Trailing-edge debounce: persist the final settled size instead of an
+    // arbitrary intermediate sample from a continuous drag.
+    _resizeSaveTimer?.cancel();
+    _resizeSaveTimer = Timer(const Duration(milliseconds: 500), () {
+      unawaited(_persistWindowSize());
+    });
+  }
+
+  Future<void> _persistWindowSize() async {
     final size = await windowManager.getSize();
     try {
       final updated = await api_settings.updateSettings(
@@ -601,6 +513,7 @@ class ClipHistController with WindowListener, TrayListener {
   void quit() {
     if (_quitting) return;
     _quitting = true;
+    _resizeSaveTimer?.cancel();
     // Do not await cancellation of permanent FRB streams here. Their Rust
     // producers intentionally live for the process lifetime, so `cancel()` can
     // wait forever. The Windows log proved quit previously stopped on the very

@@ -247,14 +247,19 @@ mod rdev_impl {
 /// bidirectional: `simulate_paste` writes `b'P'`, then waits for the helper's
 /// `b'S'`/`b'F'` injection result instead of reporting unconditional success.
 /// The helper path resolves a standalone `cliphist-evdev-helper` binary using
-/// a build-time override, an executable-directory neighbor, then `PATH`.
+/// a build-time override, a trusted executable-directory neighbor, then the
+/// fixed packaged path. Every candidate must be root-owned and non-writable.
 #[cfg(target_os = "linux")]
 mod linux_impl {
     use super::*;
+    use parking_lot::Mutex;
     use std::io::{Read, Write};
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    use std::os::unix::io::AsRawFd;
     use std::os::unix::net::{UnixListener, UnixStream};
+    use std::path::{Path, PathBuf};
     use std::process::{Child, Command, Stdio};
-    use std::sync::{mpsc, Mutex};
+    use std::sync::mpsc;
 
     /// Bidirectional stream to the root helper, kept so `simulate_paste` can
     /// send `b'P'` commands.
@@ -269,22 +274,35 @@ mod linux_impl {
     ///   1. `CLIPHIST_HELPER_PATH` build-time environment override (packaging
     ///      pins the installed absolute path).
     ///   2. next to the running executable (`<exe_dir>/cliphist-evdev-helper`).
-    ///   3. bare `cliphist-evdev-helper` (resolved via `PATH`).
-    fn resolve_helper_path() -> String {
+    ///   3. the fixed packaged path.
+    fn resolve_helper_path() -> Result<PathBuf, String> {
         if let Some(p) = option_env!("CLIPHIST_HELPER_PATH") {
             if !p.is_empty() {
-                return p.to_string();
+                return validate_helper_path(Path::new(p));
             }
         }
         if let Ok(exe) = std::env::current_exe() {
             if let Some(dir) = exe.parent() {
                 let candidate = dir.join("cliphist-evdev-helper");
                 if candidate.exists() {
-                    return candidate.to_string_lossy().to_string();
+                    return validate_helper_path(&candidate);
                 }
             }
         }
-        "cliphist-evdev-helper".to_string()
+        validate_helper_path(Path::new("/opt/cliphist/cliphist-evdev-helper"))
+    }
+
+    fn validate_helper_path(path: &Path) -> Result<PathBuf, String> {
+        let canonical = std::fs::canonicalize(path)
+            .map_err(|e| format!("Cannot resolve evdev helper {path:?}: {e}"))?;
+        let metadata = std::fs::metadata(&canonical)
+            .map_err(|e| format!("Cannot inspect evdev helper {canonical:?}: {e}"))?;
+        if !metadata.is_file() || metadata.uid() != 0 || metadata.mode() & 0o022 != 0 {
+            return Err(format!(
+                "Refusing untrusted evdev helper {canonical:?}: expected a root-owned, non-writable regular file"
+            ));
+        }
+        Ok(canonical)
     }
 
     pub fn start_linux_double_tap_listener(key_name: &str) -> Result<(), String> {
@@ -292,9 +310,6 @@ mod linux_impl {
         // prevents a late cleanup from an old listener from clearing the new
         // listener's child/socket/status after the setting changes quickly.
         stop_linux_double_tap_listener();
-        let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
-        LISTENER_RUNNING.store(true, Ordering::SeqCst);
-
         let key_name = key_name.to_string();
 
         // $XDG_RUNTIME_DIR is per-user (0700) — not accessible to other users,
@@ -302,13 +317,25 @@ mod linux_impl {
         // bypasses perms). Avoids the predictable world-writable /tmp race.
         let xdg_runtime_dir = std::env::var("XDG_RUNTIME_DIR")
             .unwrap_or_else(|_| format!("/run/user/{}", unsafe { libc::getuid() }));
+        let runtime_metadata = std::fs::symlink_metadata(&xdg_runtime_dir)
+            .map_err(|e| format!("Cannot inspect XDG_RUNTIME_DIR: {e}"))?;
+        if !runtime_metadata.file_type().is_dir()
+            || runtime_metadata.uid() != unsafe { libc::getuid() }
+            || runtime_metadata.mode() & 0o077 != 0
+        {
+            return Err(
+                "XDG_RUNTIME_DIR must be a private directory owned by the current user".to_string(),
+            );
+        }
+        let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+        LISTENER_RUNNING.store(true, Ordering::SeqCst);
         let socket_path = format!(
             "{}/cliphist-dtap-{}.sock",
             xdg_runtime_dir,
             std::process::id()
         );
         let _ = std::fs::remove_file(&socket_path);
-        *SOCKET_PATH.lock().unwrap() = Some((generation, socket_path.clone()));
+        *SOCKET_PATH.lock() = Some((generation, socket_path.clone()));
 
         let listener = match UnixListener::bind(&socket_path) {
             Ok(listener) => listener,
@@ -317,18 +344,31 @@ mod linux_impl {
                 return Err(format!("Failed to create Unix socket: {}", e));
             }
         };
+        if let Err(e) =
+            std::fs::set_permissions(&socket_path, std::fs::Permissions::from_mode(0o600))
+        {
+            cleanup_generation(generation, &socket_path);
+            return Err(format!("Failed to secure Unix socket: {e}"));
+        }
         if let Err(e) = listener.set_nonblocking(true) {
             cleanup_generation(generation, &socket_path);
             return Err(format!("Failed to configure Unix socket: {}", e));
         }
 
-        let helper = resolve_helper_path();
+        let helper = match resolve_helper_path() {
+            Ok(path) => path,
+            Err(error) => {
+                cleanup_generation(generation, &socket_path);
+                return Err(error);
+            }
+        };
         let wayland_display =
             std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "wayland-0".to_string());
 
         log::write_log(&format!(
             "Starting pkexec evdev helper: {} (socket: {})",
-            helper, socket_path
+            helper.display(),
+            socket_path
         ));
 
         let child = Command::new("pkexec")
@@ -353,7 +393,7 @@ mod linux_impl {
             }
         };
         log::write_log(&format!("pkexec helper spawned, pid: {}", child.id()));
-        *CHILD.lock().unwrap() = Some((generation, child));
+        *CHILD.lock() = Some((generation, child));
 
         let spawn_result = std::thread::Builder::new()
             .name("double-tap-socket-listener".to_string())
@@ -380,15 +420,30 @@ mod linux_impl {
                     cleanup_generation(generation, &socket_path);
                     return;
                 }
+                match unix_peer_uid(&stream) {
+                    Ok(0) => {}
+                    Ok(uid) => {
+                        log::write_log(&format!(
+                            "Rejected evdev helper connection from unexpected UID {uid}"
+                        ));
+                        cleanup_generation(generation, &socket_path);
+                        return;
+                    }
+                    Err(e) => {
+                        log::write_log(&format!("Failed to authenticate evdev helper: {e}"));
+                        cleanup_generation(generation, &socket_path);
+                        return;
+                    }
+                }
                 log::write_log(&format!("Evdev helper connected from {:?}", addr));
                 HELPER_CONNECTED.store(true, Ordering::SeqCst);
 
                 {
-                    let mut paste_stream = PASTE_STREAM.lock().unwrap();
+                    let mut paste_stream = PASTE_STREAM.lock();
                     *paste_stream = stream.try_clone().ok().map(|s| (generation, s));
                 }
                 let (ack_tx, ack_rx) = mpsc::channel();
-                *PASTE_ACK.lock().unwrap() = Some((generation, ack_rx));
+                *PASTE_ACK.lock() = Some((generation, ack_rx));
 
                 let mut buf = [0u8; 1];
                 loop {
@@ -428,21 +483,44 @@ mod linux_impl {
         Ok(())
     }
 
+    fn unix_peer_uid(stream: &UnixStream) -> std::io::Result<u32> {
+        let mut credentials = libc::ucred {
+            pid: 0,
+            uid: 0,
+            gid: 0,
+        };
+        let mut length = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
+        let result = unsafe {
+            libc::getsockopt(
+                stream.as_raw_fd(),
+                libc::SOL_SOCKET,
+                libc::SO_PEERCRED,
+                (&mut credentials as *mut libc::ucred).cast(),
+                &mut length,
+            )
+        };
+        if result < 0 {
+            Err(std::io::Error::last_os_error())
+        } else {
+            Ok(credentials.uid)
+        }
+    }
+
     fn cleanup_generation(generation: u64, socket_path: &str) {
         {
-            let mut paste_stream = PASTE_STREAM.lock().unwrap();
+            let mut paste_stream = PASTE_STREAM.lock();
             if matches!(paste_stream.as_ref(), Some((g, _)) if *g == generation) {
                 *paste_stream = None;
             }
         }
         {
-            let mut ack = PASTE_ACK.lock().unwrap();
+            let mut ack = PASTE_ACK.lock();
             if matches!(ack.as_ref(), Some((g, _)) if *g == generation) {
                 *ack = None;
             }
         }
         {
-            let mut child_guard = CHILD.lock().unwrap();
+            let mut child_guard = CHILD.lock();
             if matches!(child_guard.as_ref(), Some((g, _)) if *g == generation) {
                 if let Some((_, mut child)) = child_guard.take() {
                     let _ = child.kill();
@@ -451,7 +529,7 @@ mod linux_impl {
             }
         }
         {
-            let mut path_guard = SOCKET_PATH.lock().unwrap();
+            let mut path_guard = SOCKET_PATH.lock();
             if matches!(path_guard.as_ref(), Some((g, _)) if *g == generation) {
                 *path_guard = None;
             }
@@ -470,16 +548,16 @@ mod linux_impl {
         LISTENER_RUNNING.store(false, Ordering::SeqCst);
         HELPER_CONNECTED.store(false, Ordering::SeqCst);
         {
-            let mut paste_stream = PASTE_STREAM.lock().unwrap();
+            let mut paste_stream = PASTE_STREAM.lock();
             *paste_stream = None;
         }
-        *PASTE_ACK.lock().unwrap() = None;
-        let mut child_guard = CHILD.lock().unwrap();
+        *PASTE_ACK.lock() = None;
+        let mut child_guard = CHILD.lock();
         if let Some((_, mut child)) = child_guard.take() {
             let _ = child.kill();
             let _ = child.wait();
         }
-        let path = SOCKET_PATH.lock().unwrap().take();
+        let path = SOCKET_PATH.lock().take();
         if let Some((_, path)) = path {
             let _ = std::fs::remove_file(&path);
         }
@@ -490,13 +568,9 @@ mod linux_impl {
     /// the actual result. Serialize requests so acknowledgements cannot be
     /// consumed by the wrong caller.
     pub fn linux_simulate_paste() -> Result<(), String> {
-        let _request = PASTE_REQUEST
-            .lock()
-            .map_err(|e| format!("PASTE_REQUEST lock poisoned: {}", e))?;
+        let _request = PASTE_REQUEST.lock();
         let generation = {
-            let mut guard = PASTE_STREAM
-                .lock()
-                .map_err(|e| format!("PASTE_STREAM lock poisoned: {}", e))?;
+            let mut guard = PASTE_STREAM.lock();
             let Some((generation, stream)) = guard.as_mut() else {
                 return Err("evdev helper 未连接，请先完成 Linux 授权".to_string());
             };
@@ -507,9 +581,7 @@ mod linux_impl {
             *generation
         };
 
-        let mut ack = PASTE_ACK
-            .lock()
-            .map_err(|e| format!("PASTE_ACK lock poisoned: {}", e))?;
+        let mut ack = PASTE_ACK.lock();
         let Some((ack_generation, receiver)) = ack.as_mut() else {
             return Err("evdev helper 响应通道未连接".to_string());
         };

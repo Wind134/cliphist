@@ -1,7 +1,5 @@
 //! Settings commands — 3 of the 11 `#[frb]` functions.
 
-use crate::core::consts;
-use crate::core::hotkey_parse;
 use crate::core::log;
 use crate::core::settings_store::{self, Settings, SettingsPatch};
 use crate::core::state;
@@ -36,45 +34,26 @@ pub fn update_settings(patch: SettingsPatch) -> Result<Settings, String> {
     }
 
     if let Some(v) = patch.zoom_level {
-        if !(consts::MIN_ZOOM_LEVEL..=consts::MAX_ZOOM_LEVEL).contains(&v) {
-            return Err(format!("缩放比例超出范围: {}", v));
-        }
         next.zoom_level = v;
     }
     if let Some(v) = patch.retention_days {
-        if v > 365 {
-            return Err(format!("保留天数超出范围: {}", v));
-        }
         next.retention_days = v;
     }
     if let Some(v) = patch.window_width {
-        if !(320..=9999).contains(&v) {
-            return Err(format!("窗口宽度超出范围: {}", v));
-        }
         next.window_width = v;
     }
     if let Some(v) = patch.window_height {
-        if !(400..=9999).contains(&v) {
-            return Err(format!("窗口高度超出范围: {}", v));
-        }
         next.window_height = v;
     }
 
     if let Some(v) = patch.hotkey {
-        if hotkey_parse::validate_shortcut(&v) {
-            next.hotkey = v;
-        } else {
-            return Err(format!("无效的快捷键格式: {}", v));
-        }
+        next.hotkey = v;
     }
     if let Some(v) = patch.double_tap_key {
-        let valid_keys = ["", "Ctrl", "Shift", "Alt"];
-        if !valid_keys.contains(&v.as_str()) {
-            return Err(format!("无效的双击键: {}", v));
-        }
         next.double_tap_key = v;
     }
 
+    settings_store::validate_settings(&next)?;
     settings_store::save_settings(&next).map_err(|e| format!("保存设置失败: {}", e))?;
     *current = next.clone();
     drop(current);
@@ -94,5 +73,5 @@ pub fn update_settings(patch: SettingsPatch) -> Result<Settings, String> {
 /// Is `hotkey` a syntactically valid global shortcut? Synchronous.
 #[flutter_rust_bridge::frb(sync)]
 pub fn validate_hotkey(hotkey: String) -> bool {
-    hotkey_parse::validate_shortcut(&hotkey)
+    crate::core::hotkey_parse::validate_shortcut(&hotkey)
 }

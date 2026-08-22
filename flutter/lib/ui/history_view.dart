@@ -155,16 +155,20 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
       target += _itemExtent(items[i], zoom);
     }
     if (target < offset) {
-      _scrollCtrl.animateTo(
-        target,
-        duration: const Duration(milliseconds: 80),
-        curve: Curves.easeOut,
+      unawaited(
+        _scrollCtrl.animateTo(
+          target,
+          duration: const Duration(milliseconds: 80),
+          curve: Curves.easeOut,
+        ),
       );
     } else if (target + h > offset + viewport) {
-      _scrollCtrl.animateTo(
-        target + h - viewport,
-        duration: const Duration(milliseconds: 80),
-        curve: Curves.easeOut,
+      unawaited(
+        _scrollCtrl.animateTo(
+          target + h - viewport,
+          duration: const Duration(milliseconds: 80),
+          curve: Curves.easeOut,
+        ),
       );
     }
   }
@@ -184,7 +188,7 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
     final items = _filtered;
     final idx = ref.read(selectedIndexProvider);
     if (idx < 0 || idx >= items.length) return;
-    _copyItem(items[idx], hideAfter: true);
+    unawaited(_copyItem(items[idx], hideAfter: true));
   }
 
   // ── Actions ────────────────────────────────────────────────────────────
@@ -203,17 +207,15 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
   }
 
   Future<void> _deleteItem(ClipboardItem item) async {
-    // Optimistic local removal — Rust `delete_item` does not emit a stream.
-    final cur = ref.read(historyProvider);
-    final nh = cur.where((x) => x.id != item.id).toList();
-    ref.read(historyProvider.notifier).state = nh;
-    evictImage(item.id);
-    ref.read(selectedIndexProvider.notifier).state = -1;
     try {
+      // Rust persists first and emits a full replacement snapshot. Avoid an
+      // optimistic rollback: restoring an old local list could erase captures
+      // that arrived while the delete request was in flight.
       await api_history.deleteItem(id: item.id);
+      evictImage(item.id);
+      ref.read(selectedIndexProvider.notifier).state = -1;
       showToast(_container, '已删除');
     } catch (e) {
-      ref.read(historyProvider.notifier).state = cur;
       showToast(_container, '删除失败: $e');
     }
   }

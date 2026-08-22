@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -28,17 +29,25 @@ class AppUpdateState {
 }
 
 class UpdateService {
-  UpdateService({HttpClient? client})
-    : _client = client ?? HttpClient(),
-      _ownsClient = client == null;
+  UpdateService({
+    HttpClient? client,
+    Uri? latestReleaseApi,
+    this.timeout = const Duration(seconds: 10),
+  }) : _latestReleaseApi = latestReleaseApi ?? _defaultLatestReleaseApi,
+       _client = client ?? HttpClient(),
+       _ownsClient = client == null;
 
-  static final Uri _latestReleaseApi = Uri.https(
+  static final Uri _defaultLatestReleaseApi = Uri.https(
     'api.github.com',
     '/repos/Wind134/cliphist/releases/latest',
   );
 
   final HttpClient _client;
   final bool _ownsClient;
+  final Uri _latestReleaseApi;
+  final Duration timeout;
+
+  static const int _maxResponseBytes = 1024 * 1024;
 
   Future<AppUpdateState> check({String? currentVersion}) async {
     var installed = currentVersion ?? '';
@@ -46,28 +55,26 @@ class UpdateService {
       if (installed.isEmpty) {
         installed = (await PackageInfo.fromPlatform()).version;
       }
-      _client.connectionTimeout = const Duration(seconds: 8);
-      final request = await _client
-          .getUrl(_latestReleaseApi)
-          .timeout(const Duration(seconds: 10));
+      _client.connectionTimeout = timeout;
+      final request = await _client.getUrl(_latestReleaseApi).timeout(timeout);
       request.headers
         ..set(HttpHeaders.acceptHeader, 'application/vnd.github+json')
         ..set(HttpHeaders.userAgentHeader, 'ClipHist/$installed')
         ..set('X-GitHub-Api-Version', '2026-03-10');
-      final response = await request.close().timeout(
-        const Duration(seconds: 10),
-      );
+      // Each service instance performs one request. Disabling keep-alive lets
+      // us reject an error status immediately without draining an arbitrary
+      // or never-ending response body merely to recycle the connection.
+      request.persistentConnection = false;
+      final response = await request.close().timeout(timeout);
       if (response.statusCode != HttpStatus.ok) {
-        await response.drain<void>();
         throw HttpException(
           'GitHub Releases 返回 ${response.statusCode}',
           uri: _latestReleaseApi,
         );
       }
-      final payload = await response
-          .transform(utf8.decoder)
-          .join()
-          .timeout(const Duration(seconds: 10));
+      final payload = utf8.decode(
+        await _readBoundedResponse(response, timeout, _maxResponseBytes),
+      );
       final json = jsonDecode(payload);
       if (json is! Map<String, dynamic>) {
         throw const FormatException('更新响应不是 JSON 对象');
@@ -148,6 +155,41 @@ class UpdateService {
     if (error is TimeoutException) return '连接超时，请检查网络后重试';
     if (error is SocketException) return '无法连接更新服务';
     return error.toString().replaceFirst('Exception: ', '');
+  }
+
+  /// Read the response under one total deadline. `Stream.timeout` only limits
+  /// the gap between chunks, so a trickle response could otherwise continue
+  /// forever. `StreamIterator.cancel` also closes the HTTP subscription when
+  /// a size or time limit is hit.
+  static Future<Uint8List> _readBoundedResponse(
+    HttpClientResponse response,
+    Duration timeout,
+    int maxBytes,
+  ) async {
+    final bytes = BytesBuilder(copy: false);
+    final iterator = StreamIterator<List<int>>(response);
+    final elapsed = Stopwatch()..start();
+    try {
+      if (response.contentLength > maxBytes) {
+        throw const FormatException('更新响应超过大小限制');
+      }
+      while (true) {
+        final remaining = timeout - elapsed.elapsed;
+        if (remaining <= Duration.zero) {
+          throw TimeoutException('更新响应读取超时', timeout);
+        }
+        final hasChunk = await iterator.moveNext().timeout(remaining);
+        if (!hasChunk) break;
+        final chunk = iterator.current;
+        if (bytes.length + chunk.length > maxBytes) {
+          throw const FormatException('更新响应超过大小限制');
+        }
+        bytes.add(chunk);
+      }
+      return bytes.takeBytes();
+    } finally {
+      await iterator.cancel();
+    }
   }
 }
 

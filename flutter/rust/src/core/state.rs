@@ -2,7 +2,6 @@ use crate::core::clipboard_engine::ClipboardItem;
 use crate::core::settings_store::Settings;
 use parking_lot::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc;
 use std::sync::{Arc, OnceLock};
 
 /// Process-wide engine state. Owned once via [`STATE`] and reached through
@@ -15,11 +14,6 @@ pub struct AppState {
     /// one lock prevents resize events and UI patches from overwriting each
     /// other's freshly persisted fields.
     pub settings: Arc<Mutex<Settings>>,
-    /// Sender for window-action requests (show/focus/raise). Triggers push `()`,
-    /// and a single resident worker thread drains the channel and emits a
-    /// `WindowActionKind` event for Dart to perform the actual OS dance (the
-    /// Rust core holds no window handle). Avoids spawning a thread per trigger.
-    pub window_action_tx: mpsc::Sender<()>,
 }
 
 static STATE: OnceLock<AppState> = OnceLock::new();
@@ -43,19 +37,14 @@ pub fn st() -> &'static AppState {
         .expect("AppState not initialized: call init_app_state first")
 }
 
-/// Internal: request the "pop to top" window-action dance. Feeds the resident
-/// worker, which emits a `WindowActionKind::ShowAndRaise` event for Dart.
+/// Internal: request the "pop to top" window-action dance. Dart consumes the
+/// coalesced flag from its UI-isolate timer.
 pub fn request_window_action() {
     // A permanent FRB StreamSink proved unreliable for window wake events on
     // Windows: the native hook detected the double-tap, but Dart sometimes
     // never received the stream item. Keep a coalescing atomic flag as the
     // authoritative hand-off; Dart polls and clears it on its UI isolate.
     WINDOW_ACTION_PENDING.store(true, Ordering::SeqCst);
-    if let Some(s) = STATE.get() {
-        if s.window_action_tx.send(()).is_err() {
-            crate::core::log::write_log("window action worker is unavailable");
-        }
-    }
 }
 
 /// Atomically consume a pending request to show/focus the window. Multiple

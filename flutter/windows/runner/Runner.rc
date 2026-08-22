@@ -93,7 +93,7 @@ BEGIN
             VALUE "FileDescription", "cliphist" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "cliphist" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.ping. All rights reserved." "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Ping. Licensed under the MIT License." "\0"
             VALUE "OriginalFilename", "cliphist.exe" "\0"
             VALUE "ProductName", "cliphist" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"

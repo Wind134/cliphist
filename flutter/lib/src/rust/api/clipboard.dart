@@ -16,7 +16,7 @@ Future<void> copyToClipboard({required BigInt id}) =>
 /// Forward a frontend log line into the shared `cliphist.log`. Truncated to a
 /// UTF-8 char boundary so non-ASCII (e.g. Chinese) logs do not panic when
 /// slicing by byte index.
-Future<void> feLog({required String message}) =>
+void feLog({required String message}) =>
     RustLib.instance.api.crateApiClipboardFeLog(message: message);
 
 /// Simulate a Ctrl+V (Windows) / Cmd+V (macOS) / evdev-injected (Linux) paste

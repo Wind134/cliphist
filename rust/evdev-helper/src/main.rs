@@ -16,8 +16,10 @@
 
 use std::fs::{self, File};
 use std::io::{Read, Write};
+use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::os::unix::io::AsRawFd;
 use std::os::unix::net::UnixStream;
+use std::path::{Component, Path, PathBuf};
 use std::time::Instant;
 
 use evdev_rs::enums::{EventCode, EV_KEY, EV_SYN};
@@ -31,12 +33,26 @@ struct DoubleTapState {
 
 const DOUBLE_TAP_MS: u128 = 300;
 
+struct Invocation {
+    uid: u32,
+    gid: u32,
+    socket_path: PathBuf,
+    wayland_display: String,
+    runtime_dir: PathBuf,
+}
+
+struct InputDevice {
+    device: Device,
+    fd: i32,
+    path: PathBuf,
+}
+
 fn create_persistent_uinput() -> Option<UInputDevice> {
     let dev = Device::new()?;
     dev.set_name("ClipHist Virtual Keyboard");
-    let _ = dev.enable(&evdev_rs::enums::EventType::EV_KEY);
+    dev.enable(&evdev_rs::enums::EventType::EV_KEY).ok()?;
     for code in [EV_KEY::KEY_LEFTCTRL, EV_KEY::KEY_V].iter() {
-        let _ = dev.enable(&EventCode::EV_KEY(code.clone()));
+        dev.enable(&EventCode::EV_KEY(code.clone())).ok()?;
     }
     UInputDevice::create_from_device(&dev).ok()
 }
@@ -65,21 +81,120 @@ fn main() {
         }
     }
 
-    if key_name.is_empty() || socket_path.is_empty() {
+    if key_name.is_empty() || socket_path.is_empty() || xdg_runtime_dir.is_empty() {
         eprintln!("[cliphist-helper] --key and --socket are required");
         std::process::exit(1);
     }
 
-    run(&key_name, &socket_path, &wayland_display, &xdg_runtime_dir);
+    let invocation = validate_invocation(&socket_path, &wayland_display, &xdg_runtime_dir)
+        .unwrap_or_else(|error| {
+            eprintln!("[cliphist-helper] Refusing unsafe invocation: {error}");
+            std::process::exit(1);
+        });
+    run(&key_name, invocation);
 }
 
-fn run(key_name: &str, socket_path: &str, wayland_display: &str, xdg_runtime_dir: &str) -> ! {
+fn validate_invocation(
+    socket_path: &str,
+    wayland_display: &str,
+    runtime_dir: &str,
+) -> Result<Invocation, String> {
+    if unsafe { libc::geteuid() } != 0 {
+        return Err("helper must be launched by pkexec as root".to_string());
+    }
+    // The helper needs effective root for evdev/uinput, but never needs any
+    // supplementary groups. Clear them once so the unprivileged `wtype`
+    // fallback cannot inherit ambient groups from pkexec's root process.
+    if unsafe { libc::setgroups(0, std::ptr::null()) } != 0 {
+        return Err(format!(
+            "cannot clear supplementary groups: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    let uid = std::env::var("PKEXEC_UID")
+        .map_err(|_| "PKEXEC_UID is missing".to_string())?
+        .parse::<u32>()
+        .map_err(|_| "PKEXEC_UID is invalid".to_string())?;
+    if uid == 0 {
+        return Err("refusing a root desktop-session identity".to_string());
+    }
+
+    let runtime_dir = PathBuf::from(runtime_dir);
+    if !runtime_dir.is_absolute() {
+        return Err("XDG runtime directory must be absolute".to_string());
+    }
+    let runtime_meta = fs::symlink_metadata(&runtime_dir)
+        .map_err(|error| format!("cannot inspect runtime directory: {error}"))?;
+    if !runtime_meta.file_type().is_dir()
+        || runtime_meta.uid() != uid
+        || runtime_meta.mode() & 0o077 != 0
+    {
+        return Err(
+            "runtime directory must be a private directory owned by PKEXEC_UID".to_string(),
+        );
+    }
+    let runtime_dir = fs::canonicalize(runtime_dir)
+        .map_err(|error| format!("cannot canonicalize runtime directory: {error}"))?;
+
+    let socket_path = PathBuf::from(socket_path);
+    let socket_name = socket_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "socket name is invalid".to_string())?;
+    if !valid_socket_name(socket_name) {
+        return Err("socket name is outside the ClipHist namespace".to_string());
+    }
+    let socket_parent = socket_path
+        .parent()
+        .and_then(|parent| fs::canonicalize(parent).ok())
+        .ok_or_else(|| "socket parent is invalid".to_string())?;
+    if socket_parent != runtime_dir {
+        return Err("socket must be directly inside the validated runtime directory".to_string());
+    }
+    let socket_meta = fs::symlink_metadata(&socket_path)
+        .map_err(|error| format!("cannot inspect socket: {error}"))?;
+    if !socket_meta.file_type().is_socket() || socket_meta.uid() != uid {
+        return Err("socket must be a Unix socket owned by PKEXEC_UID".to_string());
+    }
+
+    if !wayland_display.is_empty() && !valid_wayland_display(wayland_display) {
+        return Err("WAYLAND_DISPLAY must be a single file name".to_string());
+    }
+
+    Ok(Invocation {
+        uid,
+        gid: runtime_meta.gid(),
+        socket_path,
+        wayland_display: wayland_display.to_string(),
+        runtime_dir,
+    })
+}
+
+fn valid_socket_name(name: &str) -> bool {
+    const PREFIX: &str = "cliphist-dtap-";
+    const SUFFIX: &str = ".sock";
+    if !name.starts_with(PREFIX) || !name.ends_with(SUFFIX) {
+        return false;
+    }
+    let identity = &name[PREFIX.len()..name.len() - SUFFIX.len()];
+    !identity.is_empty() && identity.chars().all(|character| character.is_ascii_digit())
+}
+
+fn valid_wayland_display(display: &str) -> bool {
+    let mut components = Path::new(display).components();
+    matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none()
+}
+
+fn run(key_name: &str, invocation: Invocation) -> ! {
     eprintln!("[cliphist-helper] Starting evdev helper");
     eprintln!("[cliphist-helper] Key: {}", key_name);
-    eprintln!("[cliphist-helper] Socket: {}", socket_path);
+    eprintln!(
+        "[cliphist-helper] Socket: {}",
+        invocation.socket_path.display()
+    );
 
-    let wayland_display = wayland_display.to_string();
-    let xdg_runtime_dir = xdg_runtime_dir.to_string();
+    let wayland_display = invocation.wayland_display;
+    let xdg_runtime_dir = invocation.runtime_dir;
 
     let key_codes: Vec<EV_KEY> = match key_name {
         "Ctrl" => vec![EV_KEY::KEY_LEFTCTRL, EV_KEY::KEY_RIGHTCTRL],
@@ -93,7 +208,7 @@ fn run(key_name: &str, socket_path: &str, wayland_display: &str, xdg_runtime_dir
     let key_codes_set: std::collections::HashSet<u32> =
         key_codes.iter().map(|k| k.clone() as u32).collect();
 
-    let mut stream = match UnixStream::connect(socket_path) {
+    let mut stream = match UnixStream::connect(&invocation.socket_path) {
         Ok(s) => {
             eprintln!("[cliphist-helper] Connected to main process");
             s
@@ -101,64 +216,28 @@ fn run(key_name: &str, socket_path: &str, wayland_display: &str, xdg_runtime_dir
         Err(e) => {
             eprintln!(
                 "[cliphist-helper] Failed to connect to socket {}: {}",
-                socket_path, e
+                invocation.socket_path.display(),
+                e
             );
             std::process::exit(1);
         }
     };
 
-    let sock_fd = stream.as_raw_fd();
-    unsafe {
-        let flags = libc::fcntl(sock_fd, libc::F_GETFL, 0);
-        libc::fcntl(sock_fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
-    }
-
-    let mut devices: Vec<(Device, i32)> = Vec::new();
-    let entries = match fs::read_dir("/dev/input") {
-        Ok(e) => e,
-        Err(_) => {
-            eprintln!("[cliphist-helper] Cannot read /dev/input");
+    match unix_peer_uid(&stream) {
+        Ok(peer_uid) if peer_uid == invocation.uid => {}
+        Ok(peer_uid) => {
+            eprintln!("[cliphist-helper] Socket peer UID mismatch: {peer_uid}");
             std::process::exit(1);
         }
-    };
-
-    for entry in entries.flatten() {
-        let name = entry.file_name().to_string_lossy().to_string();
-        if !name.starts_with("event") {
-            continue;
-        }
-        let path = entry.path();
-        match File::open(&path) {
-            Ok(file) => {
-                let fd = file.as_raw_fd();
-                match Device::new_from_fd(file) {
-                    Ok(dev) => {
-                        if !dev.has(&evdev_rs::enums::EventType::EV_KEY) {
-                            continue;
-                        }
-                        unsafe {
-                            let flags = libc::fcntl(fd, libc::F_GETFL, 0);
-                            libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
-                        }
-                        devices.push((dev, fd));
-                    }
-                    Err(e) => {
-                        eprintln!(
-                            "[cliphist-helper] Cannot create device from {}: {}",
-                            path.display(),
-                            e
-                        );
-                    }
-                }
-            }
-            Err(e) => {
-                eprintln!("[cliphist-helper] Cannot open {}: {}", path.display(), e);
-            }
+        Err(error) => {
+            eprintln!("[cliphist-helper] Cannot authenticate socket peer: {error}");
+            std::process::exit(1);
         }
     }
 
-    if devices.is_empty() {
-        eprintln!("[cliphist-helper] No keyboard devices found.");
+    let sock_fd = stream.as_raw_fd();
+    if let Err(error) = set_nonblocking(sock_fd) {
+        eprintln!("[cliphist-helper] Cannot configure socket: {error}");
         std::process::exit(1);
     }
 
@@ -173,19 +252,19 @@ fn run(key_name: &str, socket_path: &str, wayland_display: &str, xdg_runtime_dir
             events: libc::EPOLLIN as u32,
             u64: sock_fd as u64,
         };
-        unsafe {
-            libc::epoll_ctl(epoll_fd, libc::EPOLL_CTL_ADD, sock_fd, &mut event);
+        if unsafe { libc::epoll_ctl(epoll_fd, libc::EPOLL_CTL_ADD, sock_fd, &mut event) } < 0 {
+            eprintln!(
+                "[cliphist-helper] Failed to add socket to epoll: {}",
+                std::io::Error::last_os_error()
+            );
+            std::process::exit(1);
         }
     }
 
-    for (_dev, fd) in &devices {
-        let mut event = libc::epoll_event {
-            events: libc::EPOLLIN as u32,
-            u64: *fd as u64,
-        };
-        unsafe {
-            libc::epoll_ctl(epoll_fd, libc::EPOLL_CTL_ADD, *fd, &mut event);
-        }
+    let mut devices = Vec::new();
+    discover_input_devices(&mut devices, epoll_fd, &key_codes);
+    if devices.is_empty() {
+        eprintln!("[cliphist-helper] No keyboard devices found; waiting for hotplug");
     }
 
     let mut state = DoubleTapState {
@@ -195,6 +274,7 @@ fn run(key_name: &str, socket_path: &str, wayland_display: &str, xdg_runtime_dir
     let mut persistent_uinput: Option<UInputDevice> = None;
     let mut epoll_events: Vec<libc::epoll_event> = Vec::with_capacity(devices.len() + 1);
     let mut cmd_buf = [0u8; 1];
+    let mut last_device_scan = Instant::now();
 
     loop {
         epoll_events.resize(devices.len() + 1, libc::epoll_event { events: 0, u64: 0 });
@@ -208,10 +288,15 @@ fn run(key_name: &str, socket_path: &str, wayland_display: &str, xdg_runtime_dir
         };
 
         if nfds < 0 {
-            eprintln!("[cliphist-helper] epoll_wait error, exiting");
+            let error = std::io::Error::last_os_error();
+            if error.kind() == std::io::ErrorKind::Interrupted {
+                continue;
+            }
+            eprintln!("[cliphist-helper] epoll_wait error: {error}");
             break;
         }
 
+        let mut dead_fds = std::collections::HashSet::new();
         for event in epoll_events.iter().take(nfds as usize) {
             let ready_fd = event.u64 as i32;
 
@@ -224,9 +309,20 @@ fn run(key_name: &str, socket_path: &str, wayland_display: &str, xdg_runtime_dir
                                 &mut persistent_uinput,
                                 &wayland_display,
                                 &xdg_runtime_dir,
+                                invocation.uid,
+                                invocation.gid,
                             );
-                            let _ = stream.write_all(if pasted { b"S" } else { b"F" });
-                            let _ = stream.flush();
+                            if stream
+                                .write_all(if pasted { b"S" } else { b"F" })
+                                .and_then(|()| stream.flush())
+                                .is_err()
+                            {
+                                eprintln!("[cliphist-helper] Failed to acknowledge paste result");
+                                unsafe {
+                                    libc::close(epoll_fd);
+                                }
+                                std::process::exit(0);
+                            }
                         }
                         Ok(0) => {
                             eprintln!("[cliphist-helper] Main process closed socket, exiting");
@@ -249,13 +345,13 @@ fn run(key_name: &str, socket_path: &str, wayland_display: &str, xdg_runtime_dir
                 continue;
             }
 
-            for (dev, dev_fd) in &devices {
-                if dev_fd != &ready_fd {
+            for input in &devices {
+                if input.fd != ready_fd {
                     continue;
                 }
 
                 loop {
-                    match dev.next_event(ReadFlag::NORMAL) {
+                    match input.device.next_event(ReadFlag::NORMAL) {
                         Ok((ReadStatus::Success, ev)) => match ev.event_code {
                             EventCode::EV_KEY(kc) => {
                                 if !key_codes_set.contains(&(kc as u32)) {
@@ -275,7 +371,12 @@ fn run(key_name: &str, socket_path: &str, wayland_display: &str, xdg_runtime_dir
                                                     }
                                                     std::process::exit(0);
                                                 }
-                                                let _ = stream.flush();
+                                                if stream.flush().is_err() {
+                                                    unsafe {
+                                                        libc::close(epoll_fd);
+                                                    }
+                                                    std::process::exit(0);
+                                                }
                                                 continue;
                                             }
                                         }
@@ -286,24 +387,73 @@ fn run(key_name: &str, socket_path: &str, wayland_display: &str, xdg_runtime_dir
                                     state.released = true;
                                 }
                             }
-                            EventCode::EV_SYN(EV_SYN::SYN_DROPPED) => {}
+                            EventCode::EV_SYN(EV_SYN::SYN_DROPPED) => {
+                                state.last_press = None;
+                                state.released = true;
+                            }
                             _ => {}
                         },
-                        Ok((ReadStatus::Sync, _ev)) => continue,
+                        Ok((ReadStatus::Sync, _ev)) => {
+                            // Discard the state-delta stream after SYN_DROPPED
+                            // and reset the gesture state. Treating sync events
+                            // as real presses can create a phantom double tap.
+                            state.last_press = None;
+                            state.released = true;
+                            loop {
+                                match input.device.next_event(ReadFlag::SYNC) {
+                                    Ok((ReadStatus::Sync, _)) => {}
+                                    Ok((ReadStatus::Success, _)) => break,
+                                    Err(error) if error.raw_os_error() == Some(libc::EAGAIN) => {
+                                        break;
+                                    }
+                                    Err(_) => {
+                                        dead_fds.insert(ready_fd);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
                         Err(e) => {
                             if e.raw_os_error() == Some(libc::EAGAIN) {
                                 break;
                             }
+                            dead_fds.insert(ready_fd);
                             break;
                         }
                     }
                 }
             }
         }
+
+        if !dead_fds.is_empty() {
+            devices.retain(|input| {
+                if dead_fds.contains(&input.fd) {
+                    unsafe {
+                        libc::epoll_ctl(
+                            epoll_fd,
+                            libc::EPOLL_CTL_DEL,
+                            input.fd,
+                            std::ptr::null_mut(),
+                        );
+                    }
+                    eprintln!(
+                        "[cliphist-helper] Input device disconnected: {}",
+                        input.path.display()
+                    );
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+        if last_device_scan.elapsed() >= std::time::Duration::from_secs(2) {
+            discover_input_devices(&mut devices, epoll_fd, &key_codes);
+            last_device_scan = Instant::now();
+        }
     }
 
-    for (dev, _) in devices {
-        drop(dev);
+    for input in devices {
+        drop(input.device);
     }
     unsafe {
         libc::close(epoll_fd);
@@ -311,10 +461,74 @@ fn run(key_name: &str, socket_path: &str, wayland_display: &str, xdg_runtime_dir
     std::process::exit(0);
 }
 
+fn discover_input_devices(devices: &mut Vec<InputDevice>, epoll_fd: i32, keys: &[EV_KEY]) {
+    let known = devices
+        .iter()
+        .map(|input| input.path.clone())
+        .collect::<std::collections::HashSet<_>>();
+    let Ok(entries) = fs::read_dir("/dev/input") else {
+        eprintln!("[cliphist-helper] Cannot read /dev/input");
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let is_event = entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| name.starts_with("event"));
+        if !is_event || known.contains(&path) {
+            continue;
+        }
+        let Ok(metadata) = fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if !metadata.file_type().is_char_device() {
+            continue;
+        }
+        let Ok(file) = File::open(&path) else {
+            continue;
+        };
+        let fd = file.as_raw_fd();
+        let Ok(device) = Device::new_from_fd(file) else {
+            continue;
+        };
+        if !keys
+            .iter()
+            .any(|key| device.has(&EventCode::EV_KEY(key.clone())))
+        {
+            continue;
+        }
+        if let Err(error) = set_nonblocking(fd) {
+            eprintln!(
+                "[cliphist-helper] Cannot configure {}: {error}",
+                path.display()
+            );
+            continue;
+        }
+        let mut event = libc::epoll_event {
+            events: (libc::EPOLLIN | libc::EPOLLERR | libc::EPOLLHUP) as u32,
+            u64: fd as u64,
+        };
+        if unsafe { libc::epoll_ctl(epoll_fd, libc::EPOLL_CTL_ADD, fd, &mut event) } < 0 {
+            eprintln!(
+                "[cliphist-helper] Cannot monitor {}: {}",
+                path.display(),
+                std::io::Error::last_os_error()
+            );
+            continue;
+        }
+        eprintln!("[cliphist-helper] Monitoring {}", path.display());
+        devices.push(InputDevice { device, fd, path });
+    }
+}
+
 fn simulate_paste_injection(
     uinput: &mut Option<UInputDevice>,
     wayland_display: &str,
-    xdg_runtime_dir: &str,
+    xdg_runtime_dir: &Path,
+    uid: u32,
+    gid: u32,
 ) -> bool {
     if uinput.is_none() {
         *uinput = create_persistent_uinput();
@@ -330,7 +544,7 @@ fn simulate_paste_injection(
     }
     eprintln!("[cliphist-helper] uinput paste failed, trying wtype fallback");
 
-    if try_wtype_paste(wayland_display, xdg_runtime_dir) {
+    if try_wtype_paste(wayland_display, xdg_runtime_dir, uid, gid) {
         eprintln!("[cliphist-helper] Paste succeeded via wtype");
         return true;
     }
@@ -347,14 +561,31 @@ fn try_uinput_paste(uinput: &mut Option<UInputDevice>) -> bool {
     }
 }
 
-fn try_wtype_paste(wayland_display: &str, xdg_runtime_dir: &str) -> bool {
-    let wayland_socket = format!("{}/{}", xdg_runtime_dir, wayland_display);
-    if !std::path::Path::new(&wayland_socket).exists() {
+fn try_wtype_paste(wayland_display: &str, xdg_runtime_dir: &Path, uid: u32, gid: u32) -> bool {
+    use std::os::unix::process::CommandExt;
+
+    if wayland_display.is_empty() {
         return false;
     }
-    match std::process::Command::new("wtype")
+    let wayland_socket = xdg_runtime_dir.join(wayland_display);
+    let Ok(metadata) = fs::symlink_metadata(&wayland_socket) else {
+        return false;
+    };
+    if !metadata.file_type().is_socket() || metadata.uid() != uid {
+        return false;
+    }
+    let executable = ["/usr/bin/wtype", "/bin/wtype"]
+        .into_iter()
+        .find(|path| Path::new(path).is_file());
+    let Some(executable) = executable else {
+        return false;
+    };
+    match std::process::Command::new(executable)
+        .env_clear()
         .env("WAYLAND_DISPLAY", wayland_display)
         .env("XDG_RUNTIME_DIR", xdg_runtime_dir)
+        .uid(uid)
+        .gid(gid)
         .arg("-M")
         .arg("ctrl")
         .arg("v")
@@ -378,6 +609,40 @@ fn try_wtype_paste(wayland_display: &str, xdg_runtime_dir: &str) -> bool {
             }
         }
         Err(_) => false,
+    }
+}
+
+fn set_nonblocking(fd: i32) -> std::io::Result<()> {
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL, 0) };
+    if flags < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    if unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+fn unix_peer_uid(stream: &UnixStream) -> std::io::Result<u32> {
+    let mut credentials = libc::ucred {
+        pid: 0,
+        uid: 0,
+        gid: 0,
+    };
+    let mut length = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
+    let result = unsafe {
+        libc::getsockopt(
+            stream.as_raw_fd(),
+            libc::SOL_SOCKET,
+            libc::SO_PEERCRED,
+            (&mut credentials as *mut libc::ucred).cast(),
+            &mut length,
+        )
+    };
+    if result < 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(credentials.uid)
     }
 }
 
@@ -420,4 +685,19 @@ fn inject_ctrl_v_uinput(uidev: &UInputDevice) -> bool {
     success &= send(EV_KEY::KEY_LEFTCTRL, 0) & syn();
     std::thread::sleep(std::time::Duration::from_millis(30));
     success
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{valid_socket_name, valid_wayland_display};
+
+    #[test]
+    fn validates_names_crossing_the_privilege_boundary() {
+        assert!(valid_socket_name("cliphist-dtap-1234.sock"));
+        assert!(!valid_socket_name("cliphist-dtap-.sock"));
+        assert!(!valid_socket_name("other-1234.sock"));
+        assert!(valid_wayland_display("wayland-0"));
+        assert!(!valid_wayland_display("../wayland-0"));
+        assert!(!valid_wayland_display("nested/wayland-0"));
+    }
 }

@@ -9,7 +9,6 @@ import 'api/init.dart';
 import 'api/settings.dart';
 import 'api/stream.dart';
 import 'core/clipboard_engine.dart';
-import 'core/events.dart';
 import 'core/settings_store.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -39,11 +38,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RustStreamSink<BigInt> dco_decode_StreamSink_usize_Sse(dynamic raw);
 
   @protected
-  RustStreamSink<WindowActionKind> dco_decode_StreamSink_window_action_kind_Sse(
-    dynamic raw,
-  );
-
-  @protected
   String dco_decode_String(dynamic raw);
 
   @protected
@@ -66,9 +60,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   double dco_decode_f_32(dynamic raw);
-
-  @protected
-  int dco_decode_i_32(dynamic raw);
 
   @protected
   List<ClipboardItem> dco_decode_list_clipboard_item(dynamic raw);
@@ -113,9 +104,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt dco_decode_usize(dynamic raw);
 
   @protected
-  WindowActionKind dco_decode_window_action_kind(dynamic raw);
-
-  @protected
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
 
   @protected
@@ -129,11 +117,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RustStreamSink<BigInt> sse_decode_StreamSink_usize_Sse(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  RustStreamSink<WindowActionKind> sse_decode_StreamSink_window_action_kind_Sse(
     SseDeserializer deserializer,
   );
 
@@ -162,9 +145,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   double sse_decode_f_32(SseDeserializer deserializer);
-
-  @protected
-  int sse_decode_i_32(SseDeserializer deserializer);
 
   @protected
   List<ClipboardItem> sse_decode_list_clipboard_item(
@@ -213,7 +193,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt sse_decode_usize(SseDeserializer deserializer);
 
   @protected
-  WindowActionKind sse_decode_window_action_kind(SseDeserializer deserializer);
+  int sse_decode_i_32(SseDeserializer deserializer);
 
   @protected
   void sse_encode_AnyhowException(
@@ -236,12 +216,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_StreamSink_usize_Sse(
     RustStreamSink<BigInt> self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_StreamSink_window_action_kind_Sse(
-    RustStreamSink<WindowActionKind> self,
     SseSerializer serializer,
   );
 
@@ -271,9 +245,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_f_32(double self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_i_32(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_clipboard_item(
@@ -330,10 +301,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_usize(BigInt self, SseSerializer serializer);
 
   @protected
-  void sse_encode_window_action_kind(
-    WindowActionKind self,
-    SseSerializer serializer,
-  );
+  void sse_encode_i_32(int self, SseSerializer serializer);
 }
 
 // Section: wire_class

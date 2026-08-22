@@ -22,6 +22,10 @@ class ClipboardItem {
   final int? imageHeight;
   final String? htmlContent;
 
+  /// Stable content identity used for whole-history deduplication. Optional
+  /// on disk for migration from releases that predate this field.
+  final String? contentHash;
+
   const ClipboardItem({
     required this.id,
     required this.content,
@@ -33,6 +37,7 @@ class ClipboardItem {
     this.imageWidth,
     this.imageHeight,
     this.htmlContent,
+    this.contentHash,
   });
 
   @override
@@ -46,7 +51,8 @@ class ClipboardItem {
       imagePath.hashCode ^
       imageWidth.hashCode ^
       imageHeight.hashCode ^
-      htmlContent.hashCode;
+      htmlContent.hashCode ^
+      contentHash.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -62,5 +68,6 @@ class ClipboardItem {
           imagePath == other.imagePath &&
           imageWidth == other.imageWidth &&
           imageHeight == other.imageHeight &&
-          htmlContent == other.htmlContent;
+          htmlContent == other.htmlContent &&
+          contentHash == other.contentHash;
 }

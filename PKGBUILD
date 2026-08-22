@@ -15,7 +15,7 @@ depends=('gtk3' 'libappindicator-gtk3' 'keybinder3' 'libevdev' 'polkit' 'libx11'
 makedepends=('cargo' 'flutter' 'cmake' 'ninja' 'clang' 'pkg-config' 'libevdev' 'libudev' 'libxi' 'libxtst')
 conflicts=('cliphist-bin')
 source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('ebab87ebc09e85ca95ae9fdce97080778436044fc74dd261639b79dd0ad7fb9b')
 
 build() {
   cd "$srcdir/cliphist-${pkgver}"

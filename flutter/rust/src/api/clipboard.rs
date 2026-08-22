@@ -14,6 +14,7 @@ pub fn copy_to_clipboard(id: usize) -> Result<(), String> {
 /// Forward a frontend log line into the shared `cliphist.log`. Truncated to a
 /// UTF-8 char boundary so non-ASCII (e.g. Chinese) logs do not panic when
 /// slicing by byte index.
+#[flutter_rust_bridge::frb(sync)]
 pub fn fe_log(message: String) {
     let msg = truncate_char_boundary(&message, 300);
     log::write_log(&format!("[FE] {}", msg));

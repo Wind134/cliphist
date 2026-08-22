@@ -11,4 +11,4 @@ PRODUCT_NAME = cliphist
 PRODUCT_BUNDLE_IDENTIFIER = com.ping.cliphist
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2026 com.ping. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2026 Ping. Licensed under the MIT License.

@@ -14,7 +14,7 @@ arboard = "3"
 parking_lot = "0.12"
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "5"
-image = "0.25"
+image = { version = "0.25", default-features = false, features = ["png"] }
 ammonia = "4"
 libc = "0.2"
 
@@ -33,6 +33,9 @@ rdev = { version = "0.5", features = ["unstable_grab"] }
 # (`fs2::FileExt::try_lock_exclusive`). The lock auto-releases when the
 # process dies (even on crash), so there is no stale-lock cleanup to do.
 fs2 = "0.4"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.60", features = ["Win32_Storage_FileSystem"] }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }

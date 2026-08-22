@@ -6,7 +6,6 @@ use crate::core::log;
 use crate::core::settings_store;
 use crate::core::state::{self, AppState};
 use parking_lot::Mutex;
-use std::sync::mpsc;
 use std::sync::Arc;
 
 /// FRB init hook — invoked by `RustLib.init()` on the Dart side before any
@@ -55,9 +54,9 @@ pub fn check_single_instance() -> SingleInstanceResult {
 }
 
 /// Initialize the Rust core: load history + settings, install the panic hook,
-/// stash the global [`AppState`], and spawn the four background tasks
-/// (clipboard poll, window-action worker, helper-status monitor, expired-item
-/// cleaner). Idempotent-ish: a second call is a no-op (the [`OnceLock`] guards
+/// stash the global [`AppState`], and spawn the three background tasks
+/// (clipboard poll, helper-status monitor, expired-item cleaner). Idempotent-ish:
+/// a second call is a no-op (the [`OnceLock`] guards
 /// the state), so it is safe if Dart retries after a hot restart.
 pub fn init_app_state() -> Result<(), String> {
     if state::is_initialized() {
@@ -74,13 +73,10 @@ pub fn init_app_state() -> Result<(), String> {
     let counter = Arc::new(Mutex::new(
         history.lock().iter().map(|i| i.id).max().unwrap_or(0),
     ));
-    let (window_action_tx, window_action_rx) = mpsc::channel::<()>();
-
     let state_app = AppState {
         history: history.clone(),
         counter: counter.clone(),
         settings: Arc::new(Mutex::new(startup_settings.clone())),
-        window_action_tx,
     };
     if !state::set_state(state_app) {
         log::write_log("init_app_state skipped: another caller initialized state");
@@ -92,7 +88,7 @@ pub fn init_app_state() -> Result<(), String> {
     // now so the window still pops up.
     crate::core::single_instance::drain_pending_wake();
 
-    crate::core::background::spawn_all(history, counter, window_action_rx);
+    crate::core::background::spawn_all(history, counter);
 
     // Global-hotkey registration lives in Dart's native `hotkey_manager`
     // plugin. That plugin executes on each platform's UI/event-loop thread;

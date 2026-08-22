@@ -4,12 +4,11 @@ import 'package:cliphist/state/history_provider.dart';
 import 'package:cliphist/state/providers.dart';
 import 'package:cliphist/ui/history_view.dart';
 import 'package:cliphist/ui/settings_screen.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:cliphist/ui/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
-import 'package:cliphist/ui/theme.dart';
+import 'package:flutter_test/flutter_test.dart';
 
 const testSettings = Settings(
   closeToTray: true,

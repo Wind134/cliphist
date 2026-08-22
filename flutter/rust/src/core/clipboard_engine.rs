@@ -5,6 +5,8 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
 
+use crate::core::{consts, storage};
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClipboardItem {
     pub id: usize,
@@ -24,6 +26,10 @@ pub struct ClipboardItem {
     pub image_height: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub html_content: Option<String>,
+    /// Stable content identity used for whole-history deduplication. Optional
+    /// on disk for migration from releases that predate this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_hash: Option<String>,
 }
 
 static DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
@@ -33,10 +39,10 @@ static IMAGES_DIR: OnceLock<PathBuf> = OnceLock::new();
 /// Cached via `OnceLock` so `create_dir_all` runs only once.
 pub fn data_dir() -> &'static PathBuf {
     DATA_DIR.get_or_init(|| {
-        let dir = dirs::data_local_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("ClipHist");
-        std::fs::create_dir_all(&dir).ok();
+        let dir = storage::app_data_dir();
+        if let Err(error) = storage::ensure_private_dir(&dir) {
+            crate::core::log::write_log(&error);
+        }
         dir
     })
 }
@@ -46,7 +52,9 @@ pub fn data_dir() -> &'static PathBuf {
 pub fn images_dir() -> &'static PathBuf {
     IMAGES_DIR.get_or_init(|| {
         let dir = data_dir().join("images");
-        std::fs::create_dir_all(&dir).ok();
+        if let Err(error) = storage::ensure_private_dir(&dir) {
+            crate::core::log::write_log(&error);
+        }
         dir
     })
 }
@@ -63,19 +71,12 @@ pub fn get_storage_path() -> PathBuf {
 /// leave a half-decoded PNG that the frontend would later fail to load.
 pub fn save_image_file(id: usize, png: &[u8]) -> Option<String> {
     let abs = images_dir().join(format!("{}.png", id));
-    let tmp = images_dir().join(format!("{}.png.tmp", id));
-    let wrote = if std::fs::write(&tmp, png).is_ok() && std::fs::rename(&tmp, &abs).is_ok() {
-        true
-    } else {
-        // Fallback: direct write if the temp+rename path failed.
-        let _ = std::fs::remove_file(&tmp);
-        std::fs::write(&abs, png).is_ok()
-    };
-    if wrote {
-        Some(format!("images/{}.png", id))
-    } else {
-        crate::core::log::write_log(&format!("Failed to write image file {:?}", abs));
-        None
+    match storage::atomic_write_without_backup(&abs, png) {
+        Ok(()) => Some(format!("images/{id}.png")),
+        Err(error) => {
+            crate::core::log::write_log(&format!("Failed to write image file {abs:?}: {error}"));
+            None
+        }
     }
 }
 
@@ -83,6 +84,11 @@ pub fn save_image_file(id: usize, png: &[u8]) -> Option<String> {
 pub fn read_image_file(rel: &str) -> Option<Vec<u8>> {
     let safe_rel = safe_image_path(rel)?;
     let abs = data_dir().join(safe_rel);
+    let metadata = std::fs::metadata(&abs).ok()?;
+    if !metadata.is_file() || metadata.len() > consts::MAX_IMAGE_FILE_SIZE {
+        crate::core::log::write_log(&format!("Rejected invalid image file {abs:?}"));
+        return None;
+    }
     std::fs::read(abs).ok()
 }
 
@@ -114,25 +120,26 @@ pub fn delete_image_file(path: &Option<String>) {
 /// target. Avoids leaving a half-written JSON if the process is interrupted
 /// mid-write. The payload is now small (images are external), so this is cheap.
 pub fn save_history(items: &[ClipboardItem]) -> Result<(), String> {
-    let json = serde_json::to_string_pretty(items)
-        .map_err(|e| format!("Failed to serialize history: {}", e))?;
-    let path = get_storage_path();
-    let tmp = path.with_extension("json.tmp");
-    if std::fs::write(&tmp, &json).is_ok() && std::fs::rename(&tmp, &path).is_ok() {
-        return Ok(());
+    let json =
+        serde_json::to_vec(items).map_err(|e| format!("Failed to serialize history: {}", e))?;
+    if json.len() as u64 > consts::MAX_HISTORY_FILE_SIZE {
+        return Err(format!(
+            "History is too large to persist: {} bytes (limit {})",
+            json.len(),
+            consts::MAX_HISTORY_FILE_SIZE
+        ));
     }
-    // Fallback: direct write if the temp+rename path failed, but still report
-    // a real error to commands if that fallback also fails.
-    let _ = std::fs::remove_file(&tmp);
-    std::fs::write(&path, &json).map_err(|e| format!("Failed to save history to {:?}: {}", path, e))
+    let path = get_storage_path();
+    storage::atomic_write(&path, &json)
 }
 
 pub fn load_history() -> Vec<ClipboardItem> {
     crate::core::log::write_log("load_history: start");
     let path = get_storage_path();
     crate::core::log::write_log(&format!("load_history: path={:?}", path));
-    if let Ok(json) = std::fs::read_to_string(path) {
-        if let Ok(mut items) = serde_json::from_str::<Vec<ClipboardItem>>(&json) {
+    match storage::load_json_with_backup::<Vec<ClipboardItem>>(&path, consts::MAX_HISTORY_FILE_SIZE)
+    {
+        Ok(Some(mut items)) => {
             // Re-sanitize persisted rich text as a migration boundary. Older
             // versions may have stored HTML before the current allowlist was
             // introduced; rendering it must not revive remote images or old
@@ -151,19 +158,239 @@ pub fn load_history() -> Vec<ClipboardItem> {
                     item.content_type = get_content_type(&item.content);
                     changed = true;
                 }
+                if item.content.len() > consts::MAX_TEXT_SIZE {
+                    item.content
+                        .truncate(floor_char_boundary(&item.content, consts::MAX_TEXT_SIZE));
+                    item.preview = make_preview(&item.content);
+                    item.char_count = item.content.chars().count();
+                    changed = true;
+                }
+                if item
+                    .html_content
+                    .as_ref()
+                    .is_some_and(|html| html.len() > consts::MAX_HTML_SIZE)
+                {
+                    item.html_content = None;
+                    item.content_type = get_content_type(&item.content);
+                    changed = true;
+                }
+                let expected_hash = item_content_hash(item);
+                if item.content_hash.as_ref() != Some(&expected_hash) {
+                    item.content_hash = Some(expected_hash);
+                    changed = true;
+                }
             }
+            let before_validation = items.len();
+            items.retain(|item| {
+                item.content_type != "image"
+                    || item
+                        .image_path
+                        .as_deref()
+                        .and_then(read_image_file)
+                        .is_some()
+            });
+            changed |= items.len() != before_validation;
+
+            // A fingerprint is only an index hint: always confirm the actual
+            // payload before dropping an entry. This both protects against a
+            // (very unlikely) hash collision and keeps migration semantics in
+            // line with the live commit path.
+            let before_deduplication = items.len();
+            let (mut items, mut obsolete_images) = deduplicate_history(items);
+            changed |= items.len() != before_deduplication;
+
+            changed |= repair_history_ids(&mut items);
+            obsolete_images.extend(trim_history(&mut items));
+            changed |= !obsolete_images.is_empty();
             if changed {
-                if let Err(e) = save_history(&items) {
-                    crate::core::log::write_log(&format!(
-                        "Failed to persist sanitized history migration: {}",
-                        e
-                    ));
+                match save_history(&items) {
+                    Ok(()) => {
+                        for path in obsolete_images {
+                            let still_referenced = path.as_ref().is_some_and(|path| {
+                                items
+                                    .iter()
+                                    .any(|item| item.image_path.as_ref() == Some(path))
+                            });
+                            if !still_referenced {
+                                delete_image_file(&path);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        // Keep every old image until the corresponding new
+                        // snapshot is durable. The sanitized in-memory view is
+                        // still safe and a later mutation will retry saving it.
+                        crate::core::log::write_log(&format!(
+                            "Failed to persist sanitized history migration: {e}"
+                        ));
+                    }
                 }
             }
             return items;
         }
+        Ok(None) => {}
+        Err(error) => crate::core::log::write_log(&format!(
+            "Failed to load clipboard history from {path:?}: {error}"
+        )),
     }
     Vec::new()
+}
+
+fn floor_char_boundary(value: &str, max_bytes: usize) -> usize {
+    let mut index = value.len().min(max_bytes);
+    while !value.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
+}
+
+pub fn text_content_hash(text: &str, html: Option<&str>) -> String {
+    let mut bytes = Vec::with_capacity(text.len() + html.map_or(0, str::len) + 11);
+    bytes.extend_from_slice(b"text\0");
+    bytes.extend_from_slice(text.as_bytes());
+    bytes.extend_from_slice(b"\0html\0");
+    if let Some(html) = html {
+        bytes.extend_from_slice(html.as_bytes());
+    }
+    stable_content_hash(&bytes)
+}
+
+pub fn image_content_hash(png: &[u8]) -> String {
+    let mut bytes = Vec::with_capacity(png.len() + 10);
+    bytes.extend_from_slice(b"image/png\0");
+    bytes.extend_from_slice(png);
+    stable_content_hash(&bytes)
+}
+
+/// A deterministic 128-bit fingerprint composed from two independently
+/// seeded FNV-1a passes. This is an identity hint for deduplication, not a
+/// security boundary; comparing hashes avoids retaining a second full payload.
+fn stable_content_hash(bytes: &[u8]) -> String {
+    fn fnv1a(bytes: &[u8], mut state: u64) -> u64 {
+        for byte in bytes {
+            state ^= u64::from(*byte);
+            state = state.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        state
+    }
+
+    let first = fnv1a(bytes, 0xcbf2_9ce4_8422_2325);
+    let second = fnv1a(bytes, 0x8422_2325_cbf2_9ce4);
+    format!("{first:016x}{second:016x}")
+}
+
+fn item_content_hash(item: &ClipboardItem) -> String {
+    if item.content_type == "image" {
+        if let Some(path) = item.image_path.as_deref() {
+            if let Some(bytes) = read_image_file(path) {
+                return image_content_hash(&bytes);
+            }
+        }
+    }
+    text_content_hash(&item.content, item.html_content.as_deref())
+}
+
+fn payload_size(item: &ClipboardItem) -> usize {
+    item.content.len() + item.preview.len() + item.html_content.as_ref().map_or(0, String::len)
+}
+
+/// Enforce both count and aggregate inline-payload limits. Returns image paths
+/// that may be removed only after the trimmed snapshot is durably persisted.
+pub fn trim_history(items: &mut Vec<ClipboardItem>) -> Vec<Option<String>> {
+    let mut total = items.iter().map(payload_size).sum::<usize>();
+    let mut removed = Vec::new();
+    while items.len() > consts::MAX_HISTORY || total > consts::MAX_HISTORY_PAYLOAD_SIZE {
+        let Some(item) = items.pop() else {
+            break;
+        };
+        total = total.saturating_sub(payload_size(&item));
+        removed.push(item.image_path);
+    }
+    removed
+}
+
+/// Insert a new item, or refresh a matching older item, then persist before
+/// exposing the mutation to readers. Returns obsolete image paths after the
+/// commit succeeds.
+pub fn commit_item(
+    history: &mut Vec<ClipboardItem>,
+    mut item: ClipboardItem,
+) -> Result<Vec<Option<String>>, String> {
+    let mut next = history.clone();
+    let mut removed_images = Vec::new();
+    if let Some(hash) = item.content_hash.as_ref() {
+        if let Some(position) = next.iter().position(|existing| {
+            existing.content_hash.as_ref() == Some(hash) && same_content(existing, &item)
+        }) {
+            let mut existing = next.remove(position);
+            // A capture may already have externalized a replacement image.
+            // Keep the established item/file and remove the unreferenced new
+            // file only after the reordered snapshot commits successfully.
+            removed_images.push(item.image_path.take());
+            existing.timestamp = item.timestamp;
+            existing.preview = item.preview;
+            existing.char_count = item.char_count;
+            item = existing;
+        }
+    }
+    next.insert(0, item);
+    removed_images.extend(trim_history(&mut next));
+    save_history(&next)?;
+    *history = next;
+    Ok(removed_images)
+}
+
+fn same_content(left: &ClipboardItem, right: &ClipboardItem) -> bool {
+    if left.content_type == "image" && right.content_type == "image" {
+        return left
+            .image_path
+            .as_deref()
+            .and_then(read_image_file)
+            .zip(right.image_path.as_deref().and_then(read_image_file))
+            .is_some_and(|(left, right)| left == right);
+    }
+    left.content == right.content && left.html_content == right.html_content
+}
+
+fn deduplicate_history(items: Vec<ClipboardItem>) -> (Vec<ClipboardItem>, Vec<Option<String>>) {
+    let mut deduplicated = Vec::with_capacity(items.len());
+    let mut obsolete_images = Vec::new();
+    for item in items {
+        let is_duplicate = item.content_hash.as_ref().is_some_and(|hash| {
+            deduplicated.iter().any(|existing: &ClipboardItem| {
+                existing.content_hash.as_ref() == Some(hash) && same_content(existing, &item)
+            })
+        });
+        if is_duplicate {
+            obsolete_images.push(item.image_path);
+        } else {
+            deduplicated.push(item);
+        }
+    }
+    (deduplicated, obsolete_images)
+}
+
+/// IDs are process-local record handles, not external identifiers. Repair a
+/// crafted/obsolete snapshot as a group when IDs are duplicated, zero, or so
+/// large that the monotonic capture counter is no longer operationally safe.
+fn repair_history_ids(items: &mut [ClipboardItem]) -> bool {
+    const MAX_REASONABLE_ITEM_ID: usize = 1_000_000_000_000;
+
+    let mut seen = std::collections::HashSet::with_capacity(items.len());
+    let needs_repair = items
+        .iter()
+        .any(|item| item.id == 0 || item.id > MAX_REASONABLE_ITEM_ID || !seen.insert(item.id));
+    if !needs_repair {
+        return false;
+    }
+
+    let count = items.len();
+    for (index, item) in items.iter_mut().enumerate() {
+        // Newest-first history receives descending IDs, leaving `count` as
+        // the next counter base while preserving the existing list order.
+        item.id = count - index;
+    }
+    true
 }
 
 pub fn make_preview(content: &str) -> String {
@@ -261,25 +488,28 @@ pub fn copy_item_to_clipboard(history: &[ClipboardItem], id: usize) -> Result<()
 
     // Images are stored as external PNG files; load on demand.
     if let Some(ref rel) = item.image_path {
-        if let Some(img_bytes) = read_image_file(rel) {
-            let decoder = image::codecs::png::PngDecoder::new(Cursor::new(&img_bytes))
-                .map_err(|e| e.to_string())?;
-            let img: image::DynamicImage =
-                image::DynamicImage::from_decoder(decoder).map_err(|e| e.to_string())?;
-            let rgba = img.to_rgba8();
-            let (w, h) = rgba.dimensions();
-            let img_data = arboard::ImageData {
-                width: w as usize,
-                height: h as usize,
-                bytes: rgba.into_raw().into(),
-            };
-            // Mark this exact image as self-written so the poll loop doesn't
-            // re-record it as a new history entry.
-            let self_hash = img_hash(&img_data);
-            clipboard.set_image(img_data).map_err(|e| e.to_string())?;
-            mark_self_set(self_hash);
-            return Ok(());
-        }
+        let img_bytes =
+            read_image_file(rel).ok_or_else(|| format!("图片文件缺失或无效，无法复制: {rel}"))?;
+        let decoder = image::codecs::png::PngDecoder::new(Cursor::new(&img_bytes))
+            .map_err(|e| format!("图片解码失败: {e}"))?;
+        let img: image::DynamicImage =
+            image::DynamicImage::from_decoder(decoder).map_err(|e| format!("图片解码失败: {e}"))?;
+        let rgba = img.to_rgba8();
+        let (w, h) = rgba.dimensions();
+        let img_data = arboard::ImageData {
+            width: w as usize,
+            height: h as usize,
+            bytes: rgba.into_raw().into(),
+        };
+        // Mark this exact image as self-written so the poll loop doesn't
+        // re-record it as a new history entry.
+        let self_hash = img_hash(&img_data);
+        clipboard.set_image(img_data).map_err(|e| e.to_string())?;
+        mark_self_set(self_hash);
+        return Ok(());
+    }
+    if item.content_type == "image" {
+        return Err("图片记录没有可用的图片文件".to_string());
     }
 
     if let Some(ref html) = item.html_content {
@@ -304,6 +534,22 @@ pub fn copy_item_to_clipboard(history: &[ClipboardItem], id: usize) -> Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn text_item(id: usize, content: String) -> ClipboardItem {
+        ClipboardItem {
+            id,
+            content_hash: Some(text_content_hash(&content, None)),
+            preview: make_preview(&content),
+            char_count: content.chars().count(),
+            content,
+            content_type: "text".to_string(),
+            timestamp: "2026-08-19 12:00:00".to_string(),
+            image_path: None,
+            image_width: None,
+            image_height: None,
+            html_content: None,
+        }
+    }
 
     #[test]
     fn preview_uses_unicode_characters_and_truncates() {
@@ -338,5 +584,65 @@ mod tests {
     fn parses_current_timestamp_format() {
         assert!(parse_timestamp("2026-07-25 12:34:56").is_some());
         assert!(parse_timestamp("not a timestamp").is_none());
+    }
+
+    #[test]
+    fn content_fingerprints_are_deterministic_and_representation_aware() {
+        assert_eq!(
+            text_content_hash("hello", Some("<b>hello</b>")),
+            text_content_hash("hello", Some("<b>hello</b>"))
+        );
+        assert_ne!(
+            text_content_hash("hello", None),
+            text_content_hash("hello", Some("<b>hello</b>"))
+        );
+        assert_ne!(
+            image_content_hash(b"hello"),
+            text_content_hash("hello", None)
+        );
+    }
+
+    #[test]
+    fn trim_history_enforces_aggregate_payload_limit() {
+        let chunk = "x".repeat(consts::MAX_TEXT_SIZE);
+        let mut items = (0..20)
+            .map(|id| text_item(id, chunk.clone()))
+            .collect::<Vec<_>>();
+        let removed = trim_history(&mut items);
+        let remaining_size = items.iter().map(payload_size).sum::<usize>();
+        assert!(!removed.is_empty());
+        assert!(remaining_size <= consts::MAX_HISTORY_PAYLOAD_SIZE);
+    }
+
+    #[test]
+    fn deduplication_confirms_content_instead_of_trusting_hashes() {
+        let first = text_item(1, "first".to_string());
+        let mut collision = text_item(2, "second".to_string());
+        collision.content_hash.clone_from(&first.content_hash);
+        let mut duplicate = first.clone();
+        duplicate.id = 3;
+
+        let (deduplicated, removed_images) = deduplicate_history(vec![first, collision, duplicate]);
+
+        assert_eq!(deduplicated.len(), 2);
+        assert_eq!(deduplicated[0].content, "first");
+        assert_eq!(deduplicated[1].content, "second");
+        assert_eq!(removed_images, vec![None]);
+    }
+
+    #[test]
+    fn invalid_or_duplicate_ids_are_repaired_as_one_consistent_sequence() {
+        let mut items = vec![
+            text_item(usize::MAX, "first".to_string()),
+            text_item(7, "second".to_string()),
+            text_item(7, "third".to_string()),
+        ];
+
+        assert!(repair_history_ids(&mut items));
+        assert_eq!(
+            items.iter().map(|item| item.id).collect::<Vec<_>>(),
+            [3, 2, 1]
+        );
+        assert!(!repair_history_ids(&mut items));
     }
 }

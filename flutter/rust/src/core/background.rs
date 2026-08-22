@@ -1,63 +1,50 @@
 //! Background tasks.
 //!
-//! Four resident threads:
+//! Three resident threads:
 //!   1. `clipboard-poll`     — 500ms arboard polling, dedup, image/rich capture
-//!   2. `window-action-worker` — drains window-action requests, emits a
-//!      `WindowActionKind` event for Dart (the dance itself is Dart-side)
-//!   3. `helper-status-monitor` — 200ms poll of the evdev helper connection
+//!   2. `helper-status-monitor` — 200ms poll of the evdev helper connection
 //!      state, emits on change
-//!   4. `clean-expired`      — runs once at startup, then hourly, dropping
+//!   3. `clean-expired`      — runs once at startup, then hourly, dropping
 //!      items older than `retention_days`
 //!
 //! These jobs use `std::thread`, `mpsc`, and sleep loops because they perform no
 //! async IO; this also avoids an unnecessary Tokio runtime.
 
 use crate::core::clipboard_engine::ClipboardItem;
-use crate::core::{clipboard_engine, consts, events, log, sanitize, settings_store, state};
+use crate::core::{clipboard_engine, consts, events, log, sanitize, state};
 use image::ImageEncoder;
 use parking_lot::Mutex;
-use std::sync::mpsc;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-/// Spawn all four background tasks. Called once from `init_app_state`.
-pub fn spawn_all(
-    history: Arc<Mutex<Vec<ClipboardItem>>>,
-    counter: Arc<Mutex<usize>>,
-    window_action_rx: mpsc::Receiver<()>,
-) {
-    // 4. clean-expired — runs once immediately, then hourly. Spawned first so
+/// Spawn all three background tasks. Called once from `init_app_state`.
+pub fn spawn_all(history: Arc<Mutex<Vec<ClipboardItem>>>, counter: Arc<Mutex<usize>>) {
+    // 3. clean-expired — runs once immediately, then hourly. Spawned first so
     // the startup sweep lands before the first poll tick records anything new.
     let clean_history = history.clone();
-    std::thread::Builder::new()
+    if let Err(error) = std::thread::Builder::new()
         .name("clean-expired".into())
         .spawn(move || clean_expired_loop(clean_history))
-        .ok();
+    {
+        log::write_log(&format!("Failed to spawn clean-expired thread: {error}"));
+    }
 
-    // 2. window-action worker.
-    std::thread::Builder::new()
-        .name("window-action-worker".into())
-        .spawn(move || window_action_worker(window_action_rx))
-        .ok();
-
-    // 3. helper-status monitor.
-    std::thread::Builder::new()
+    // 2. helper-status monitor.
+    if let Err(error) = std::thread::Builder::new()
         .name("helper-status-monitor".into())
         .spawn(helper_status_monitor)
-        .ok();
+    {
+        log::write_log(&format!(
+            "Failed to spawn helper-status-monitor thread: {error}"
+        ));
+    }
 
     // 1. clipboard poll.
-    std::thread::Builder::new()
+    if let Err(error) = std::thread::Builder::new()
         .name("clipboard-poll".into())
         .spawn(move || poll_clipboard(history, counter))
-        .ok();
-}
-
-/// Resident window-action consumer. Each `()` drained from the channel becomes
-/// a `WindowActionKind::ShowAndRaise` event; Dart performs the visible dance.
-fn window_action_worker(rx: mpsc::Receiver<()>) {
-    for () in rx {
-        events::emit_window_action(events::WindowActionKind::ShowAndRaise);
+    {
+        log::write_log(&format!("Failed to spawn clipboard-poll thread: {error}"));
     }
 }
 
@@ -83,7 +70,7 @@ fn helper_status_monitor() {
 /// round so a settings change takes effect without a restart.
 fn clean_expired_loop(history: Arc<Mutex<Vec<ClipboardItem>>>) {
     loop {
-        let retention = settings_store::load_settings().retention_days;
+        let retention = state::st().settings.lock().retention_days;
         clean_expired_history(&history, retention);
         std::thread::sleep(Duration::from_secs(3600));
     }
@@ -94,9 +81,12 @@ fn clean_expired_history(history: &Arc<Mutex<Vec<ClipboardItem>>>, retention_day
         return;
     }
 
-    let cutoff = chrono::Local::now()
-        .checked_sub_signed(chrono::Duration::days(retention_days as i64))
-        .unwrap();
+    let Some(cutoff) =
+        chrono::Local::now().checked_sub_signed(chrono::Duration::days(i64::from(retention_days)))
+    else {
+        log::write_log("Retention cutoff overflowed; skipping cleanup");
+        return;
+    };
 
     let mut history = history.lock();
     let before = history.len();
@@ -133,43 +123,36 @@ fn clean_expired_history(history: &Arc<Mutex<Vec<ClipboardItem>>>, retention_day
     }
 }
 
+fn next_item_id(counter: &Arc<Mutex<usize>>) -> Result<usize, String> {
+    let mut counter = counter.lock();
+    let next = counter
+        .checked_add(1)
+        .ok_or_else(|| "Clipboard history ID counter exhausted".to_string())?;
+    *counter = next;
+    Ok(next)
+}
+
 fn poll_clipboard(history: Arc<Mutex<Vec<ClipboardItem>>>, counter: Arc<Mutex<usize>>) {
-    let mut clipboard = match arboard::Clipboard::new() {
-        Ok(c) => c,
-        Err(e) => {
-            log::write_log(&format!(
-                "Failed to open arboard clipboard in poll loop: {}",
-                e
-            ));
-            return;
+    let mut retry_delay = Duration::from_secs(1);
+    let mut clipboard = loop {
+        match arboard::Clipboard::new() {
+            Ok(clipboard) => break clipboard,
+            Err(error) => {
+                log::write_log(&format!(
+                    "Failed to open clipboard; retrying in {}s: {error}",
+                    retry_delay.as_secs()
+                ));
+                std::thread::sleep(retry_delay);
+                retry_delay = (retry_delay * 2).min(Duration::from_secs(30));
+            }
         }
     };
 
     let mut last_text_hash: u64 = 0;
     let mut last_image_hash: u64 = 0;
-    let mut last_save = Instant::now();
-    let save_interval = Duration::from_millis(400);
-    let mut pending_save = false;
-    let mut pending_delete_images: Vec<Option<String>> = Vec::new();
 
     loop {
         std::thread::sleep(Duration::from_millis(500));
-
-        // Flush any pending debounced save once the interval has elapsed.
-        if pending_save && last_save.elapsed() >= save_interval {
-            // Persist while holding the state lock so an older snapshot can
-            // never overwrite a newer delete/clear operation.
-            match clipboard_engine::save_history(&history.lock()) {
-                Ok(()) => {
-                    last_save = Instant::now();
-                    pending_save = false;
-                    for image in pending_delete_images.drain(..) {
-                        clipboard_engine::delete_image_file(&image);
-                    }
-                }
-                Err(e) => log::write_log(&format!("Failed to save clipboard history: {}", e)),
-            }
-        }
 
         // Some applications publish both bitmap and text representations for
         // one clipboard operation. Treat the bitmap as the primary format so a
@@ -181,32 +164,54 @@ fn poll_clipboard(history: Arc<Mutex<Vec<ClipboardItem>>>, counter: Arc<Mutex<us
             // corrupted indentation, trailing newlines, and editor selections;
             // only use trim for the empty/whitespace-only decision and preview.
             if !text.trim().is_empty() && current_image.is_none() {
-                let html_content = clipboard.get().html().ok().and_then(|h| {
+                if text.len() > consts::MAX_TEXT_SIZE {
+                    let hash = clipboard_engine::simple_hash(&text);
+                    if hash != last_text_hash {
+                        last_text_hash = hash;
+                        log::write_log(&format!(
+                            "Text clipboard payload too large ({} bytes), skipping",
+                            text.len()
+                        ));
+                    }
+                    continue;
+                }
+                let html_content = clipboard.get().html().ok().and_then(|html| {
+                    if html.len() > consts::MAX_HTML_SIZE {
+                        log::write_log(&format!(
+                            "HTML clipboard payload too large ({} bytes), storing plain text only",
+                            html.len()
+                        ));
+                        return None;
+                    }
                     // Sanitize at the add-stage (decision: ammonia in Rust).
                     // If everything was stripped (e.g. only a <script>),
                     // treat as no rich text so content_type falls back.
-                    let s = sanitize::sanitize_html(&h);
+                    let s = sanitize::sanitize_html(&html);
                     if s.is_empty() {
                         None
                     } else {
                         Some(s)
                     }
                 });
-                let hash = clipboard_engine::simple_hash(&text);
-                if hash != last_text_hash {
-                    last_text_hash = hash;
-
+                let self_hash = clipboard_engine::simple_hash(&text);
+                let content_hash =
+                    clipboard_engine::text_content_hash(&text, html_content.as_deref());
+                let observation_hash = clipboard_engine::simple_hash(&content_hash);
+                if observation_hash != last_text_hash {
                     // If we just wrote this to the clipboard ourselves (the user
                     // clicked "copy" on an existing item), don't re-record it.
-                    let self_hash = clipboard_engine::take_self_set_hash();
-                    if self_hash != 0 && self_hash == hash {
+                    let pending_self_hash = clipboard_engine::take_self_set_hash();
+                    if pending_self_hash != 0 && pending_self_hash == self_hash {
+                        last_text_hash = observation_hash;
                         continue;
                     }
 
-                    let id = {
-                        let mut c = counter.lock();
-                        *c += 1;
-                        *c
+                    let id = match next_item_id(&counter) {
+                        Ok(id) => id,
+                        Err(error) => {
+                            log::write_log(&error);
+                            continue;
+                        }
                     };
 
                     let content_type = if html_content.is_some() {
@@ -226,47 +231,39 @@ fn poll_clipboard(history: Arc<Mutex<Vec<ClipboardItem>>>, counter: Arc<Mutex<us
                         image_width: None,
                         image_height: None,
                         html_content,
+                        content_hash: Some(content_hash),
                     };
 
-                    let (top, saved) = {
+                    let result = {
                         let mut history = history.lock();
-                        history.insert(0, item);
-                        if history.len() > consts::MAX_HISTORY {
-                            let excess = history.split_off(consts::MAX_HISTORY);
-                            pending_delete_images
-                                .extend(excess.into_iter().map(|it| it.image_path));
-                        }
-                        let top = history[..std::cmp::min(5, history.len())].to_vec();
-                        let now = Instant::now();
-                        let saved = if now.duration_since(last_save) >= save_interval {
-                            // Serialize while the lock is held to preserve mutation order.
-                            match clipboard_engine::save_history(&history) {
-                                Ok(()) => {
-                                    last_save = now;
-                                    pending_save = false;
-                                    true
-                                }
-                                Err(e) => {
-                                    pending_save = true;
-                                    log::write_log(&format!(
-                                        "Failed to save clipboard history: {}",
-                                        e
-                                    ));
-                                    false
-                                }
-                            }
-                        } else {
-                            pending_save = true;
-                            false
-                        };
-                        (top, saved)
+                        clipboard_engine::commit_item(&mut history, item).map(|removed| {
+                            let top = history[..std::cmp::min(5, history.len())].to_vec();
+                            // Trimming can remove multiple tail entries while
+                            // the list is still below the 500-item UI cap. A
+                            // top-5 delta cannot describe those deletions.
+                            let full = (!removed.is_empty()).then(|| history.clone());
+                            (top, full, removed)
+                        })
                     };
-                    if saved {
-                        for image in pending_delete_images.drain(..) {
-                            clipboard_engine::delete_image_file(&image);
+                    match result {
+                        Ok((top, full, removed)) => {
+                            // Mark observed only after the snapshot is durable.
+                            // A transient storage failure is retried while the
+                            // clipboard still contains the same payload.
+                            last_text_hash = observation_hash;
+                            for image in removed {
+                                clipboard_engine::delete_image_file(&image);
+                            }
+                            if let Some(full) = full {
+                                events::emit_history_replace(full);
+                            } else {
+                                events::emit_clipboard_changed(top);
+                            }
+                        }
+                        Err(error) => {
+                            log::write_log(&format!("Failed to save clipboard history: {error}"));
                         }
                     }
-                    events::emit_clipboard_changed(top);
                 }
             }
         }
@@ -274,15 +271,15 @@ fn poll_clipboard(history: Arc<Mutex<Vec<ClipboardItem>>>, counter: Arc<Mutex<us
         if let Some(img) = current_image {
             let img_hash_value = clipboard_engine::img_hash(&img);
             if img_hash_value != last_image_hash {
-                last_image_hash = img_hash_value;
-
                 // If we just wrote this image ourselves, don't re-record it.
                 let self_hash = clipboard_engine::take_self_set_hash();
                 if self_hash != 0 && self_hash == img_hash_value {
+                    last_image_hash = img_hash_value;
                     continue;
                 }
 
                 if img.bytes.len() > consts::MAX_IMAGE_SIZE {
+                    last_image_hash = img_hash_value;
                     log::write_log(&format!(
                         "Image too large ({} bytes), skipping",
                         img.bytes.len()
@@ -290,14 +287,17 @@ fn poll_clipboard(history: Arc<Mutex<Vec<ClipboardItem>>>, counter: Arc<Mutex<us
                     continue;
                 }
 
-                let rgba_img = image::RgbaImage::from_raw(
-                    img.width as u32,
-                    img.height as u32,
-                    img.bytes.to_vec(),
-                );
+                let (Ok(width), Ok(height)) = (u32::try_from(img.width), u32::try_from(img.height))
+                else {
+                    last_image_hash = img_hash_value;
+                    log::write_log("Image dimensions exceed supported range");
+                    continue;
+                };
+                let rgba_img = image::RgbaImage::from_raw(width, height, img.bytes.to_vec());
                 let rgba_img = match rgba_img {
                     Some(img) => img,
                     None => {
+                        last_image_hash = img_hash_value;
                         log::write_log("Failed to create image from raw bytes");
                         continue;
                     }
@@ -311,20 +311,33 @@ fn poll_clipboard(history: Arc<Mutex<Vec<ClipboardItem>>>, counter: Arc<Mutex<us
                     rgba_img.height(),
                     image::ExtendedColorType::Rgba8,
                 ) {
+                    last_image_hash = img_hash_value;
                     log::write_log(&format!("Failed to encode image to PNG: {:?}", e));
                     continue;
                 }
 
-                let id = {
-                    let mut c = counter.lock();
-                    *c += 1;
-                    *c
+                let content_hash = clipboard_engine::image_content_hash(&png_bytes);
+
+                let id = match next_item_id(&counter) {
+                    Ok(id) => id,
+                    Err(error) => {
+                        log::write_log(&error);
+                        continue;
+                    }
                 };
 
                 let preview = format!("图片 {}x{}", img.width, img.height);
 
-                // Externalize the image: write a PNG file and store only the path.
-                let image_path = clipboard_engine::save_image_file(id, &png_bytes);
+                // The image must be durable before its history reference can
+                // be committed. Duplicate capture files are removed after the
+                // existing item has been reordered successfully.
+                let image_path = {
+                    let Some(path) = clipboard_engine::save_image_file(id, &png_bytes) else {
+                        continue;
+                    };
+                    Some(path)
+                };
+                let rollback_image_path = image_path.clone();
 
                 let item = ClipboardItem {
                     id,
@@ -334,45 +347,39 @@ fn poll_clipboard(history: Arc<Mutex<Vec<ClipboardItem>>>, counter: Arc<Mutex<us
                     preview,
                     char_count: png_bytes.len(),
                     image_path,
-                    image_width: Some(img.width as u32),
-                    image_height: Some(img.height as u32),
+                    image_width: Some(width),
+                    image_height: Some(height),
                     html_content: None,
+                    content_hash: Some(content_hash),
                 };
 
-                let (top, saved) = {
+                let result = {
                     let mut history = history.lock();
-                    history.insert(0, item);
-                    if history.len() > consts::MAX_HISTORY {
-                        let excess = history.split_off(consts::MAX_HISTORY);
-                        pending_delete_images.extend(excess.into_iter().map(|it| it.image_path));
-                    }
-                    let top = history[..std::cmp::min(5, history.len())].to_vec();
-                    let now = Instant::now();
-                    let saved = if now.duration_since(last_save) >= save_interval {
-                        match clipboard_engine::save_history(&history) {
-                            Ok(()) => {
-                                last_save = now;
-                                pending_save = false;
-                                true
-                            }
-                            Err(e) => {
-                                pending_save = true;
-                                log::write_log(&format!("Failed to save clipboard history: {}", e));
-                                false
-                            }
-                        }
-                    } else {
-                        pending_save = true;
-                        false
-                    };
-                    (top, saved)
+                    clipboard_engine::commit_item(&mut history, item).map(|removed| {
+                        let top = history[..std::cmp::min(5, history.len())].to_vec();
+                        let full = (!removed.is_empty()).then(|| history.clone());
+                        (top, full, removed)
+                    })
                 };
-                if saved {
-                    for image in pending_delete_images.drain(..) {
-                        clipboard_engine::delete_image_file(&image);
+                match result {
+                    Ok((top, full, removed)) => {
+                        last_image_hash = img_hash_value;
+                        for image in removed {
+                            clipboard_engine::delete_image_file(&image);
+                        }
+                        if let Some(full) = full {
+                            events::emit_history_replace(full);
+                        } else {
+                            events::emit_clipboard_changed(top);
+                        }
+                    }
+                    Err(error) => {
+                        // The item was never exposed; remove its unreferenced
+                        // image file as part of rolling the transaction back.
+                        clipboard_engine::delete_image_file(&rollback_image_path);
+                        log::write_log(&format!("Failed to save clipboard history: {error}"));
                     }
                 }
-                events::emit_clipboard_changed(top);
             }
         }
     }

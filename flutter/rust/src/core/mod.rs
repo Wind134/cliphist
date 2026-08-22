@@ -9,3 +9,4 @@ pub mod settings_store;
 pub mod shortcut_engine;
 pub mod single_instance;
 pub mod state;
+pub mod storage;

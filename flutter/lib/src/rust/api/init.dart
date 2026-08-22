@@ -21,9 +21,9 @@ Future<SingleInstanceResult> checkSingleInstance() =>
     RustLib.instance.api.crateApiInitCheckSingleInstance();
 
 /// Initialize the Rust core: load history + settings, install the panic hook,
-/// stash the global [`AppState`], and spawn the four background tasks
-/// (clipboard poll, window-action worker, helper-status monitor, expired-item
-/// cleaner). Idempotent-ish: a second call is a no-op (the [`OnceLock`] guards
+/// stash the global [`AppState`], and spawn the three background tasks
+/// (clipboard poll, helper-status monitor, expired-item cleaner). Idempotent-ish:
+/// a second call is a no-op (the [`OnceLock`] guards
 /// the state), so it is safe if Dart retries after a hot restart.
 Future<void> initAppState() => RustLib.instance.api.crateApiInitInitAppState();
 

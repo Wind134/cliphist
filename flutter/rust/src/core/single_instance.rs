@@ -36,8 +36,8 @@ use std::sync::OnceLock;
 
 use fs2::FileExt;
 
-use crate::core::log;
 use crate::core::state;
+use crate::core::{log, storage};
 
 /// Lock file held alive for the process lifetime. The `File` (with its
 /// exclusive lock) must outlive `main`; storing it in a `OnceLock` leaks it
@@ -77,13 +77,10 @@ pub enum Outcome {
 /// Lock file path: `<data_local_dir>/ClipHist/cliphist.lock`. Created if
 /// missing.
 fn lock_file_path() -> PathBuf {
-    let mut p = dirs::data_local_dir().unwrap_or_else(|| {
-        // Fallback: home dir. data_local_dir is only None on truly exotic
-        // platforms; all three targets have it.
-        dirs::home_dir().unwrap_or_else(|| PathBuf::from("."))
-    });
-    p.push("ClipHist");
-    let _ = std::fs::create_dir_all(&p);
+    let mut p = storage::app_data_dir();
+    if let Err(error) = storage::ensure_private_dir(&p) {
+        log::write_log(&error);
+    }
     p.push("cliphist.lock");
     p
 }
@@ -123,6 +120,7 @@ fn try_check() -> std::io::Result<Outcome> {
         // a concurrent second instance is reading, before we even hold the
         // lock. We truncate post-lock via set_len(0) below.
         .open(&path)?;
+    storage::ensure_private_file(&path).map_err(std::io::Error::other)?;
 
     match file.try_lock_exclusive() {
         Ok(()) => {
@@ -142,7 +140,7 @@ fn try_check() -> std::io::Result<Outcome> {
             file.sync_all()?;
 
             let force_visible = has_toggle_window_arg();
-            start_wake_listener(listener);
+            start_wake_listener(listener)?;
 
             // Leak the file so the lock outlives this function (process
             // lifetime). The listener is owned by the acceptor thread.
@@ -168,12 +166,13 @@ fn try_check() -> std::io::Result<Outcome> {
                     if let Ok(mut stream) =
                         TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(100))
                     {
-                        let _ = stream.write_all(b"wake\n");
-                        log::write_log(&format!(
-                            "single-instance: poked running instance on port {}",
-                            port
-                        ));
-                        return Ok(Outcome::SignalSent);
+                        if stream.write_all(b"wake\n").is_ok() {
+                            log::write_log(&format!(
+                                "single-instance: poked running instance on port {}",
+                                port
+                            ));
+                            return Ok(Outcome::SignalSent);
+                        }
                     }
                 }
                 std::thread::sleep(std::time::Duration::from_millis(50));
@@ -199,7 +198,7 @@ fn parse_wake_port(contents: &str) -> Option<u16> {
 /// [`state::request_window_action`]. A wake that arrives before
 /// `init_app_state` has installed the global state is retained in
 /// [`PENDING_WAKE`] and drained immediately after state initialization.
-fn start_wake_listener(listener: TcpListener) {
+fn start_wake_listener(listener: TcpListener) -> std::io::Result<()> {
     std::thread::Builder::new()
         .name("single-instance-wake".to_string())
         .spawn(move || {
@@ -224,8 +223,8 @@ fn start_wake_listener(listener: TcpListener) {
                     }
                 }
             }
-        })
-        .ok();
+        })?;
+    Ok(())
 }
 
 #[cfg(test)]
