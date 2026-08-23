@@ -13,6 +13,7 @@ class Settings {
   final bool autoStart;
   final bool silentStart;
   final String doubleTapKey;
+  final bool gameMode;
   final int retentionDays;
   final int windowWidth;
   final int windowHeight;
@@ -25,6 +26,7 @@ class Settings {
     required this.autoStart,
     required this.silentStart,
     required this.doubleTapKey,
+    required this.gameMode,
     required this.retentionDays,
     required this.windowWidth,
     required this.windowHeight,
@@ -39,6 +41,7 @@ class Settings {
       autoStart.hashCode ^
       silentStart.hashCode ^
       doubleTapKey.hashCode ^
+      gameMode.hashCode ^
       retentionDays.hashCode ^
       windowWidth.hashCode ^
       windowHeight.hashCode ^
@@ -55,6 +58,7 @@ class Settings {
           autoStart == other.autoStart &&
           silentStart == other.silentStart &&
           doubleTapKey == other.doubleTapKey &&
+          gameMode == other.gameMode &&
           retentionDays == other.retentionDays &&
           windowWidth == other.windowWidth &&
           windowHeight == other.windowHeight &&
@@ -72,6 +76,7 @@ class SettingsPatch {
   final bool? autoStart;
   final bool? silentStart;
   final String? doubleTapKey;
+  final bool? gameMode;
   final int? retentionDays;
   final int? windowWidth;
   final int? windowHeight;
@@ -84,6 +89,7 @@ class SettingsPatch {
     this.autoStart,
     this.silentStart,
     this.doubleTapKey,
+    this.gameMode,
     this.retentionDays,
     this.windowWidth,
     this.windowHeight,
@@ -98,6 +104,7 @@ class SettingsPatch {
       autoStart.hashCode ^
       silentStart.hashCode ^
       doubleTapKey.hashCode ^
+      gameMode.hashCode ^
       retentionDays.hashCode ^
       windowWidth.hashCode ^
       windowHeight.hashCode ^
@@ -114,6 +121,7 @@ class SettingsPatch {
           autoStart == other.autoStart &&
           silentStart == other.silentStart &&
           doubleTapKey == other.doubleTapKey &&
+          gameMode == other.gameMode &&
           retentionDays == other.retentionDays &&
           windowWidth == other.windowWidth &&
           windowHeight == other.windowHeight &&

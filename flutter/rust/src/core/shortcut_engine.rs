@@ -21,6 +21,24 @@ use crate::core::state;
 
 static LISTENER_RUNNING: AtomicBool = AtomicBool::new(false);
 static HELPER_CONNECTED: AtomicBool = AtomicBool::new(false);
+static GAME_MODE: AtomicBool = AtomicBool::new(false);
+
+/// Suspend only double-tap wake detection. Clipboard capture, the regular
+/// global hotkey and simulated paste remain available while game mode is on.
+pub fn set_game_mode(enabled: bool) {
+    let previous = GAME_MODE.swap(enabled, Ordering::SeqCst);
+    if previous != enabled {
+        log::write_log(if enabled {
+            "Game mode enabled: double-tap wake suspended"
+        } else {
+            "Game mode disabled: double-tap wake resumed"
+        });
+    }
+}
+
+fn double_tap_wake_allowed() -> bool {
+    !GAME_MODE.load(Ordering::SeqCst)
+}
 
 pub fn helper_connected() -> bool {
     HELPER_CONNECTED.load(Ordering::SeqCst)
@@ -164,6 +182,12 @@ mod rdev_impl {
                 let result = rdev::grab(move |event| {
                     let target = TARGET_KEY.load(Ordering::SeqCst);
                     if target == TARGET_DISABLED {
+                        return Some(event);
+                    }
+                    if !double_tap_wake_allowed() {
+                        let mut s = state.lock();
+                        s.last_press = None;
+                        s.released = true;
                         return Some(event);
                     }
                     {
@@ -452,8 +476,10 @@ mod linux_impl {
                     }
                     match stream.read(&mut buf) {
                         Ok(1) if buf[0] == b'D' => {
-                            log::write_log("Double-tap notification from helper!");
-                            state::request_window_action();
+                            if double_tap_wake_allowed() {
+                                log::write_log("Double-tap notification from helper!");
+                                state::request_window_action();
+                            }
                         }
                         Ok(1) if buf[0] == b'S' || buf[0] == b'F' => {
                             let _ = ack_tx.send(buf[0] == b'S');
@@ -594,5 +620,18 @@ mod linux_impl {
             Err(mpsc::RecvTimeoutError::Timeout) => Err("evdev helper 粘贴超时".to_string()),
             Err(mpsc::RecvTimeoutError::Disconnected) => Err("evdev helper 已断开连接".to_string()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn game_mode_suppresses_double_tap_wake() {
+        set_game_mode(true);
+        assert!(!double_tap_wake_allowed());
+        set_game_mode(false);
+        assert!(double_tap_wake_allowed());
     }
 }

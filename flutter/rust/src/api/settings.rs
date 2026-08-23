@@ -19,6 +19,7 @@ pub fn update_settings(patch: SettingsPatch) -> Result<Settings, String> {
     let mut current = st.settings.lock();
     let mut next = current.clone();
     let double_tap_change = patch.double_tap_key.clone();
+    let game_mode_change = patch.game_mode;
 
     if let Some(v) = patch.close_to_tray {
         next.close_to_tray = v;
@@ -28,6 +29,9 @@ pub fn update_settings(patch: SettingsPatch) -> Result<Settings, String> {
     }
     if let Some(v) = patch.silent_start {
         next.silent_start = v;
+    }
+    if let Some(v) = patch.game_mode {
+        next.game_mode = v;
     }
     if let Some(v) = patch.window_user_resized {
         next.window_user_resized = v;
@@ -65,6 +69,9 @@ pub fn update_settings(patch: SettingsPatch) -> Result<Settings, String> {
         if let Err(e) = &start_result {
             log::write_log(&format!("start_double_tap_listener failed: {}", e));
         }
+    }
+    if let Some(v) = game_mode_change {
+        crate::core::shortcut_engine::set_game_mode(v);
     }
 
     Ok(next)

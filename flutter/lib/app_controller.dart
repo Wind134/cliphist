@@ -386,6 +386,23 @@ class ClipHistController with WindowListener, TrayListener {
     await Future<void>.delayed(const Duration(milliseconds: 200));
   }
 
+  /// Persist game mode and keep both the settings screen and tray checkbox in
+  /// sync. Rust applies the double-tap suppression atomically after the
+  /// settings file has been saved successfully.
+  Future<void> setGameMode(bool enabled) async {
+    final updated = await api_settings.updateSettings(
+      patch: SettingsPatch(gameMode: enabled),
+    );
+    container.read(settingsProvider.notifier).state = updated;
+    try {
+      await _setTrayContextMenu();
+    } catch (e) {
+      // The preference already succeeded; a cosmetic tray refresh must not
+      // roll it back or make the setting appear to have failed.
+      api_clipboard.feLog(message: 'game mode tray refresh failed: $e');
+    }
+  }
+
   Future<void> _setupTray() async {
     // tray_manager's Windows SetIcon uses LoadImage(IMAGE_ICON, LR_LOADFROMFILE),
     // which only reads .ico/.cur/.ani — a .png returns NULL and the icon is
@@ -413,6 +430,13 @@ class ClipHistController with WindowListener, TrayListener {
     } catch (_) {
       // setToolTip not implemented on this platform — ignore.
     }
+    await _setTrayContextMenu();
+    trayManager.addListener(this);
+    api_clipboard.feLog(message: '_setupTray done (icon+menu+listener)');
+  }
+
+  Future<void> _setTrayContextMenu() async {
+    final gameMode = container.read(settingsProvider).gameMode;
     await trayManager.setContextMenu(
       Menu(
         items: [
@@ -431,6 +455,23 @@ class ClipHistController with WindowListener, TrayListener {
               await performWindowDance(source: 'tray settings');
             },
           ),
+          MenuItem.checkbox(
+            key: 'game-mode',
+            label: '游戏模式（暂停双击唤醒）',
+            checked: gameMode,
+            onClick: (_) async {
+              final enabled = !container.read(settingsProvider).gameMode;
+              api_clipboard.feLog(
+                message: 'tray menu: game mode ${enabled ? "on" : "off"}',
+              );
+              try {
+                await setGameMode(enabled);
+              } catch (e) {
+                api_clipboard.feLog(message: 'tray game mode failed: $e');
+              }
+            },
+          ),
+          MenuItem.separator(),
           MenuItem(
             label: '清空历史',
             onClick: (_) async {
@@ -462,8 +503,6 @@ class ClipHistController with WindowListener, TrayListener {
         ],
       ),
     );
-    trayManager.addListener(this);
-    api_clipboard.feLog(message: '_setupTray done (icon+menu+listener)');
   }
 
   // ── TrayListener ────────────────────────────────────────────────────────

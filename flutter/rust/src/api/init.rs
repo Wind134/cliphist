@@ -90,6 +90,10 @@ pub fn init_app_state() -> Result<(), String> {
 
     crate::core::background::spawn_all(history, counter);
 
+    // Game mode suppresses double-tap wake notifications without discarding
+    // the configured modifier or tearing down the platform listener.
+    crate::core::shortcut_engine::set_game_mode(startup_settings.game_mode);
+
     // Global-hotkey registration lives in Dart's native `hotkey_manager`
     // plugin. That plugin executes on each platform's UI/event-loop thread;
     // constructing `global-hotkey` from an FRB worker thread was invalid on

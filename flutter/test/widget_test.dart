@@ -17,6 +17,7 @@ const testSettings = Settings(
   autoStart: false,
   silentStart: false,
   doubleTapKey: 'Ctrl',
+  gameMode: false,
   retentionDays: 3,
   windowWidth: 320,
   windowHeight: 400,
@@ -195,6 +196,13 @@ void main() {
       ),
     );
     await tester.pump();
+    await tester.scrollUntilVisible(
+      find.text('游戏模式'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('游戏模式'), findsOneWidget);
+    expect(find.text('暂停双击修饰键唤醒，剪贴板记录和普通快捷键仍可用'), findsOneWidget);
     await tester.drag(find.byType(ListView), const Offset(0, -3000));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);

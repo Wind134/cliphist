@@ -13,6 +13,7 @@ pub struct Settings {
     pub auto_start: bool,
     pub silent_start: bool,
     pub double_tap_key: String,
+    pub game_mode: bool,
     pub retention_days: u32,
     pub window_width: u32,
     pub window_height: u32,
@@ -31,6 +32,7 @@ pub struct SettingsPatch {
     pub auto_start: Option<bool>,
     pub silent_start: Option<bool>,
     pub double_tap_key: Option<String>,
+    pub game_mode: Option<bool>,
     pub retention_days: Option<u32>,
     pub window_width: Option<u32>,
     pub window_height: Option<u32>,
@@ -46,6 +48,7 @@ impl Default for Settings {
             auto_start: false,
             silent_start: true,
             double_tap_key: String::new(),
+            game_mode: false,
             retention_days: 3,
             window_width: 400,
             window_height: 600,
@@ -179,6 +182,7 @@ mod tests {
         let settings: Settings = serde_json::from_str(r#"{"close_to_tray":false}"#).unwrap();
         assert!(!settings.close_to_tray);
         assert_eq!(settings.hotkey, Settings::default().hotkey);
+        assert!(!settings.game_mode);
         assert_eq!(settings.window_width, Settings::default().window_width);
     }
 

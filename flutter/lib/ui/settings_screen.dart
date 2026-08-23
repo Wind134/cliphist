@@ -82,6 +82,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  Future<void> _onGameModeChanged(bool enabled) async {
+    try {
+      await ClipHistController.instance.setGameMode(enabled);
+      showToast(_container, enabled ? '游戏模式已开启' : '游戏模式已关闭');
+    } catch (e) {
+      showToast(_container, '游戏模式设置失败: $e');
+    }
+  }
+
   Future<void> _zoomDelta(int step) async {
     final s = ref.read(settingsProvider);
     final current = (s.zoomLevel * 100).round();
@@ -154,6 +163,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   helperConnected: helper,
                   onChanged: (v) =>
                       _save(SettingsPatch(doubleTapKey: v), '双击快捷键已保存'),
+                ),
+                _ToggleCard(
+                  icon: Icons.sports_esports_rounded,
+                  label: '游戏模式',
+                  desc: '暂停双击修饰键唤醒，剪贴板记录和普通快捷键仍可用',
+                  value: s.gameMode,
+                  onChanged: _onGameModeChanged,
                 ),
                 _SectionLabel('数据'),
                 _RetentionCard(

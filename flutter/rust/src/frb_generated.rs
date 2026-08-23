@@ -852,6 +852,7 @@ impl SseDecode for crate::core::settings_store::Settings {
         let mut var_autoStart = <bool>::sse_decode(deserializer);
         let mut var_silentStart = <bool>::sse_decode(deserializer);
         let mut var_doubleTapKey = <String>::sse_decode(deserializer);
+        let mut var_gameMode = <bool>::sse_decode(deserializer);
         let mut var_retentionDays = <u32>::sse_decode(deserializer);
         let mut var_windowWidth = <u32>::sse_decode(deserializer);
         let mut var_windowHeight = <u32>::sse_decode(deserializer);
@@ -863,6 +864,7 @@ impl SseDecode for crate::core::settings_store::Settings {
             auto_start: var_autoStart,
             silent_start: var_silentStart,
             double_tap_key: var_doubleTapKey,
+            game_mode: var_gameMode,
             retention_days: var_retentionDays,
             window_width: var_windowWidth,
             window_height: var_windowHeight,
@@ -880,6 +882,7 @@ impl SseDecode for crate::core::settings_store::SettingsPatch {
         let mut var_autoStart = <Option<bool>>::sse_decode(deserializer);
         let mut var_silentStart = <Option<bool>>::sse_decode(deserializer);
         let mut var_doubleTapKey = <Option<String>>::sse_decode(deserializer);
+        let mut var_gameMode = <Option<bool>>::sse_decode(deserializer);
         let mut var_retentionDays = <Option<u32>>::sse_decode(deserializer);
         let mut var_windowWidth = <Option<u32>>::sse_decode(deserializer);
         let mut var_windowHeight = <Option<u32>>::sse_decode(deserializer);
@@ -891,6 +894,7 @@ impl SseDecode for crate::core::settings_store::SettingsPatch {
             auto_start: var_autoStart,
             silent_start: var_silentStart,
             double_tap_key: var_doubleTapKey,
+            game_mode: var_gameMode,
             retention_days: var_retentionDays,
             window_width: var_windowWidth,
             window_height: var_windowHeight,
@@ -1048,6 +1052,7 @@ impl flutter_rust_bridge::IntoDart for crate::core::settings_store::Settings {
             self.auto_start.into_into_dart().into_dart(),
             self.silent_start.into_into_dart().into_dart(),
             self.double_tap_key.into_into_dart().into_dart(),
+            self.game_mode.into_into_dart().into_dart(),
             self.retention_days.into_into_dart().into_dart(),
             self.window_width.into_into_dart().into_dart(),
             self.window_height.into_into_dart().into_dart(),
@@ -1077,6 +1082,7 @@ impl flutter_rust_bridge::IntoDart for crate::core::settings_store::SettingsPatc
             self.auto_start.into_into_dart().into_dart(),
             self.silent_start.into_into_dart().into_dart(),
             self.double_tap_key.into_into_dart().into_dart(),
+            self.game_mode.into_into_dart().into_dart(),
             self.retention_days.into_into_dart().into_dart(),
             self.window_width.into_into_dart().into_dart(),
             self.window_height.into_into_dart().into_dart(),
@@ -1268,6 +1274,7 @@ impl SseEncode for crate::core::settings_store::Settings {
         <bool>::sse_encode(self.auto_start, serializer);
         <bool>::sse_encode(self.silent_start, serializer);
         <String>::sse_encode(self.double_tap_key, serializer);
+        <bool>::sse_encode(self.game_mode, serializer);
         <u32>::sse_encode(self.retention_days, serializer);
         <u32>::sse_encode(self.window_width, serializer);
         <u32>::sse_encode(self.window_height, serializer);
@@ -1284,6 +1291,7 @@ impl SseEncode for crate::core::settings_store::SettingsPatch {
         <Option<bool>>::sse_encode(self.auto_start, serializer);
         <Option<bool>>::sse_encode(self.silent_start, serializer);
         <Option<String>>::sse_encode(self.double_tap_key, serializer);
+        <Option<bool>>::sse_encode(self.game_mode, serializer);
         <Option<u32>>::sse_encode(self.retention_days, serializer);
         <Option<u32>>::sse_encode(self.window_width, serializer);
         <Option<u32>>::sse_encode(self.window_height, serializer);
