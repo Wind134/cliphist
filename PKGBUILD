@@ -6,13 +6,14 @@
 
 pkgname=cliphist
 pkgver=2.0.10
-pkgrel=1
+pkgrel=2
 pkgdesc="Wayland clipboard history manager with per-item paste injection (Flutter + Rust core)"
 arch=('x86_64')
 url="https://github.com/Wind134/cliphist"
 license=('MIT')
 depends=('gtk3' 'libayatana-appindicator' 'libevdev' 'polkit' 'wayland' 'systemd-libs')
 makedepends=('cargo' 'flutter' 'cmake' 'ninja' 'clang' 'pkgconf' 'libevdev' 'systemd-libs')
+options=('!lto')
 conflicts=('cliphist-bin')
 source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz")
 sha256sums=('e08d443a6770faeb8c6b5eb393f2c533d94713caebf79bd77edcaf7573cf2519')
@@ -24,6 +25,19 @@ build() {
   # 2. Flutter app (FRB crate builds via Cargokit inside `flutter build`).
   cd flutter
   flutter build linux --release
+}
+
+check() {
+  local rustlib="$srcdir/cliphist-${pkgver}/flutter/build/linux/x64/release/bundle/lib/librust_lib_cliphist.so"
+
+  # dart-sys compiles dart_api_dl.c into the Rust cdylib. Arch's global C LTO
+  # can silently leave these symbols unresolved, which only fails at runtime.
+  if readelf --dyn-syms --wide "$rustlib" | grep -q 'UND.*Dart_'; then
+    echo "error: unresolved Dart API DL symbols in $rustlib" >&2
+    return 1
+  fi
+  readelf --syms --wide "$rustlib" | grep -q 'Dart_InitializeApiDL'
+  readelf --syms --wide "$rustlib" | grep -q 'Dart_CurrentIsolate_DL'
 }
 
 package() {
