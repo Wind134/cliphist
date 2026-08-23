@@ -5,17 +5,17 @@
 # to it (the polkit policy authorizes exactly that path).
 
 pkgname=cliphist
-pkgver=2.0.7
+pkgver=2.0.10
 pkgrel=1
-pkgdesc="Clipboard history manager with per-item paste injection (Flutter + Rust core)"
+pkgdesc="Wayland clipboard history manager with per-item paste injection (Flutter + Rust core)"
 arch=('x86_64')
 url="https://github.com/Wind134/cliphist"
 license=('MIT')
-depends=('gtk3' 'libappindicator-gtk3' 'keybinder3' 'libevdev' 'polkit' 'libx11' 'libxrandr' 'libxcursor' 'libxinerama' 'libxi' 'libxext')
-makedepends=('cargo' 'flutter' 'cmake' 'ninja' 'clang' 'pkg-config' 'libevdev' 'libudev' 'libxi' 'libxtst')
+depends=('gtk3' 'libayatana-appindicator' 'libevdev' 'polkit' 'wayland' 'systemd-libs')
+makedepends=('cargo' 'flutter' 'cmake' 'ninja' 'clang' 'pkgconf' 'libevdev' 'systemd-libs')
 conflicts=('cliphist-bin')
 source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz")
-sha256sums=('ebab87ebc09e85ca95ae9fdce97080778436044fc74dd261639b79dd0ad7fb9b')
+sha256sums=('e08d443a6770faeb8c6b5eb393f2c533d94713caebf79bd77edcaf7573cf2519')
 
 build() {
   cd "$srcdir/cliphist-${pkgver}"
