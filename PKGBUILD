@@ -1,12 +1,13 @@
 # Maintainer: Ping <ping@users.noreply.github.com>
 # Builds the Flutter + Rust-core stack (post-migration).
-# Layout mirrors the fastforge deb: the app bundle lives in /opt/cliphist/
-# with a /usr/bin/cliphist symlink, and the privileged evdev helper sits next
-# to it (the polkit policy authorizes exactly that path).
+# The GUI uses its own package and command names so it can coexist with
+# Arch's official sentriz/cliphist command-line clipboard manager.
+# The app bundle lives in /opt/cliphist/ and the privileged evdev helper sits
+# next to it (the polkit policy authorizes exactly that path).
 
-pkgname=cliphist
+pkgname=cliphist-desktop
 pkgver=2.0.10
-pkgrel=2
+pkgrel=3
 pkgdesc="Wayland clipboard history manager with per-item paste injection (Flutter + Rust core)"
 arch=('x86_64')
 url="https://github.com/Wind134/cliphist"
@@ -14,7 +15,6 @@ license=('MIT')
 depends=('gtk3' 'libayatana-appindicator' 'libevdev' 'polkit' 'wayland' 'systemd-libs')
 makedepends=('cargo' 'flutter' 'cmake' 'ninja' 'clang' 'pkgconf' 'libevdev' 'systemd-libs')
 options=('!lto')
-conflicts=('cliphist-bin')
 source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz")
 sha256sums=('e08d443a6770faeb8c6b5eb393f2c533d94713caebf79bd77edcaf7573cf2519')
 
@@ -56,7 +56,7 @@ package() {
 
   # PATH entry.
   install -d "$pkgdir/usr/bin"
-  ln -s /opt/cliphist/cliphist "$pkgdir/usr/bin/cliphist"
+  ln -s /opt/cliphist/cliphist "$pkgdir/usr/bin/cliphist-desktop"
 
   # Icons.
   install -Dm644 flutter/assets/icon/app.png \
@@ -65,12 +65,12 @@ package() {
     "$pkgdir/usr/share/icons/hicolor/32x32/apps/cliphist.png"
 
   # Desktop entry.
-  install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/cliphist.desktop" <<'DESKTOP'
+  install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/cliphist-desktop.desktop" <<'DESKTOP'
 [Desktop Entry]
 Type=Application
 Name=ClipHist
 Comment=Clipboard history manager
-Exec=/usr/bin/cliphist
+Exec=/usr/bin/cliphist-desktop
 Icon=cliphist
 Categories=Utility;
 Terminal=false
