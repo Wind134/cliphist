@@ -41,8 +41,61 @@ class HistoryItem extends StatefulWidget {
   State<HistoryItem> createState() => _HistoryItemState();
 }
 
-class _HistoryItemState extends State<HistoryItem> {
+class _HistoryItemState extends State<HistoryItem>
+    with SingleTickerProviderStateMixin {
   bool _hovered = false;
+  late final AnimationController _selectionBounce;
+  late final Animation<double> _selectionScale;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectionBounce = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 260),
+    );
+    _selectionScale = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(
+          begin: 1,
+          end: 1.014,
+        ).chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 42,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(
+          begin: 1.014,
+          end: 0.997,
+        ).chain(CurveTween(curve: Curves.easeInOutCubic)),
+        weight: 30,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(
+          begin: 0.997,
+          end: 1,
+        ).chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 28,
+      ),
+    ]).animate(_selectionBounce);
+  }
+
+  @override
+  void didUpdateWidget(covariant HistoryItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.selected && !oldWidget.selected) {
+      unawaited(_selectionBounce.forward(from: 0));
+    } else if (!widget.selected && oldWidget.selected) {
+      _selectionBounce
+        ..stop()
+        ..value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _selectionBounce.dispose();
+    super.dispose();
+  }
 
   ClipType get _type => ClipType.of(widget.item.contentType) ?? ClipType.all;
 
@@ -56,65 +109,113 @@ class _HistoryItemState extends State<HistoryItem> {
   Widget build(BuildContext context) {
     final item = widget.item;
     final isImage = item.contentType == 'image';
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
+    return AnimatedBuilder(
+      animation: _selectionScale,
+      builder: (context, child) => Transform.scale(
+        key: ValueKey('history-item-motion-${item.id}'),
+        scale: _selectionScale.value,
+        alignment: Alignment.center,
+        child: child,
+      ),
+      child: Semantics(
+        selected: widget.selected,
+        button: true,
         onTap: widget.onTap,
-        onDoubleTap: widget.onDoubleTap,
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 6),
-          decoration: BoxDecoration(
-            color: _rowBg,
-            borderRadius: BorderRadius.circular(CliphistColors.radiusLg),
-            border: Border.all(
-              color: widget.selected
-                  ? CliphistColors.accent.withValues(alpha: 0.38)
-                  : CliphistColors.borderSubtle,
-            ),
-            boxShadow: null,
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // Selection rail (sits against the row's left edge, outside the
-              // padded content so it spans the full row height).
-              if (widget.selected)
-                Container(
-                  width: 3,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: CliphistColors.accent,
-                    borderRadius: BorderRadius.circular(2),
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => setState(() => _hovered = true),
+          onExit: (_) => setState(() => _hovered = false),
+          child: Listener(
+            // Select immediately on pointer down. Waiting for GestureDetector's
+            // double-tap arbitration made row selection feel sluggish.
+            onPointerDown: (_) => widget.onTap(),
+            child: GestureDetector(
+              key: ValueKey('history-item-tap-${item.id}'),
+              onDoubleTap: widget.onDoubleTap,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                curve: Curves.easeOutCubic,
+                margin: const EdgeInsets.only(bottom: 6),
+                decoration: BoxDecoration(
+                  color: _rowBg,
+                  borderRadius: BorderRadius.circular(CliphistColors.radiusLg),
+                  border: Border.all(
+                    color: widget.selected
+                        ? CliphistColors.accent.withValues(alpha: 0.42)
+                        : CliphistColors.borderSubtle,
                   ),
-                )
-              else
-                const SizedBox(width: 3),
-              const SizedBox(width: 9),
-              _Index(index: widget.index),
-              const SizedBox(width: 10),
-              if (isImage) ...[
-                _ImagePreview(id: item.id),
-                const SizedBox(width: 12),
-              ] else
-                _TypeBadge(type: _type),
-              const SizedBox(width: 10),
-              Expanded(child: _body(item, isImage)),
-              if (_hovered) ...[
-                _IconBtn(
-                  icon: Icons.content_copy,
-                  tooltip: '复制',
-                  onTap: widget.onCopy,
+                  boxShadow: widget.selected
+                      ? [
+                          BoxShadow(
+                            color: CliphistColors.accent.withValues(
+                              alpha: 0.10,
+                            ),
+                            blurRadius: 12,
+                            offset: const Offset(0, 3),
+                          ),
+                        ]
+                      : null,
                 ),
-                _IconBtn(
-                  icon: Icons.delete_outline,
-                  tooltip: '删除',
-                  onTap: widget.onDelete,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
                 ),
-              ],
-            ],
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // Keep the rail in the layout while animating its color and
+                    // height so selection never shifts the row contents.
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      curve: Curves.easeOutCubic,
+                      width: 3,
+                      height: widget.selected ? 36 : 18,
+                      decoration: BoxDecoration(
+                        color: widget.selected
+                            ? CliphistColors.accent
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(width: 9),
+                    _Index(index: widget.index, selected: widget.selected),
+                    const SizedBox(width: 10),
+                    if (isImage) ...[
+                      _ImagePreview(id: item.id),
+                      const SizedBox(width: 12),
+                    ] else
+                      _TypeBadge(type: _type),
+                    const SizedBox(width: 10),
+                    Expanded(child: _body(item, isImage)),
+                    SizedBox(
+                      width: 54,
+                      child: AnimatedOpacity(
+                        opacity: _hovered || widget.selected ? 1 : 0,
+                        duration: const Duration(milliseconds: 120),
+                        child: IgnorePointer(
+                          ignoring: !_hovered && !widget.selected,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              _IconBtn(
+                                icon: Icons.content_copy,
+                                tooltip: '复制',
+                                onTap: widget.onCopy,
+                              ),
+                              _IconBtn(
+                                icon: Icons.delete_outline,
+                                tooltip: '删除',
+                                onTap: widget.onDelete,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -189,26 +290,31 @@ class _HistoryItemState extends State<HistoryItem> {
 }
 
 class _Index extends StatelessWidget {
-  const _Index({required this.index});
+  const _Index({required this.index, required this.selected});
   final int index;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
     if (index < 1 || index > 9) return const SizedBox(width: 24);
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 150),
+      curve: Curves.easeOutCubic,
       width: 24,
       height: 24,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: CliphistColors.surface,
+        color: selected ? CliphistColors.accent : CliphistColors.surface,
         borderRadius: BorderRadius.circular(7),
-        border: Border.all(color: CliphistColors.border),
+        border: Border.all(
+          color: selected ? CliphistColors.accent : CliphistColors.border,
+        ),
       ),
       child: Text(
         '$index',
         textAlign: TextAlign.center,
-        style: const TextStyle(
-          color: CliphistColors.textSecondary,
+        style: TextStyle(
+          color: selected ? Colors.white : CliphistColors.textSecondary,
           fontSize: 11,
           fontWeight: FontWeight.w600,
           height: 1.2,

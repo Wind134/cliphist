@@ -17,6 +17,67 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 use std::time::Duration;
 
+/// Decode the BMP produced by the Windows `CF_BITMAP` fallback into the same
+/// RGBA payload returned by arboard. Kept platform-neutral so the decoder can
+/// be covered by unit tests on non-Windows builders.
+#[cfg(any(target_os = "windows", test))]
+fn decode_windows_bitmap(bytes: &[u8]) -> Result<arboard::ImageData<'static>, String> {
+    let image = image::load_from_memory_with_format(bytes, image::ImageFormat::Bmp)
+        .map_err(|error| format!("failed to decode CF_BITMAP: {error}"))?
+        .into_rgba8();
+    let (width, height) = image.dimensions();
+    Ok(arboard::ImageData {
+        width: width as usize,
+        height: height as usize,
+        bytes: image.into_raw().into(),
+    })
+}
+
+/// arboard's Windows reader accepts registered PNG and CF_DIBV5, but PixPin
+/// can publish a DIB variant that its BMP decoder rejects. PixPin also exposes
+/// CF_BITMAP; asking GDI to materialize that handle as a plain RGB BMP gives us
+/// a reliable native fallback without spawning PowerShell every 500 ms.
+#[cfg(target_os = "windows")]
+fn read_windows_clipboard_image_fallback() -> Result<Option<arboard::ImageData<'static>>, String> {
+    use clipboard_win::formats::{Bitmap, CF_BITMAP, CF_DIB, CF_DIBV5};
+
+    let has_bitmap = clipboard_win::is_format_avail(CF_BITMAP);
+    let has_dib = clipboard_win::is_format_avail(CF_DIB);
+    let has_dibv5 = clipboard_win::is_format_avail(CF_DIBV5);
+    if !has_bitmap && !has_dib && !has_dibv5 {
+        return Ok(None);
+    }
+    if !has_bitmap {
+        return Err(format!(
+            "image formats present (CF_DIB={has_dib}, CF_DIBV5={has_dibv5}) but CF_BITMAP is unavailable"
+        ));
+    }
+
+    let bmp: Vec<u8> = clipboard_win::get_clipboard(Bitmap)
+        .map_err(|error| format!("failed to materialize CF_BITMAP through GDI: {error}"))?;
+    decode_windows_bitmap(&bmp).map(Some)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn read_windows_clipboard_image_fallback() -> Result<Option<arboard::ImageData<'static>>, String> {
+    Ok(None)
+}
+
+fn read_clipboard_image(
+    clipboard: &mut arboard::Clipboard,
+) -> Result<Option<arboard::ImageData<'static>>, String> {
+    match clipboard.get_image() {
+        Ok(image) => Ok(Some(image)),
+        Err(primary_error) => match read_windows_clipboard_image_fallback() {
+            Ok(Some(image)) => Ok(Some(image)),
+            Ok(None) => Ok(None),
+            Err(fallback_error) => Err(format!(
+                "Clipboard image read failed: arboard={primary_error}; fallback={fallback_error}"
+            )),
+        },
+    }
+}
+
 /// Spawn all three background tasks. Called once from `init_app_state`.
 pub fn spawn_all(history: Arc<Mutex<Vec<ClipboardItem>>>, counter: Arc<Mutex<usize>>) {
     // 3. clean-expired — runs once immediately, then hourly. Spawned first so
@@ -150,6 +211,7 @@ fn poll_clipboard(history: Arc<Mutex<Vec<ClipboardItem>>>, counter: Arc<Mutex<us
 
     let mut last_text_hash: u64 = 0;
     let mut last_image_hash: u64 = 0;
+    let mut last_image_read_error: Option<String> = None;
 
     loop {
         std::thread::sleep(Duration::from_millis(500));
@@ -157,7 +219,19 @@ fn poll_clipboard(history: Arc<Mutex<Vec<ClipboardItem>>>, counter: Arc<Mutex<us
         // Some applications publish both bitmap and text representations for
         // one clipboard operation. Treat the bitmap as the primary format so a
         // single copy produces exactly one history entry.
-        let current_image = clipboard.get_image().ok();
+        let current_image = match read_clipboard_image(&mut clipboard) {
+            Ok(image) => {
+                last_image_read_error = None;
+                image
+            }
+            Err(error) => {
+                if last_image_read_error.as_deref() != Some(error.as_str()) {
+                    log::write_log(&error);
+                    last_image_read_error = Some(error);
+                }
+                None
+            }
+        };
 
         if let Ok(text) = clipboard.get_text() {
             // Preserve the clipboard payload byte-for-byte. Trimming here
@@ -382,5 +456,21 @@ fn poll_clipboard(history: Arc<Mutex<Vec<ClipboardItem>>>, counter: Arc<Mutex<us
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::decode_windows_bitmap;
+
+    #[test]
+    fn decodes_gdi_bitmap_fallback_payload() {
+        let mut bytes = Vec::new();
+        image::codecs::bmp::BmpEncoder::new(&mut bytes)
+            .encode(&[0x11, 0x22, 0x33], 1, 1, image::ExtendedColorType::Rgb8)
+            .expect("fixture should encode");
+        let image = decode_windows_bitmap(&bytes).expect("BMP should decode");
+        assert_eq!((image.width, image.height), (1, 1));
+        assert_eq!(image.bytes.as_ref(), &[0x11, 0x22, 0x33, 0xff]);
     }
 }

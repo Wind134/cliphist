@@ -41,6 +41,7 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
   final ScrollController _scrollCtrl = ScrollController();
   final FocusNode _viewFocus = FocusNode(debugLabel: 'history-view');
   final FocusNode _searchFocus = FocusNode(debugLabel: 'history-search');
+  bool _quickPastePending = false;
 
   static const double _rowHeight = 84;
   static const double _imageRowHeight = 108;
@@ -74,6 +75,7 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
   void _onCategoryChanged(String cat) {
     ref.read(currentCategoryProvider.notifier).state = cat;
     ref.read(selectedIndexProvider.notifier).state = -1;
+    _viewFocus.requestFocus();
   }
 
   // ── Keyboard ────────────────────────────────────────────────────────────
@@ -121,14 +123,36 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
   KeyEventResult _quickPaste(int n) {
     final items = _filtered;
     if (n < 1 || n > items.length || n > 9) return KeyEventResult.ignored;
+    if (_quickPastePending) return KeyEventResult.handled;
     final item = items[n - 1];
-    final override = widget.onQuickPaste;
-    if (override != null) {
-      override(item.id);
-    } else {
-      unawaited(ClipHistController.instance.quickPaste(item.id));
-    }
+    _quickPastePending = true;
+    _selectIndex(n - 1);
+    unawaited(_dispatchQuickPaste(item.id));
     return KeyEventResult.handled;
+  }
+
+  Future<void> _dispatchQuickPaste(BigInt id) async {
+    // Leave enough time for the number-key release and the selection bounce to
+    // render before the native window is hidden. Hiding on KeyDown could send
+    // the corresponding KeyUp to the target application and made the shortcut
+    // feel intermittent on Windows.
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    try {
+      final override = widget.onQuickPaste;
+      if (override != null) {
+        override(id);
+      } else {
+        await ClipHistController.instance.quickPaste(id);
+      }
+    } finally {
+      if (mounted) _quickPastePending = false;
+    }
+  }
+
+  void _selectIndex(int index) {
+    _viewFocus.requestFocus();
+    ref.read(selectedIndexProvider.notifier).state = index;
+    _ensureVisible(index);
   }
 
   void _moveSelection(int delta) {
@@ -139,8 +163,7 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
       cur = delta > 0 ? -1 : 0;
     }
     int next = (cur + delta).clamp(0, items.length - 1);
-    ref.read(selectedIndexProvider.notifier).state = next;
-    _ensureVisible(next);
+    _selectIndex(next);
   }
 
   void _ensureVisible(int index) {
@@ -310,8 +333,7 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
                         item: filtered[i],
                         index: i + 1,
                         selected: i == selected,
-                        onTap: () =>
-                            ref.read(selectedIndexProvider.notifier).state = i,
+                        onTap: () => _selectIndex(i),
                         onDoubleTap: () =>
                             _copyItem(filtered[i], hideAfter: true),
                         onCopy: () => _copyItem(filtered[i]),

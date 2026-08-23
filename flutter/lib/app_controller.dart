@@ -41,6 +41,7 @@ class ClipHistController with WindowListener, TrayListener {
   bool _windowDanceRunning = false;
   bool _windowDanceQueued = false;
   bool _windowActionPollErrorLogged = false;
+  bool _quickPasteRunning = false;
 
   Future<void> start(ProviderContainer c, {bool forceVisible = false}) async {
     container = c;
@@ -306,37 +307,83 @@ class ClipHistController with WindowListener, TrayListener {
     }
   }
 
-  /// Quick-paste path: copy the item, float
-  /// it to the top, hide the window, wait 200ms for the target app to regain
-  /// focus, then simulate Ctrl+V. The window is hidden unconditionally
+  /// Quick-paste path: copy the item, float it to the top, explicitly yield
+  /// focus, hide the window, wait for the target app to regain focus, then
+  /// simulate Ctrl+V. The window is hidden unconditionally
   /// (paste is meaningless with the history window in the way). The
   /// Native paste injection is best-effort; a missing Linux helper or denied
   /// accessibility permission is surfaced as a toast instead of a silent
   /// no-op.
   Future<void> quickPaste(BigInt id) async {
-    api_clipboard.feLog(message: 'quick paste: start id=$id');
-    try {
-      await api_clipboard.copyToClipboard(id: id);
-    } catch (e) {
-      api_clipboard.feLog(message: 'quick paste: copy failed id=$id: $e');
-      showToast(container, '复制失败: $e');
+    if (_quickPasteRunning) {
+      api_clipboard.feLog(message: 'quick paste: ignored duplicate id=$id');
       return;
     }
+    _quickPasteRunning = true;
+    api_clipboard.feLog(message: 'quick paste: start id=$id');
     try {
-      await api_history.moveToTop(id: id);
-    } catch (_) {
-      // Non-fatal — the copy already succeeded.
+      try {
+        await api_clipboard.copyToClipboard(id: id);
+      } catch (e) {
+        api_clipboard.feLog(message: 'quick paste: copy failed id=$id: $e');
+        showToast(container, '复制失败: $e');
+        return;
+      }
+      try {
+        await api_history.moveToTop(id: id);
+      } catch (e) {
+        // Non-fatal — the copy already succeeded, but keep the reason visible.
+        api_clipboard.feLog(message: 'quick paste: reorder failed id=$id: $e');
+      }
+      try {
+        // Windows' Hide() only calls ShowWindow(SW_HIDE), which does not
+        // deterministically activate the previously focused window. Blur()
+        // explicitly activates the next visible native window first.
+        if (Platform.isWindows || Platform.isMacOS) {
+          await windowManager.blur();
+        }
+        await windowManager.hide();
+      } catch (e) {
+        api_clipboard.feLog(message: 'quick paste: hide failed id=$id: $e');
+        showToast(container, '无法切回上一个窗口: $e');
+        return;
+      }
+      api_clipboard.feLog(message: 'quick paste: window hidden id=$id');
+      await _waitForPasteTargetFocus();
+      try {
+        await api_clipboard.simulatePasteCmd();
+        api_clipboard.feLog(message: 'quick paste: completed id=$id');
+      } catch (e) {
+        api_clipboard.feLog(
+          message: 'quick paste: injection failed id=$id: $e',
+        );
+        showToast(container, '自动粘贴暂不可用: $e');
+      }
+    } finally {
+      _quickPasteRunning = false;
     }
-    await windowManager.hide();
-    api_clipboard.feLog(message: 'quick paste: window hidden id=$id');
+  }
+
+  Future<void> _waitForPasteTargetFocus() async {
+    // isFocused is available on Windows/macOS. Polling avoids a fixed race,
+    // while the final settling delay gives the newly activated application a
+    // chance to finish its focus handlers before Ctrl/Cmd+V arrives.
+    if (Platform.isWindows || Platform.isMacOS) {
+      final deadline = DateTime.now().add(const Duration(milliseconds: 600));
+      while (DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+        try {
+          if (!await windowManager.isFocused()) break;
+        } catch (_) {
+          break;
+        }
+      }
+      await Future<void>.delayed(
+        Duration(milliseconds: Platform.isWindows ? 220 : 120),
+      );
+      return;
+    }
     await Future<void>.delayed(const Duration(milliseconds: 200));
-    try {
-      await api_clipboard.simulatePasteCmd();
-      api_clipboard.feLog(message: 'quick paste: completed id=$id');
-    } catch (e) {
-      api_clipboard.feLog(message: 'quick paste: injection failed id=$id: $e');
-      showToast(container, '自动粘贴暂不可用: $e');
-    }
   }
 
   Future<void> _setupTray() async {

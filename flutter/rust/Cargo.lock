@@ -1415,6 +1415,7 @@ dependencies = [
  "ammonia",
  "arboard",
  "chrono",
+ "clipboard-win",
  "dirs",
  "flutter_rust_bridge",
  "fs2",

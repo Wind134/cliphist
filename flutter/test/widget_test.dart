@@ -93,7 +93,50 @@ void main() {
     await tester.pump();
     await tester.sendKeyDownEvent(LogicalKeyboardKey.digit2);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.digit2);
+    await tester.pump(const Duration(milliseconds: 130));
 
+    expect(pastedId, BigInt.two);
+  });
+
+  testWidgets('row selection restores numeric quick-paste focus and bounces', (
+    tester,
+  ) async {
+    final container = ProviderContainer(
+      overrides: [
+        settingsProvider.overrideWith((ref) => testSettings),
+        historyProvider.overrideWith((ref) => testHistory),
+      ],
+    );
+    addTearDown(container.dispose);
+    BigInt? pastedId;
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: cliphistTheme(),
+          home: Scaffold(
+            body: HistoryView(onQuickPaste: (id) => pastedId = id),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('history-item-tap-1')));
+    await tester.pump();
+    expect(container.read(selectedIndexProvider), 0);
+
+    final motionFinder = find.byKey(
+      ValueKey('history-item-motion-${BigInt.one}'),
+    );
+    await tester.pump(const Duration(milliseconds: 60));
+    final transform = tester.widget<Transform>(motionFinder);
+    expect(transform.transform.getMaxScaleOnAxis(), greaterThan(1));
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.digit2);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.digit2);
+    await tester.pump(const Duration(milliseconds: 130));
     expect(pastedId, BigInt.two);
   });
 

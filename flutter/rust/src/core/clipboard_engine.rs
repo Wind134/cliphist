@@ -71,6 +71,13 @@ pub fn get_storage_path() -> PathBuf {
 /// leave a half-decoded PNG that the frontend would later fail to load.
 pub fn save_image_file(id: usize, png: &[u8]) -> Option<String> {
     let abs = images_dir().join(format!("{}.png", id));
+    if png.len() as u64 > consts::MAX_IMAGE_FILE_SIZE {
+        crate::core::log::write_log(&format!(
+            "Encoded image too large ({} bytes), skipping",
+            png.len()
+        ));
+        return None;
+    }
     match storage::atomic_write_without_backup(&abs, png) {
         Ok(()) => Some(format!("images/{id}.png")),
         Err(error) => {
