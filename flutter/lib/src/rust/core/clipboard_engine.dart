@@ -22,6 +22,10 @@ class ClipboardItem {
   final int? imageHeight;
   final String? htmlContent;
 
+  /// File paths carried by a Wayland `text/uri-list` offer. This may coexist
+  /// with text, HTML and image alternatives from the same clipboard event.
+  final List<String>? filePaths;
+
   /// Stable content identity used for whole-history deduplication. Optional
   /// on disk for migration from releases that predate this field.
   final String? contentHash;
@@ -37,6 +41,7 @@ class ClipboardItem {
     this.imageWidth,
     this.imageHeight,
     this.htmlContent,
+    this.filePaths,
     this.contentHash,
   });
 
@@ -52,6 +57,7 @@ class ClipboardItem {
       imageWidth.hashCode ^
       imageHeight.hashCode ^
       htmlContent.hashCode ^
+      filePaths.hashCode ^
       contentHash.hashCode;
 
   @override
@@ -69,5 +75,6 @@ class ClipboardItem {
           imageWidth == other.imageWidth &&
           imageHeight == other.imageHeight &&
           htmlContent == other.htmlContent &&
+          filePaths == other.filePaths &&
           contentHash == other.contentHash;
 }

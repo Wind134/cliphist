@@ -243,6 +243,98 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
     }
   }
 
+  Future<void> _showItemDetails(ClipboardItem item) async {
+    final type = ClipType.of(item.contentType) ?? ClipType.all;
+    final text = item.contentType == 'files'
+        ? (item.filePaths?.join('\n') ?? item.content)
+        : item.content;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(
+              item.contentType == 'files'
+                  ? Icons.folder_copy_outlined
+                  : Icons.open_in_full_rounded,
+              size: 20,
+              color: type.color,
+            ),
+            const SizedBox(width: 9),
+            Expanded(child: Text('${type.label}详情')),
+          ],
+        ),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 620, maxHeight: 520),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (item.imagePath != null) ...[
+                  FutureBuilder<Uint8List?>(
+                    future: getImageData(item.id),
+                    builder: (context, snapshot) {
+                      final bytes = snapshot.data;
+                      if (bytes != null) {
+                        return ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 360),
+                          child: Image.memory(bytes, fit: BoxFit.contain),
+                        );
+                      }
+                      if (snapshot.connectionState != ConnectionState.done) {
+                        return const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(24),
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        );
+                      }
+                      return const Text('图片文件无法读取');
+                    },
+                  ),
+                  if (text.isNotEmpty) const SizedBox(height: 16),
+                ],
+                if (text.isNotEmpty)
+                  SelectionArea(
+                    child: Text(
+                      text,
+                      key: ValueKey('history-item-full-content-${item.id}'),
+                      style: TextStyle(
+                        color: CliphistColors.textPrimary,
+                        fontSize: 13,
+                        height: 1.5,
+                        fontFamily:
+                            item.contentType == 'files' || text.contains('\n')
+                            ? 'monospace'
+                            : null,
+                      ),
+                    ),
+                  ),
+                if (text.isEmpty && item.imagePath == null)
+                  const Text('该记录没有可显示的纯文本内容'),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('关闭'),
+          ),
+          FilledButton.icon(
+            onPressed: () {
+              Navigator.pop(ctx);
+              unawaited(_copyItem(item));
+            },
+            icon: const Icon(Icons.content_copy, size: 16),
+            label: const Text('复制'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _clearAll() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -336,6 +428,7 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
                         onTap: () => _selectIndex(i),
                         onDoubleTap: () =>
                             _copyItem(filtered[i], hideAfter: true),
+                        onShowDetails: () => _showItemDetails(filtered[i]),
                         onCopy: () => _copyItem(filtered[i]),
                         onDelete: () => _deleteItem(filtered[i]),
                       ),

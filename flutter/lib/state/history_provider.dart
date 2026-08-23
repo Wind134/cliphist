@@ -18,7 +18,7 @@ final selectedIndexProvider = StateProvider<int>((ref) => -1);
 /// Live search-box text.
 final searchQueryProvider = StateProvider<String>((ref) => '');
 
-/// Active category tab: one of `all|image|text|link|short|rich`.
+/// Active category tab: one of `all|image|files|text|link|short|rich`.
 final currentCategoryProvider = StateProvider<String>((ref) => 'all');
 
 /// Derive the visible rows from the full history + query + category. A

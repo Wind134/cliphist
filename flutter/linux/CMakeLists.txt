@@ -53,10 +53,6 @@ add_subdirectory(${FLUTTER_MANAGED_DIR})
 # System-level dependencies.
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GTK REQUIRED IMPORTED_TARGET gtk+-3.0)
-# hotkey_manager_linux references PkgConfig::KEYBINDER before declaring it in
-# its own CMake file. Define the imported target at the app level so plugin
-# configuration is deterministic.
-pkg_check_modules(KEYBINDER REQUIRED IMPORTED_TARGET keybinder-3.0)
 
 # tray_manager uses app_indicator_new, deprecated in newer libayatana-appindicator.
 # Downgrade that deprecation from error to warning so the plugin compiles.

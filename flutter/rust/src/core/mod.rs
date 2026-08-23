@@ -10,3 +10,5 @@ pub mod shortcut_engine;
 pub mod single_instance;
 pub mod state;
 pub mod storage;
+#[cfg(target_os = "linux")]
+pub mod wayland_clipboard;

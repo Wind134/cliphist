@@ -54,15 +54,15 @@ Rust API ── Rust Core ── history.json / images / settings.json
 
 - `api/` 定义 FRB 公开边界：初始化、历史读写、剪贴板操作、设置更新和事件流。
 - `core/state.rs` 持有进程内唯一状态；历史、设置和窗口唤醒请求都通过该状态协调。
-- 三个常驻任务负责 500ms 剪贴板轮询、Linux helper 状态监控和过期历史清理；窗口唤醒通过原子合并标记交给 Flutter UI isolate。
-- 文本和图片按内容去重；图片保存为独立 PNG，UI 仅在需要显示时读取字节。
+- 三个常驻任务负责剪贴板监听、Linux helper 状态监控和过期历史清理；Linux 使用 Wayland data-control selection 事件，Windows/macOS 保留 arboard 轮询。窗口唤醒通过原子合并标记交给 Flutter UI isolate。
+- 文本、HTML、图片和文件列表按完整 MIME 组合去重；图片保存为独立 PNG，UI 仅在需要显示时读取字节。
 
 ## 关键流程
 
 ### 记录剪贴板
 
-1. Rust 后台任务轮询系统剪贴板。
-2. 新内容经去重、富文本清理和图片外置后原子写入历史文件。
+1. Rust 后台任务监听系统剪贴板；Linux 从同一个 Wayland selection 读取全部可用 MIME。
+2. 新内容经去重、富文本清理、文件 URI 解析和图片外置后原子写入历史文件。
 3. Rust 通过 FRB 事件流发送最新快照。
 4. Flutter 合并 Riverpod 状态并刷新列表。
 
@@ -70,7 +70,7 @@ Rust API ── Rust Core ── history.json / images / settings.json
 
 1. 托盘、全局快捷键或双击修饰键产生窗口动作请求。
 2. Flutter UI isolate 消费合并后的请求，执行显示、聚焦和置顶切换。
-3. 数字键 `1`–`9` 选中条目后，Rust 将内容写回剪贴板，Flutter 隐藏窗口，再由平台实现注入 `Ctrl+V`/`Cmd+V`。
+3. 数字键 `1`–`9` 选中条目后，Rust 将内容写回剪贴板；Linux 会同时恢复文本、HTML、PNG 和文件 URI 等表示。Flutter 隐藏窗口，再由平台实现注入 `Ctrl+V`/`Cmd+V`。
 4. Linux 通过 `cliphist-evdev-helper` 完成全局修饰键监听和 uinput 粘贴；Windows/macOS 使用 `rdev`。
 
 ### 退出

@@ -1,5 +1,7 @@
+#[cfg(not(target_os = "linux"))]
 use arboard::Clipboard;
 use serde::{Deserialize, Serialize};
+#[cfg(not(target_os = "linux"))]
 use std::io::Cursor;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -26,6 +28,10 @@ pub struct ClipboardItem {
     pub image_height: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub html_content: Option<String>,
+    /// File paths carried by a Wayland `text/uri-list` offer. This may coexist
+    /// with text, HTML and image alternatives from the same clipboard event.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_paths: Option<Vec<String>>,
     /// Stable content identity used for whole-history deduplication. Optional
     /// on disk for migration from releases that predate this field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -181,6 +187,32 @@ pub fn load_history() -> Vec<ClipboardItem> {
                     item.content_type = get_content_type(&item.content);
                     changed = true;
                 }
+                if let Some(paths) = item.file_paths.as_mut() {
+                    let original_len = paths.len();
+                    paths.retain(|path| !path.is_empty() && path.len() <= consts::MAX_TEXT_SIZE);
+                    if paths.len() > consts::MAX_FILE_COUNT {
+                        paths.truncate(consts::MAX_FILE_COUNT);
+                    }
+                    let mut total = 0usize;
+                    paths.retain(|path| {
+                        total = total.saturating_add(path.len());
+                        total <= consts::MAX_FILE_LIST_SIZE
+                    });
+                    changed |= paths.len() != original_len;
+                    if paths.is_empty() {
+                        item.file_paths = None;
+                        if item.content_type == "files" {
+                            item.content_type = get_content_type(&item.content);
+                        }
+                        changed = true;
+                    } else if item.content_type != "files" {
+                        item.content_type = "files".to_string();
+                        changed = true;
+                    }
+                } else if item.content_type == "files" {
+                    item.content_type = get_content_type(&item.content);
+                    changed = true;
+                }
                 let expected_hash = item_content_hash(item);
                 if item.content_hash.as_ref() != Some(&expected_hash) {
                     item.content_hash = Some(expected_hash);
@@ -251,22 +283,42 @@ fn floor_char_boundary(value: &str, max_bytes: usize) -> usize {
     index
 }
 
-pub fn text_content_hash(text: &str, html: Option<&str>) -> String {
-    let mut bytes = Vec::with_capacity(text.len() + html.map_or(0, str::len) + 11);
+pub fn content_hash(
+    text: &str,
+    html: Option<&str>,
+    png: Option<&[u8]>,
+    file_paths: Option<&[String]>,
+) -> String {
+    let path_bytes = file_paths.map_or(0, |paths| paths.iter().map(String::len).sum());
+    let mut bytes = Vec::with_capacity(
+        text.len() + html.map_or(0, str::len) + png.map_or(0, <[u8]>::len) + path_bytes + 40,
+    );
     bytes.extend_from_slice(b"text\0");
     bytes.extend_from_slice(text.as_bytes());
     bytes.extend_from_slice(b"\0html\0");
     if let Some(html) = html {
         bytes.extend_from_slice(html.as_bytes());
     }
+    bytes.extend_from_slice(b"\0image/png\0");
+    if let Some(png) = png {
+        bytes.extend_from_slice(png);
+    }
+    bytes.extend_from_slice(b"\0files\0");
+    if let Some(paths) = file_paths {
+        for path in paths {
+            bytes.extend_from_slice(path.as_bytes());
+            bytes.push(0);
+        }
+    }
     stable_content_hash(&bytes)
 }
 
+pub fn text_content_hash(text: &str, html: Option<&str>) -> String {
+    content_hash(text, html, None, None)
+}
+
 pub fn image_content_hash(png: &[u8]) -> String {
-    let mut bytes = Vec::with_capacity(png.len() + 10);
-    bytes.extend_from_slice(b"image/png\0");
-    bytes.extend_from_slice(png);
-    stable_content_hash(&bytes)
+    content_hash("", None, Some(png), None)
 }
 
 /// A deterministic 128-bit fingerprint composed from two independently
@@ -287,18 +339,23 @@ fn stable_content_hash(bytes: &[u8]) -> String {
 }
 
 fn item_content_hash(item: &ClipboardItem) -> String {
-    if item.content_type == "image" {
-        if let Some(path) = item.image_path.as_deref() {
-            if let Some(bytes) = read_image_file(path) {
-                return image_content_hash(&bytes);
-            }
-        }
-    }
-    text_content_hash(&item.content, item.html_content.as_deref())
+    let image = item.image_path.as_deref().and_then(read_image_file);
+    content_hash(
+        &item.content,
+        item.html_content.as_deref(),
+        image.as_deref(),
+        item.file_paths.as_deref(),
+    )
 }
 
 fn payload_size(item: &ClipboardItem) -> usize {
-    item.content.len() + item.preview.len() + item.html_content.as_ref().map_or(0, String::len)
+    item.content.len()
+        + item.preview.len()
+        + item.html_content.as_ref().map_or(0, String::len)
+        + item
+            .file_paths
+            .as_ref()
+            .map_or(0, |paths| paths.iter().map(String::len).sum())
 }
 
 /// Enforce both count and aggregate inline-payload limits. Returns image paths
@@ -348,15 +405,17 @@ pub fn commit_item(
 }
 
 fn same_content(left: &ClipboardItem, right: &ClipboardItem) -> bool {
-    if left.content_type == "image" && right.content_type == "image" {
-        return left
-            .image_path
-            .as_deref()
-            .and_then(read_image_file)
-            .zip(right.image_path.as_deref().and_then(read_image_file))
-            .is_some_and(|(left, right)| left == right);
-    }
-    left.content == right.content && left.html_content == right.html_content
+    let images_match = match (left.image_path.as_deref(), right.image_path.as_deref()) {
+        (None, None) => true,
+        (Some(left), Some(right)) => read_image_file(left)
+            .zip(read_image_file(right))
+            .is_some_and(|(left, right)| left == right),
+        _ => false,
+    };
+    images_match
+        && left.content == right.content
+        && left.html_content == right.html_content
+        && left.file_paths == right.file_paths
 }
 
 fn deduplicate_history(items: Vec<ClipboardItem>) -> (Vec<ClipboardItem>, Vec<Option<String>>) {
@@ -402,10 +461,10 @@ fn repair_history_ids(items: &mut [ClipboardItem]) -> bool {
 
 pub fn make_preview(content: &str) -> String {
     let trimmed = content.trim();
-    if trimmed.char_indices().count() <= 80 {
+    if trimmed.chars().count() <= consts::MAX_PREVIEW_CHARS {
         trimmed.to_string()
     } else {
-        let preview: String = trimmed.chars().take(80).collect();
+        let preview: String = trimmed.chars().take(consts::MAX_PREVIEW_CHARS).collect();
         format!("{}...", preview)
     }
 }
@@ -465,6 +524,7 @@ pub fn simple_hash(s: &str) -> u64 {
 
 /// Stable hash over an `arboard` image payload. Must match the hash used by
 /// the poll loop.
+#[cfg(not(target_os = "linux"))]
 pub fn img_hash(img: &arboard::ImageData) -> u64 {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
@@ -485,6 +545,7 @@ pub fn take_self_set_hash() -> u64 {
     LAST_SELF_SET_HASH.swap(0, Ordering::SeqCst)
 }
 
+#[cfg(not(target_os = "linux"))]
 pub fn copy_item_to_clipboard(history: &[ClipboardItem], id: usize) -> Result<(), String> {
     let item = history
         .iter()
@@ -538,6 +599,86 @@ pub fn copy_item_to_clipboard(history: &[ClipboardItem], id: usize) -> Result<()
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
+pub fn copy_item_to_clipboard(history: &[ClipboardItem], id: usize) -> Result<(), String> {
+    use wl_clipboard_rs::copy::{MimeSource, MimeType, Options, Source};
+
+    let item = history
+        .iter()
+        .find(|item| item.id == id)
+        .ok_or("Item not found")?;
+    let mut sources = Vec::new();
+
+    // New Wayland image records leave `content` empty. Do not expose the
+    // synthetic preview text stored by older releases as a text alternative.
+    let has_real_text = !item.content.is_empty()
+        && (item.content_type != "image"
+            || item.html_content.is_some()
+            || item.file_paths.is_some());
+    if has_real_text {
+        sources.push(MimeSource {
+            source: Source::Bytes(item.content.clone().into_bytes().into_boxed_slice()),
+            mime_type: MimeType::Text,
+        });
+    }
+
+    if let Some(html) = item.html_content.as_ref() {
+        sources.push(MimeSource {
+            source: Source::Bytes(html.clone().into_bytes().into_boxed_slice()),
+            mime_type: MimeType::Specific("text/html".to_string()),
+        });
+    }
+
+    if let Some(path) = item.image_path.as_deref() {
+        let png =
+            read_image_file(path).ok_or_else(|| format!("图片文件缺失或无效，无法复制: {path}"))?;
+        sources.push(MimeSource {
+            source: Source::Bytes(png.into_boxed_slice()),
+            mime_type: MimeType::Specific("image/png".to_string()),
+        });
+    } else if item.content_type == "image" {
+        return Err("图片记录没有可用的图片文件".to_string());
+    }
+
+    if let Some(paths) = item.file_paths.as_deref() {
+        let uri_list = crate::core::wayland_clipboard::encode_uri_list(paths)?;
+        sources.push(MimeSource {
+            source: Source::Bytes(uri_list.clone().into_bytes().into_boxed_slice()),
+            mime_type: MimeType::Specific("text/uri-list".to_string()),
+        });
+        sources.push(MimeSource {
+            source: Source::Bytes(b"0".to_vec().into_boxed_slice()),
+            mime_type: MimeType::Specific("application/x-kde-cutselection".to_string()),
+        });
+        sources.push(MimeSource {
+            source: Source::Bytes(
+                format!("copy\n{}", uri_list.replace("\r\n", "\n"))
+                    .into_bytes()
+                    .into_boxed_slice(),
+            ),
+            mime_type: MimeType::Specific("x-special/gnome-copied-files".to_string()),
+        });
+    }
+
+    if sources.is_empty() {
+        return Err("该记录没有可复制的剪贴板内容".to_string());
+    }
+
+    // Mark before publishing: the watcher runs concurrently and may observe
+    // the Wayland selection as soon as the compositor accepts it.
+    let self_hash = simple_hash(&item_content_hash(item));
+    mark_self_set(self_hash);
+    let mut options = Options::new();
+    // If an HTML-only record has no genuine plain-text alternative, do not
+    // let wl-clipboard-rs synthesize text/plain from the HTML markup.
+    options.omit_additional_text_mime_types(!has_real_text);
+    if let Err(error) = options.copy_multi(sources) {
+        take_self_set_hash();
+        return Err(format!("写入 Wayland 剪贴板失败: {error}"));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -555,15 +696,16 @@ mod tests {
             image_width: None,
             image_height: None,
             html_content: None,
+            file_paths: None,
         }
     }
 
     #[test]
     fn preview_uses_unicode_characters_and_truncates() {
         assert_eq!(make_preview("  你好  "), "你好");
-        let long = "界".repeat(81);
+        let long = "界".repeat(consts::MAX_PREVIEW_CHARS + 1);
         let preview = make_preview(&long);
-        assert_eq!(preview.chars().count(), 83);
+        assert_eq!(preview.chars().count(), consts::MAX_PREVIEW_CHARS + 3);
         assert!(preview.ends_with("..."));
     }
 

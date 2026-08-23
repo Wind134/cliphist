@@ -1,7 +1,8 @@
 //! Background tasks.
 //!
 //! Three resident threads:
-//!   1. `clipboard-poll`     — 500ms arboard polling, dedup, image/rich capture
+//!   1. clipboard capture — Wayland selection events on Linux, arboard polling
+//!      on Windows/macOS
 //!   2. `helper-status-monitor` — 200ms poll of the evdev helper connection
 //!      state, emits on change
 //!   3. `clean-expired`      — runs once at startup, then hourly, dropping
@@ -11,7 +12,10 @@
 //! async IO; this also avoids an unnecessary Tokio runtime.
 
 use crate::core::clipboard_engine::ClipboardItem;
-use crate::core::{clipboard_engine, consts, events, log, sanitize, state};
+use crate::core::{clipboard_engine, events, log, state};
+#[cfg(not(target_os = "linux"))]
+use crate::core::{consts, sanitize};
+#[cfg(not(target_os = "linux"))]
 use image::ImageEncoder;
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -20,7 +24,7 @@ use std::time::Duration;
 /// Decode the BMP produced by the Windows `CF_BITMAP` fallback into the same
 /// RGBA payload returned by arboard. Kept platform-neutral so the decoder can
 /// be covered by unit tests on non-Windows builders.
-#[cfg(any(target_os = "windows", test))]
+#[cfg(any(target_os = "windows", all(test, not(target_os = "linux"))))]
 fn decode_windows_bitmap(bytes: &[u8]) -> Result<arboard::ImageData<'static>, String> {
     let image = image::load_from_memory_with_format(bytes, image::ImageFormat::Bmp)
         .map_err(|error| format!("failed to decode CF_BITMAP: {error}"))?
@@ -58,11 +62,12 @@ fn read_windows_clipboard_image_fallback() -> Result<Option<arboard::ImageData<'
     decode_windows_bitmap(&bmp).map(Some)
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(all(not(target_os = "windows"), not(target_os = "linux")))]
 fn read_windows_clipboard_image_fallback() -> Result<Option<arboard::ImageData<'static>>, String> {
     Ok(None)
 }
 
+#[cfg(not(target_os = "linux"))]
 fn read_clipboard_image(
     clipboard: &mut arboard::Clipboard,
 ) -> Result<Option<arboard::ImageData<'static>>, String> {
@@ -100,12 +105,21 @@ pub fn spawn_all(history: Arc<Mutex<Vec<ClipboardItem>>>, counter: Arc<Mutex<usi
         ));
     }
 
-    // 1. clipboard poll.
-    if let Err(error) = std::thread::Builder::new()
+    // 1. clipboard capture.
+    #[cfg(target_os = "linux")]
+    let capture = std::thread::Builder::new()
+        .name("wayland-clipboard-watch".into())
+        .spawn(move || crate::core::wayland_clipboard::run(history, counter));
+
+    #[cfg(not(target_os = "linux"))]
+    let capture = std::thread::Builder::new()
         .name("clipboard-poll".into())
-        .spawn(move || poll_clipboard(history, counter))
-    {
-        log::write_log(&format!("Failed to spawn clipboard-poll thread: {error}"));
+        .spawn(move || poll_clipboard(history, counter));
+
+    if let Err(error) = capture {
+        log::write_log(&format!(
+            "Failed to spawn clipboard capture thread: {error}"
+        ));
     }
 }
 
@@ -184,7 +198,7 @@ fn clean_expired_history(history: &Arc<Mutex<Vec<ClipboardItem>>>, retention_day
     }
 }
 
-fn next_item_id(counter: &Arc<Mutex<usize>>) -> Result<usize, String> {
+pub(crate) fn next_item_id(counter: &Arc<Mutex<usize>>) -> Result<usize, String> {
     let mut counter = counter.lock();
     let next = counter
         .checked_add(1)
@@ -193,6 +207,7 @@ fn next_item_id(counter: &Arc<Mutex<usize>>) -> Result<usize, String> {
     Ok(next)
 }
 
+#[cfg(not(target_os = "linux"))]
 fn poll_clipboard(history: Arc<Mutex<Vec<ClipboardItem>>>, counter: Arc<Mutex<usize>>) {
     let mut retry_delay = Duration::from_secs(1);
     let mut clipboard = loop {
@@ -305,6 +320,7 @@ fn poll_clipboard(history: Arc<Mutex<Vec<ClipboardItem>>>, counter: Arc<Mutex<us
                         image_width: None,
                         image_height: None,
                         html_content,
+                        file_paths: None,
                         content_hash: Some(content_hash),
                     };
 
@@ -424,6 +440,7 @@ fn poll_clipboard(history: Arc<Mutex<Vec<ClipboardItem>>>, counter: Arc<Mutex<us
                     image_width: Some(width),
                     image_height: Some(height),
                     html_content: None,
+                    file_paths: None,
                     content_hash: Some(content_hash),
                 };
 
@@ -459,7 +476,7 @@ fn poll_clipboard(history: Arc<Mutex<Vec<ClipboardItem>>>, counter: Arc<Mutex<us
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_os = "linux")))]
 mod tests {
     use super::decode_windows_bitmap;
 

@@ -730,8 +730,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ClipboardItem dco_decode_clipboard_item(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 11)
-      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
+    if (arr.length != 12)
+      throw Exception('unexpected arr length: expect 12 but see ${arr.length}');
     return ClipboardItem(
       id: dco_decode_usize(arr[0]),
       content: dco_decode_String(arr[1]),
@@ -743,7 +743,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       imageWidth: dco_decode_opt_box_autoadd_u_32(arr[7]),
       imageHeight: dco_decode_opt_box_autoadd_u_32(arr[8]),
       htmlContent: dco_decode_opt_String(arr[9]),
-      contentHash: dco_decode_opt_String(arr[10]),
+      filePaths: dco_decode_opt_list_String(arr[10]),
+      contentHash: dco_decode_opt_String(arr[11]),
     );
   }
 
@@ -751,6 +752,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   double dco_decode_f_32(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as double;
+  }
+
+  @protected
+  List<String> dco_decode_list_String(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_String).toList();
   }
 
   @protected
@@ -787,6 +794,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   int? dco_decode_opt_box_autoadd_u_32(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_u_32(raw);
+  }
+
+  @protected
+  List<String>? dco_decode_opt_list_String(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_list_String(raw);
   }
 
   @protected
@@ -955,6 +968,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_imageWidth = sse_decode_opt_box_autoadd_u_32(deserializer);
     var var_imageHeight = sse_decode_opt_box_autoadd_u_32(deserializer);
     var var_htmlContent = sse_decode_opt_String(deserializer);
+    var var_filePaths = sse_decode_opt_list_String(deserializer);
     var var_contentHash = sse_decode_opt_String(deserializer);
     return ClipboardItem(
       id: var_id,
@@ -967,6 +981,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       imageWidth: var_imageWidth,
       imageHeight: var_imageHeight,
       htmlContent: var_htmlContent,
+      filePaths: var_filePaths,
       contentHash: var_contentHash,
     );
   }
@@ -975,6 +990,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   double sse_decode_f_32(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getFloat32();
+  }
+
+  @protected
+  List<String> sse_decode_list_String(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <String>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_String(deserializer));
+    }
+    return ans_;
   }
 
   @protected
@@ -1037,6 +1064,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_box_autoadd_u_32(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  List<String>? sse_decode_opt_list_String(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_list_String(deserializer));
     } else {
       return null;
     }
@@ -1265,6 +1303,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_box_autoadd_u_32(self.imageWidth, serializer);
     sse_encode_opt_box_autoadd_u_32(self.imageHeight, serializer);
     sse_encode_opt_String(self.htmlContent, serializer);
+    sse_encode_opt_list_String(self.filePaths, serializer);
     sse_encode_opt_String(self.contentHash, serializer);
   }
 
@@ -1272,6 +1311,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_f_32(double self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putFloat32(self);
+  }
+
+  @protected
+  void sse_encode_list_String(List<String> self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_String(item, serializer);
+    }
   }
 
   @protected
@@ -1333,6 +1381,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_box_autoadd_u_32(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_list_String(
+    List<String>? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_list_String(self, serializer);
     }
   }
 

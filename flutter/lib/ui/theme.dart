@@ -44,6 +44,7 @@ class CliphistColors {
   static const typeImage = Color(0xFF168393);
   static const typeShort = Color(0xFF7662B3);
   static const typeRich = Color(0xFFB55278);
+  static const typeFiles = Color(0xFF4C7A45);
 
   // ── Radii ─────────────────────────────────────────────────────────────────
   static const radiusSm = 8.0;
@@ -75,8 +76,9 @@ class ClipType {
   static const link = ClipType('link', '链接', CliphistColors.typeLink);
   static const short = ClipType('short', '短文本', CliphistColors.typeShort);
   static const rich = ClipType('rich', '富文本', CliphistColors.typeRich);
+  static const files = ClipType('files', '文件', CliphistColors.typeFiles);
 
-  static const byKey = <ClipType>[all, image, text, link, short, rich];
+  static const byKey = <ClipType>[all, image, files, text, link, short, rich];
 
   static ClipType? of(String key) {
     for (final t in byKey) {

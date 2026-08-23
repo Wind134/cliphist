@@ -23,6 +23,7 @@ class HistoryItem extends StatefulWidget {
     required this.selected,
     required this.onTap,
     required this.onDoubleTap,
+    required this.onShowDetails,
     required this.onCopy,
     required this.onDelete,
   });
@@ -34,6 +35,7 @@ class HistoryItem extends StatefulWidget {
   final bool selected;
   final VoidCallback onTap;
   final VoidCallback onDoubleTap;
+  final VoidCallback onShowDetails;
   final VoidCallback onCopy;
   final VoidCallback onDelete;
 
@@ -188,7 +190,7 @@ class _HistoryItemState extends State<HistoryItem>
                     const SizedBox(width: 10),
                     Expanded(child: _body(item, isImage)),
                     SizedBox(
-                      width: 54,
+                      width: 81,
                       child: AnimatedOpacity(
                         opacity: _hovered || widget.selected ? 1 : 0,
                         duration: const Duration(milliseconds: 120),
@@ -197,6 +199,14 @@ class _HistoryItemState extends State<HistoryItem>
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.end,
                             children: [
+                              _IconBtn(
+                                buttonKey: ValueKey(
+                                  'history-item-details-${item.id}',
+                                ),
+                                icon: Icons.open_in_full_rounded,
+                                tooltip: '查看完整内容',
+                                onTap: widget.onShowDetails,
+                              ),
                               _IconBtn(
                                 icon: Icons.content_copy,
                                 tooltip: '复制',
@@ -268,10 +278,13 @@ class _HistoryItemState extends State<HistoryItem>
       preview,
       maxLines: 2,
       overflow: TextOverflow.ellipsis,
-      style: const TextStyle(
+      style: TextStyle(
         color: CliphistColors.textPrimary,
         fontSize: 13,
         height: 1.35,
+        fontFamily: item.contentType == 'files' || preview.contains('\n')
+            ? 'monospace'
+            : null,
       ),
     );
   }
@@ -283,6 +296,10 @@ class _HistoryItemState extends State<HistoryItem>
       final h = item.imageHeight ?? 0;
       final dim = w > 0 && h > 0 ? '$w × $h px' : '图片';
       return '$time · $dim';
+    }
+    if (item.contentType == 'files') {
+      final count = item.filePaths?.length ?? item.charCount.toInt();
+      return '$time · $count 个文件';
     }
     final count = item.charCount.toInt();
     return '$time · $count 字符';
@@ -332,6 +349,7 @@ class _TypeBadge extends StatelessWidget {
   IconData get _icon => switch (type.key) {
     'link' => Icons.link_rounded,
     'rich' => Icons.format_color_text_rounded,
+    'files' => Icons.folder_copy_outlined,
     'short' => Icons.short_text_rounded,
     _ => Icons.notes_rounded,
   };
@@ -438,11 +456,13 @@ class _ImagePreviewState extends State<_ImagePreview> {
 
 class _IconBtn extends StatelessWidget {
   const _IconBtn({
+    this.buttonKey,
     required this.icon,
     required this.tooltip,
     required this.onTap,
   });
 
+  final Key? buttonKey;
   final IconData icon;
   final String tooltip;
   final VoidCallback onTap;
@@ -452,6 +472,7 @@ class _IconBtn extends StatelessWidget {
     return Tooltip(
       message: tooltip,
       child: InkWell(
+        key: buttonKey,
         borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
         onTap: onTap,
         child: Padding(

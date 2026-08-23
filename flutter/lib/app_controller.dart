@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:ui' show Size;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hotkey_manager/hotkey_manager.dart';
+import 'package:hotkey_manager_platform_interface/hotkey_manager_platform_interface.dart';
 import 'package:launch_at_startup/launch_at_startup.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
@@ -86,6 +86,20 @@ class ClipHistController with WindowListener, TrayListener {
       api_clipboard.feLog(message: 'setPreventClose failed: $e');
     }
     windowManager.addListener(this);
+
+    if (!Platform.isLinux) {
+      try {
+        _subscriptions.add(
+          HotKeyManagerPlatform.instance.onKeyEventReceiver.listen(
+            _handleSystemHotKeyEvent,
+          ),
+        );
+      } catch (e, stack) {
+        api_clipboard.feLog(
+          message: 'hotkey event subscription failed: $e\n$stack',
+        );
+      }
+    }
 
     try {
       await applyHotkey(s.hotkey);
@@ -224,40 +238,32 @@ class ClipHistController with WindowListener, TrayListener {
   /// this out of FRB is important: macOS requires registration on its main
   /// event loop, while Windows hotkey handles are thread-affine.
   Future<void> applyHotkey(String shortcut) async {
-    final previous = _registeredHotKey;
-    final next = parseHotKey(shortcut);
-
-    await hotKeyManager.unregisterAll();
-    _registeredHotKey = null;
-
-    // The plugin uses X11 keybinder on Linux. Wayland users bind
-    // `cliphist --toggle-window` in their desktop shortcut settings instead.
-    final wayland =
-        Platform.isLinux &&
-        Platform.environment['XDG_SESSION_TYPE']?.toLowerCase() == 'wayland';
-    if (wayland) {
+    // Linux builds are Wayland-only. The desktop environment owns the global
+    // shortcut and invokes `cliphist --toggle-window`; no Keybinder/X11 plugin
+    // is bundled or called.
+    if (Platform.isLinux) {
+      _registeredHotKey = null;
       api_clipboard.feLog(
-        message: 'Wayland: skipped app global hotkey; use --toggle-window',
+        message: 'Wayland: use a system shortcut for --toggle-window',
       );
       return;
     }
 
+    final previous = _registeredHotKey;
+    final next = parseHotKey(shortcut);
+    final manager = HotKeyManagerPlatform.instance;
+
+    await manager.unregisterAll();
+    _registeredHotKey = null;
+
     try {
-      await hotKeyManager.register(
-        next,
-        keyDownHandler: (_) =>
-            unawaited(performWindowDance(source: 'global hotkey')),
-      );
+      await manager.register(next);
       _registeredHotKey = next;
       api_clipboard.feLog(message: 'Registered native hotkey: $shortcut');
     } catch (_) {
       if (previous != null) {
         try {
-          await hotKeyManager.register(
-            previous,
-            keyDownHandler: (_) =>
-                unawaited(performWindowDance(source: 'hotkey rollback')),
-          );
+          await manager.register(previous);
           _registeredHotKey = previous;
         } catch (rollbackError) {
           api_clipboard.feLog(
@@ -267,6 +273,15 @@ class ClipHistController with WindowListener, TrayListener {
       }
       rethrow;
     }
+  }
+
+  void _handleSystemHotKeyEvent(Map<Object?, Object?> event) {
+    if (event['type'] != 'onKeyDown') return;
+    final data = event['data'];
+    if (data is! Map) return;
+    final identifier = data['identifier'];
+    if (identifier != _registeredHotKey?.identifier) return;
+    unawaited(performWindowDance(source: 'global hotkey'));
   }
 
   Future<void> checkForUpdates({bool silent = false}) async {

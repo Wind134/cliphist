@@ -738,6 +738,7 @@ impl SseDecode for crate::core::clipboard_engine::ClipboardItem {
         let mut var_imageWidth = <Option<u32>>::sse_decode(deserializer);
         let mut var_imageHeight = <Option<u32>>::sse_decode(deserializer);
         let mut var_htmlContent = <Option<String>>::sse_decode(deserializer);
+        let mut var_filePaths = <Option<Vec<String>>>::sse_decode(deserializer);
         let mut var_contentHash = <Option<String>>::sse_decode(deserializer);
         return crate::core::clipboard_engine::ClipboardItem {
             id: var_id,
@@ -750,6 +751,7 @@ impl SseDecode for crate::core::clipboard_engine::ClipboardItem {
             image_width: var_imageWidth,
             image_height: var_imageHeight,
             html_content: var_htmlContent,
+            file_paths: var_filePaths,
             content_hash: var_contentHash,
         };
     }
@@ -759,6 +761,18 @@ impl SseDecode for f32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         deserializer.cursor.read_f32::<NativeEndian>().unwrap()
+    }
+}
+
+impl SseDecode for Vec<String> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<String>::sse_decode(deserializer));
+        }
+        return ans_;
     }
 }
 
@@ -826,6 +840,17 @@ impl SseDecode for Option<u32> {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         if (<bool>::sse_decode(deserializer)) {
             return Some(<u32>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<Vec<String>> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<Vec<String>>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -1026,6 +1051,7 @@ impl flutter_rust_bridge::IntoDart for crate::core::clipboard_engine::ClipboardI
             self.image_width.into_into_dart().into_dart(),
             self.image_height.into_into_dart().into_dart(),
             self.html_content.into_into_dart().into_dart(),
+            self.file_paths.into_into_dart().into_dart(),
             self.content_hash.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -1184,6 +1210,7 @@ impl SseEncode for crate::core::clipboard_engine::ClipboardItem {
         <Option<u32>>::sse_encode(self.image_width, serializer);
         <Option<u32>>::sse_encode(self.image_height, serializer);
         <Option<String>>::sse_encode(self.html_content, serializer);
+        <Option<Vec<String>>>::sse_encode(self.file_paths, serializer);
         <Option<String>>::sse_encode(self.content_hash, serializer);
     }
 }
@@ -1192,6 +1219,16 @@ impl SseEncode for f32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         serializer.cursor.write_f32::<NativeEndian>(self).unwrap();
+    }
+}
+
+impl SseEncode for Vec<String> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <String>::sse_encode(item, serializer);
+        }
     }
 }
 
@@ -1251,6 +1288,16 @@ impl SseEncode for Option<u32> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <u32>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<Vec<String>> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <Vec<String>>::sse_encode(value, serializer);
         }
     }
 }

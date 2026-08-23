@@ -44,6 +44,17 @@ final testHistory = <ClipboardItem>[
   ),
 ];
 
+final longHistory = <ClipboardItem>[
+  ClipboardItem(
+    id: BigInt.from(42),
+    content: List.filled(40, '完整的多行剪贴板内容').join('\n'),
+    contentType: 'text',
+    timestamp: '2026-08-23 16:00:00',
+    preview: '完整的多行剪贴板内容…',
+    charCount: BigInt.from(400),
+  ),
+];
+
 void main() {
   test('cliphist theme builds without error', () {
     expect(cliphistTheme(), isNotNull);
@@ -158,9 +169,8 @@ void main() {
         child: MaterialApp(
           theme: cliphistTheme(),
           builder: (context, child) => MediaQuery(
-            data: MediaQuery.of(
-              context,
-            ).copyWith(textScaler: const TextScaler.linear(2)),
+            data: MediaQuery.of(context)
+                .copyWith(textScaler: const TextScaler.linear(2)),
             child: child!,
           ),
           home: const Scaffold(body: HistoryView()),
@@ -170,6 +180,35 @@ void main() {
     await tester.pump();
     expect(tester.takeException(), isNull);
     expect(find.text('ClipHist'), findsOneWidget);
+  });
+
+  testWidgets('truncated rows expose the complete selectable content', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          settingsProvider.overrideWith((ref) => testSettings),
+          historyProvider.overrideWith((ref) => longHistory),
+        ],
+        child: MaterialApp(
+          theme: cliphistTheme(),
+          home: const Scaffold(body: HistoryView()),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('history-item-tap-42')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('history-item-details-42')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('文本详情'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('history-item-full-content-42')),
+      findsOneWidget,
+    );
+    expect(find.byType(SelectionArea), findsOneWidget);
   });
 
   testWidgets('settings cards stay usable at minimum width and 200% zoom', (
@@ -186,9 +225,8 @@ void main() {
         child: MaterialApp(
           theme: cliphistTheme(),
           builder: (context, child) => MediaQuery(
-            data: MediaQuery.of(
-              context,
-            ).copyWith(textScaler: const TextScaler.linear(2)),
+            data: MediaQuery.of(context)
+                .copyWith(textScaler: const TextScaler.linear(2)),
             child: child!,
           ),
           home: const Scaffold(body: SettingsScreen()),

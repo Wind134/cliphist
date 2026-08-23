@@ -9,17 +9,13 @@ maintainer:
   email: ping@users.noreply.github.com
 
 priority: optional
-section: x11
+section: utils
 installed_size: 30000
 
 dependencies:
   - libc6
   - libgtk-3-0
   - libayatana-appindicator3-1
-  - libkeybinder-3.0-0
-  - libx11-6
-  - libxi6
-  - libxtst6
   - libudev1
 
 # Ship the polkit policy that authorizes the privileged evdev helper. The file

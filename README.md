@@ -4,7 +4,7 @@
 
 ## 功能
 
-- 📋 实时监听剪贴板变化，自动记录文本、富文本与图片
+- 📋 实时监听剪贴板变化，自动记录文本、富文本、图片与文件列表
 - 🔍 即时搜索与分类筛选，支持 1–9 快捷粘贴
 - ⌨️ 全局快捷键呼出/隐藏窗口，支持键盘导航
 - 🎮 游戏模式可临时暂停双击修饰键唤醒
@@ -25,7 +25,7 @@
 
 ## 开发编译
 
-需要 Flutter 3.44.9（Dart 3.12）与稳定版 Rust。Linux 还需要 GTK3、AppIndicator、Keybinder、libevdev 与 udev 开发包。
+需要 Flutter 3.44.9（Dart 3.12）与稳定版 Rust。Linux 还需要 GTK3、AppIndicator、libevdev 与 udev 开发包。
 
 ```bash
 cd flutter
@@ -53,7 +53,7 @@ cargo test
 - 核心：Rust（剪贴板监控、历史持久化、双击监听与粘贴注入）
 - 跨语言桥接：flutter_rust_bridge 2.12
 - 存储：JSON 文件（图片为 `images/<id>.png`）
-- 剪贴板：arboard
+- 剪贴板：Linux 使用原生 Wayland data-control 事件；Windows/macOS 使用 arboard
 
 应用源码与桌面发布产物均由 `flutter/` 构建；Linux 的特权键盘辅助进程位于 `rust/evdev-helper/`。
 
@@ -75,7 +75,8 @@ cargo test
 ## 平台说明
 
 - Windows 已兼容 PixPin 等第三方截图工具提供的原生位图格式；截图进入系统剪贴板后即可被记录，无需再额外点击复制。
-- Linux X11 直接支持全局快捷键；Wayland 请在桌面环境中将系统快捷键绑定到 `cliphist --toggle-window`。
+- Linux 剪贴板面向 Wayland，要求合成器支持 `ext-data-control-v1` 或 `wlr-data-control-v1`；不提供 X11 剪贴板回退。
+- Linux 请在 Wayland 桌面环境中将系统快捷键绑定到 `cliphist --toggle-window`。
 - Linux 的双击修饰键和自动粘贴依赖 evdev helper，安装 `.deb` 或 AUR 包后首次使用会弹出授权提示；AppImage 不包含该权限组件。
 - macOS 上双击键监听和自动粘贴需要在“系统设置 → 隐私与安全性 → 辅助功能”中授权。
 

@@ -1,5 +1,5 @@
 import 'package:flutter/services.dart';
-import 'package:hotkey_manager/hotkey_manager.dart';
+import 'package:hotkey_manager_platform_interface/hotkey_manager_platform_interface.dart';
 
 /// Parse the exact shortcut grammar also accepted by the Rust settings
 /// validator: one or more distinct modifiers followed by exactly one key.
