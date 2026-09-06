@@ -284,13 +284,17 @@ class ClipHistController with WindowListener, TrayListener {
     unawaited(performWindowDance(source: 'global hotkey'));
   }
 
+  bool _updateInstallRunning = false;
+
   Future<void> checkForUpdates({bool silent = false}) async {
     final previous = container.read(updateStateProvider);
-    container.read(updateStateProvider.notifier).state = AppUpdateState(
+    if (previous.phase == UpdatePhase.downloading ||
+        previous.phase == UpdatePhase.applying) {
+      return;
+    }
+    container.read(updateStateProvider.notifier).state = previous.copyWith(
       phase: UpdatePhase.checking,
-      currentVersion: previous.currentVersion,
-      latestVersion: previous.latestVersion,
-      releaseUrl: previous.releaseUrl,
+      errorMessage: '',
     );
     final result = await UpdateService().check(
       currentVersion: previous.currentVersion.isEmpty
@@ -308,6 +312,8 @@ class ClipHistController with WindowListener, TrayListener {
         showToast(container, '检查更新失败: ${result.errorMessage}');
       case UpdatePhase.idle:
       case UpdatePhase.checking:
+      case UpdatePhase.downloading:
+      case UpdatePhase.applying:
         break;
     }
   }
@@ -319,6 +325,78 @@ class ClipHistController with WindowListener, TrayListener {
       await UpdateService.openRelease(uri);
     } catch (e) {
       showToast(container, '打开下载页失败: $e');
+    }
+  }
+
+  /// Windows: download the setup exe and run it silently, then quit.
+  /// macOS: download the dmg and `open` it (user still drags to Applications).
+  /// Other platforms, or a release without a matching asset: open the webpage.
+  Future<void> downloadAndInstallUpdate() async {
+    if (_updateInstallRunning) return;
+    final current = container.read(updateStateProvider);
+    if (!current.hasUpdate) return;
+    if (!current.canInstallInApp ||
+        !(Platform.isWindows || Platform.isMacOS)) {
+      await openLatestRelease();
+      return;
+    }
+
+    _updateInstallRunning = true;
+    final service = UpdateService();
+    try {
+      container.read(updateStateProvider.notifier).state = current.copyWith(
+        phase: UpdatePhase.downloading,
+        downloadProgress: 0,
+        errorMessage: '',
+      );
+      var lastProgress = -1.0;
+      var lastProgressAt = DateTime.fromMillisecondsSinceEpoch(0);
+      final file = await service.downloadInstaller(
+        installer: current.installer!,
+        version: current.latestVersion,
+        onProgress: (progress) {
+          final now = DateTime.now();
+          if (progress < 1 &&
+              progress - lastProgress < 0.02 &&
+              now.difference(lastProgressAt) <
+                  const Duration(milliseconds: 200)) {
+            return;
+          }
+          lastProgress = progress;
+          lastProgressAt = now;
+          final latest = container.read(updateStateProvider);
+          container.read(updateStateProvider.notifier).state = latest.copyWith(
+            phase: UpdatePhase.downloading,
+            downloadProgress: progress,
+          );
+        },
+      );
+      container.read(updateStateProvider.notifier).state = current.copyWith(
+        phase: UpdatePhase.applying,
+        downloadProgress: 1,
+      );
+      await UpdateService.applyDownloadedInstaller(file);
+      if (Platform.isWindows) {
+        showToast(container, '正在安装新版本…');
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+        quit();
+        return;
+      }
+      showToast(container, '已打开安装包，请将应用拖到“应用程序”文件夹');
+      container.read(updateStateProvider.notifier).state = current.copyWith(
+        phase: UpdatePhase.available,
+        downloadProgress: 1,
+      );
+    } catch (e) {
+      api_clipboard.feLog(message: 'in-app update failed: $e');
+      final message = UpdateService.friendlyError(e);
+      container.read(updateStateProvider.notifier).state = current.copyWith(
+        phase: UpdatePhase.available,
+        errorMessage: message,
+      );
+      showToast(container, '更新失败: $message');
+    } finally {
+      _updateInstallRunning = false;
     }
   }
 

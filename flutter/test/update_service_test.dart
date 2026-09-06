@@ -94,6 +94,55 @@ void main() {
       expect(result.errorMessage, contains('大小限制'));
     });
 
+    test('parses installer assets for Windows and macOS', () async {
+      final endpoint = await _TestEndpoint.bind((request) {
+        unawaited(
+          _respond(
+            request,
+            HttpStatus.ok,
+            jsonEncode({
+              'tag_name': 'v2.1.0',
+              'html_url':
+                  'https://github.com/Wind134/cliphist/releases/tag/v2.1.0',
+              'assets': [
+                {
+                  'name': 'cliphist-2.1.0.msix',
+                  'browser_download_url':
+                      'https://github.com/Wind134/cliphist/releases/download/v2.1.0/cliphist-2.1.0.msix',
+                },
+                {
+                  'name': 'my-cliphist-2.1.0-windows-setup.exe',
+                  'browser_download_url':
+                      'https://github.com/Wind134/cliphist/releases/download/v2.1.0/my-cliphist-2.1.0-windows-setup.exe',
+                },
+                {
+                  'name': 'my-cliphist-2.1.0.dmg',
+                  'browser_download_url':
+                      'https://github.com/Wind134/cliphist/releases/download/v2.1.0/my-cliphist-2.1.0.dmg',
+                },
+              ],
+            }),
+          ),
+        );
+      });
+      addTearDown(endpoint.close);
+
+      final windows = await UpdateService(
+        latestReleaseApi: endpoint.uri,
+      ).check(currentVersion: '2.0.10', operatingSystem: 'windows');
+      expect(windows.installer?.name, 'my-cliphist-2.1.0-windows-setup.exe');
+
+      final mac = await UpdateService(
+        latestReleaseApi: endpoint.uri,
+      ).check(currentVersion: '2.0.10', operatingSystem: 'macos');
+      expect(mac.installer?.name, 'my-cliphist-2.1.0.dmg');
+
+      final linux = await UpdateService(
+        latestReleaseApi: endpoint.uri,
+      ).check(currentVersion: '2.0.10', operatingSystem: 'linux');
+      expect(linux.installer, isNull);
+    });
+
     test('reports a response timeout', () async {
       final endpoint = await _TestEndpoint.bind((request) {
         unawaited(_respondAfterDelay(request));
@@ -122,6 +171,74 @@ void main() {
 
       expect(result.phase, UpdatePhase.failed);
       expect(result.errorMessage, contains('超时'));
+    });
+  });
+
+  group('UpdateService.pickInstaller', () {
+    const github = 'https://github.com/Wind134/cliphist/releases/download/v2.1.0';
+    final assets = [
+      {
+        'name': 'notes.txt',
+        'browser_download_url': '$github/notes.txt',
+      },
+      {
+        'name': 'app.msix',
+        'browser_download_url': '$github/app.msix',
+      },
+      {
+        'name': 'my-cliphist-2.1.0-windows-setup.exe',
+        'browser_download_url':
+            '$github/my-cliphist-2.1.0-windows-setup.exe',
+      },
+      {
+        'name': 'My ClipHist.dmg',
+        'browser_download_url': '$github/My%20ClipHist.dmg',
+      },
+    ];
+
+    test('prefers a Windows setup exe over msix', () {
+      final picked = UpdateService.pickInstaller(assets, 'windows');
+      expect(picked?.name, 'my-cliphist-2.1.0-windows-setup.exe');
+    });
+
+    test('picks a dmg on macOS', () {
+      final picked = UpdateService.pickInstaller(assets, 'macos');
+      expect(picked?.name, 'My ClipHist.dmg');
+    });
+
+    test('returns null on Linux', () {
+      expect(UpdateService.pickInstaller(assets, 'linux'), isNull);
+    });
+
+    test('rejects non-GitHub download URLs', () {
+      final picked = UpdateService.pickInstaller([
+        {
+          'name': 'setup.exe',
+          'browser_download_url': 'https://evil.example/setup.exe',
+        },
+      ], 'windows');
+      expect(picked, isNull);
+    });
+
+    test('rejects another GitHub repo', () {
+      final picked = UpdateService.pickInstaller([
+        {
+          'name': 'setup.exe',
+          'browser_download_url':
+              'https://github.com/other/repo/releases/download/v1/setup.exe',
+        },
+      ], 'windows');
+      expect(picked, isNull);
+    });
+
+    test('ignores a Windows exe that is not a setup installer', () {
+      final picked = UpdateService.pickInstaller([
+        {
+          'name': 'helper.exe',
+          'browser_download_url': '$github/helper.exe',
+        },
+      ], 'windows');
+      expect(picked, isNull);
     });
   });
 }

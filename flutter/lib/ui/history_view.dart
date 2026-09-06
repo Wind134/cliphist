@@ -627,6 +627,15 @@ class _UpdateBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final downloading = update.phase == UpdatePhase.downloading;
+    final applying = update.phase == UpdatePhase.applying;
+    final busy = downloading || applying;
+    final percent = (update.downloadProgress * 100).round();
+    final title = downloading
+        ? '正在下载 v${update.latestVersion}  $percent%'
+        : applying
+        ? '正在安装 v${update.latestVersion}…'
+        : '新版本 v${update.latestVersion} 已可用';
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
       child: Material(
@@ -634,7 +643,9 @@ class _UpdateBanner extends StatelessWidget {
         borderRadius: BorderRadius.circular(CliphistColors.radius),
         child: InkWell(
           borderRadius: BorderRadius.circular(CliphistColors.radius),
-          onTap: ClipHistController.instance.openLatestRelease,
+          onTap: busy
+              ? null
+              : ClipHistController.instance.downloadAndInstallUpdate,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
             child: Row(
@@ -647,7 +658,7 @@ class _UpdateBanner extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    '新版本 v${update.latestVersion} 已可用',
+                    title,
                     style: const TextStyle(
                       color: CliphistColors.accentHover,
                       fontSize: 12,
@@ -655,9 +666,9 @@ class _UpdateBanner extends StatelessWidget {
                     ),
                   ),
                 ),
-                const Text(
-                  '查看',
-                  style: TextStyle(
+                Text(
+                  busy ? '' : '更新',
+                  style: const TextStyle(
                     color: CliphistColors.accent,
                     fontSize: 11.5,
                     fontWeight: FontWeight.w600,
