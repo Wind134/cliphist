@@ -634,7 +634,7 @@ class _UpdateBanner extends StatelessWidget {
         borderRadius: BorderRadius.circular(CliphistColors.radius),
         child: InkWell(
           borderRadius: BorderRadius.circular(CliphistColors.radius),
-          onTap: ClipHistController.instance.openLatestRelease,
+          onTap: ClipHistController.instance.downloadAndInstallUpdate,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
             child: Row(
@@ -656,7 +656,7 @@ class _UpdateBanner extends StatelessWidget {
                   ),
                 ),
                 const Text(
-                  '查看',
+                  '更新',
                   style: TextStyle(
                     color: CliphistColors.accent,
                     fontSize: 11.5,
