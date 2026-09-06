@@ -480,7 +480,7 @@ class _HeroHeader extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'ClipHist',
+                  'My ClipHist',
                   style: TextStyle(
                     color: CliphistColors.textPrimary,
                     fontSize: 16,

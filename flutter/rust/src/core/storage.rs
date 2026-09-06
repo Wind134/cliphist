@@ -5,21 +5,43 @@ use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::OnceLock;
 
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+const DATA_DIR_NAME: &str = "my-cliphist";
+const LEGACY_DATA_DIR_NAME: &str = "ClipHist";
+
+/// Prefer `my-cliphist`. If only the pre-rebrand `ClipHist` directory exists,
+/// rename it in place so history/settings/images survive the package rename.
+fn resolve_data_dir(base: PathBuf) -> PathBuf {
+    let new_dir = base.join(DATA_DIR_NAME);
+    let legacy_dir = base.join(LEGACY_DATA_DIR_NAME);
+    if new_dir.exists() || !legacy_dir.exists() {
+        return new_dir;
+    }
+    match std::fs::rename(&legacy_dir, &new_dir) {
+        Ok(()) => new_dir,
+        Err(_) => legacy_dir,
+    }
+}
+
 #[must_use]
 pub fn app_data_dir() -> PathBuf {
-    dirs::data_local_dir()
-        .or_else(|| dirs::home_dir().map(|home| home.join(".local").join("share")))
-        .unwrap_or_else(|| {
-            #[cfg(unix)]
-            let identity = unsafe { libc::geteuid() }.to_string();
-            #[cfg(not(unix))]
-            let identity = std::process::id().to_string();
-            std::env::temp_dir().join(format!("cliphist-{identity}"))
-        })
-        .join("ClipHist")
+    static DIR: OnceLock<PathBuf> = OnceLock::new();
+    DIR.get_or_init(|| {
+        let base = dirs::data_local_dir()
+            .or_else(|| dirs::home_dir().map(|home| home.join(".local").join("share")))
+            .unwrap_or_else(|| {
+                #[cfg(unix)]
+                let identity = unsafe { libc::geteuid() }.to_string();
+                #[cfg(not(unix))]
+                let identity = std::process::id().to_string();
+                std::env::temp_dir().join(format!("my-cliphist-{identity}"))
+            });
+        resolve_data_dir(base)
+    })
+    .clone()
 }
 
 pub fn ensure_private_dir(path: &Path) -> Result<(), String> {
@@ -381,5 +403,34 @@ mod tests {
             Payload { value: 7 }
         );
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn migrates_legacy_cliphist_data_dir() {
+        let base = test_dir("data-dir");
+        let legacy = base.join(LEGACY_DATA_DIR_NAME);
+        ensure_private_dir(&legacy).unwrap();
+        std::fs::write(legacy.join("history.json"), b"[]").unwrap();
+
+        let resolved = resolve_data_dir(base.clone());
+        assert_eq!(resolved, base.join(DATA_DIR_NAME));
+        assert!(resolved.join("history.json").is_file());
+        assert!(!legacy.exists());
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn keeps_new_data_dir_when_both_exist() {
+        let base = test_dir("data-dir-both");
+        let legacy = base.join(LEGACY_DATA_DIR_NAME);
+        let current = base.join(DATA_DIR_NAME);
+        ensure_private_dir(&legacy).unwrap();
+        ensure_private_dir(&current).unwrap();
+        std::fs::write(current.join("marker"), b"new").unwrap();
+
+        let resolved = resolve_data_dir(base.clone());
+        assert_eq!(resolved, current);
+        assert!(legacy.exists());
+        std::fs::remove_dir_all(base).unwrap();
     }
 }

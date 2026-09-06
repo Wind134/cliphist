@@ -56,7 +56,7 @@ jobs:
             --platform windows `
             --targets exe `
             --skip-clean `
-            --artifact-name 'cliphist-{{build_name}}-windows-x64-setup.{{ext}}'
+            --artifact-name 'my-cliphist-{{build_name}}-windows-x64-setup.{{ext}}'
 
       - name: Generate installer checksum
         shell: pwsh
@@ -79,10 +79,10 @@ jobs:
         run: |
           $bundle = 'flutter/build/windows/x64/runner/Release'
           $output = 'artifacts'
-          $zip = Join-Path $output 'cliphist-2.0.8-windows-x64-test.zip'
+          $zip = Join-Path $output 'my-cliphist-2.0.8-windows-x64-test.zip'
           $checksum = "$zip.sha256"
 
-          if (-not (Test-Path (Join-Path $bundle 'cliphist.exe'))) {
+          if (-not (Test-Path (Join-Path $bundle 'my-cliphist.exe'))) {
             throw "Windows release bundle was not produced at $bundle"
           }
 
@@ -97,7 +97,7 @@ jobs:
       - name: Upload Windows test package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: cliphist-2.0.8-windows-x64-test
+          name: my-cliphist-2.0.8-windows-x64-test
           path: artifacts/*
           if-no-files-found: error
           retention-days: 7
@@ -105,7 +105,7 @@ jobs:
       - name: Upload Windows EXE installer
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: cliphist-2.0.8-windows-x64-setup
+          name: my-cliphist-2.0.8-windows-x64-setup
           path: |
             flutter/dist/**/*-setup.exe
             flutter/dist/**/*-setup.exe.sha256

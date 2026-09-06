@@ -1,6 +1,6 @@
-# ClipHist
+# My ClipHist
 
-轻量、快速的跨平台剪贴板历史管理器。桌面端已迁移到 Flutter + Rust，支持 Windows、macOS 和 Linux。
+轻量、快速的跨平台剪贴板历史管理器（包名 `my-cliphist`）。桌面端已迁移到 Flutter + Rust，支持 Windows、macOS 和 Linux。
 
 ## 功能
 
@@ -21,7 +21,7 @@
 |------|------|
 | Windows | `.exe` / `.msix` |
 | macOS (Apple Silicon) | `.dmg` |
-| Linux | `.deb` / `.AppImage` |
+| Linux | `.deb` / Arch `my-cliphist` |
 
 ## 开发编译
 
@@ -76,13 +76,13 @@ cargo test
 
 - Windows 已兼容 PixPin 等第三方截图工具提供的原生位图格式；截图进入系统剪贴板后即可被记录，无需再额外点击复制。
 - Linux 剪贴板面向 Wayland，要求合成器支持 `ext-data-control-v1` 或 `wlr-data-control-v1`；不提供 X11 剪贴板回退。
-- Linux 请在 Wayland 桌面环境中将系统快捷键绑定到 `cliphist --toggle-window`。
-- Linux 的双击修饰键和自动粘贴依赖 evdev helper，安装 `.deb` 或 AUR 包后首次使用会弹出授权提示；AppImage 不包含该权限组件。
+- Linux 请在 Wayland 桌面环境中将系统快捷键绑定到 `my-cliphist --toggle-window`。
+- Linux 的双击修饰键和自动粘贴依赖 evdev helper，安装 `.deb` 或 AUR 包后首次使用会弹出授权提示。
 - macOS 上双击键监听和自动粘贴需要在“系统设置 → 隐私与安全性 → 辅助功能”中授权。
 
 ## 数据安全
 
-历史和设置使用私有权限、原子替换及上一版备份；损坏 JSON 会先隔离再尝试恢复，不会静默清空。文本、HTML、图片与历史总量均有上限，日志超过 5 MiB 自动轮转。Linux 特权 helper 会校验调用用户、Socket、运行时目录和对端身份。
+历史和设置使用私有权限、原子替换及上一版备份；损坏 JSON 会先隔离再尝试恢复，不会静默清空。数据目录为平台本地数据路径下的 `my-cliphist`（若仍存在旧的 `ClipHist` 目录，首次启动会自动迁移）。文本、HTML、图片与历史总量均有上限，日志超过 5 MiB 自动轮转。Linux 特权 helper 会校验调用用户、Socket、运行时目录和对端身份。
 
 ## 许可证
 

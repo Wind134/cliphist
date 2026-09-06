@@ -61,7 +61,7 @@ void main() {
       expect(result.phase, UpdatePhase.available);
       expect(result.latestVersion, '2.1.0');
       expect(accept, 'application/vnd.github+json');
-      expect(userAgent, 'ClipHist/2.0.7');
+      expect(userAgent, 'MyClipHist/2.0.7');
     });
 
     test('turns a non-success response into a failed state', () async {

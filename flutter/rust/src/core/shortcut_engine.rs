@@ -264,13 +264,13 @@ mod rdev_impl {
     }
 }
 
-/// Linux double-tap + paste via the privileged `cliphist-evdev-helper`
+/// Linux double-tap + paste via the privileged `my-cliphist-evdev-helper`
 /// binary. The main process binds a Unix socket in the user-private
 /// `$XDG_RUNTIME_DIR`, spawns the helper through `pkexec` (polkit prompts the
 /// user once), and reads `b'D'` per detected double-tap. The socket is
 /// bidirectional: `simulate_paste` writes `b'P'`, then waits for the helper's
 /// `b'S'`/`b'F'` injection result instead of reporting unconditional success.
-/// The helper path resolves a standalone `cliphist-evdev-helper` binary using
+/// The helper path resolves a standalone `my-cliphist-evdev-helper` binary using
 /// a build-time override, a trusted executable-directory neighbor, then the
 /// fixed packaged path. Every candidate must be root-owned and non-writable.
 #[cfg(target_os = "linux")]
@@ -297,7 +297,7 @@ mod linux_impl {
     /// Resolve the helper binary. Order:
     ///   1. `CLIPHIST_HELPER_PATH` build-time environment override (packaging
     ///      pins the installed absolute path).
-    ///   2. next to the running executable (`<exe_dir>/cliphist-evdev-helper`).
+    ///   2. next to the running executable (`<exe_dir>/my-cliphist-evdev-helper`).
     ///   3. the fixed packaged path.
     fn resolve_helper_path() -> Result<PathBuf, String> {
         if let Some(p) = option_env!("CLIPHIST_HELPER_PATH") {
@@ -307,13 +307,13 @@ mod linux_impl {
         }
         if let Ok(exe) = std::env::current_exe() {
             if let Some(dir) = exe.parent() {
-                let candidate = dir.join("cliphist-evdev-helper");
+                let candidate = dir.join("my-cliphist-evdev-helper");
                 if candidate.exists() {
                     return validate_helper_path(&candidate);
                 }
             }
         }
-        validate_helper_path(Path::new("/opt/cliphist/cliphist-evdev-helper"))
+        validate_helper_path(Path::new("/opt/my-cliphist/my-cliphist-evdev-helper"))
     }
 
     fn validate_helper_path(path: &Path) -> Result<PathBuf, String> {
@@ -354,7 +354,7 @@ mod linux_impl {
         let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
         LISTENER_RUNNING.store(true, Ordering::SeqCst);
         let socket_path = format!(
-            "{}/cliphist-dtap-{}.sock",
+            "{}/my-cliphist-dtap-{}.sock",
             xdg_runtime_dir,
             std::process::id()
         );

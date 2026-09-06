@@ -59,7 +59,7 @@ class UpdateService {
       final request = await _client.getUrl(_latestReleaseApi).timeout(timeout);
       request.headers
         ..set(HttpHeaders.acceptHeader, 'application/vnd.github+json')
-        ..set(HttpHeaders.userAgentHeader, 'ClipHist/$installed')
+        ..set(HttpHeaders.userAgentHeader, 'MyClipHist/$installed')
         ..set('X-GitHub-Api-Version', '2026-03-10');
       // Each service instance performs one request. Disabling keep-alive lets
       // us reject an error status immediately without draining an arbitrary

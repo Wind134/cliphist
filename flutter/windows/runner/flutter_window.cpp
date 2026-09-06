@@ -51,6 +51,19 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  // Restart Manager / the Inno Setup installer / logoff send these before
+  // WM_CLOSE. Handle them first: window_manager's setPreventClose + hide-to-tray
+  // would otherwise swallow WM_CLOSE and block file replacement.
+  if (message == WM_QUERYENDSESSION) {
+    return TRUE;
+  }
+  if (message == WM_ENDSESSION) {
+    if (wparam) {
+      ::ExitProcess(0);
+    }
+    return 0;
+  }
+
   // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_) {
     std::optional<LRESULT> result =

@@ -1,8 +1,8 @@
 # Deb package config for `fastforge package --platform linux --targets deb`.
-# The app is installed to /opt/cliphist/ (FHS third-party convention) with a
-# /usr/bin/cliphist symlink + desktop entry added by the packager.
-display_name: ClipHist
-package_name: cliphist
+# The app is installed to /opt/my-cliphist/ (FHS third-party convention) with a
+# /usr/bin/my-cliphist symlink + desktop entry added by the packager.
+display_name: My ClipHist
+package_name: my-cliphist
 
 maintainer:
   name: ping
@@ -20,12 +20,12 @@ dependencies:
 
 # Ship the polkit policy that authorizes the privileged evdev helper. The file
 # is copied into the app bundle by the release CI hook-pre step, so it lands at
-# /opt/cliphist/com.ping.cliphist.policy; the postinstall installs it into the
-# polkit actions dir where `pkexec cliphist-evdev-helper` will find it.
+# /opt/my-cliphist/com.ping.my-cliphist.policy; the postinstall installs it into
+# the polkit actions dir where `pkexec my-cliphist-evdev-helper` will find it.
 postinstall_scripts:
-  - install -Dm644 /opt/cliphist/com.ping.cliphist.policy /usr/share/polkit-1/actions/com.ping.cliphist.policy
+  - install -Dm644 /opt/my-cliphist/com.ping.my-cliphist.policy /usr/share/polkit-1/actions/com.ping.my-cliphist.policy
 postuninstall_scripts:
-  - rm -f /usr/share/polkit-1/actions/com.ping.cliphist.policy
+  - rm -f /usr/share/polkit-1/actions/com.ping.my-cliphist.policy
 
 keywords:
   - clipboard

@@ -5,10 +5,10 @@
 // 'flutter create' template.
 
 // The application's name. By default this is also the title of the Flutter window.
-PRODUCT_NAME = cliphist
+PRODUCT_NAME = my-cliphist
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.ping.cliphist
+PRODUCT_BUNDLE_IDENTIFIER = com.ping.my-cliphist
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2026 Ping. Licensed under the MIT License.

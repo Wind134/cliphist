@@ -142,7 +142,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 _ToggleCard(
                   icon: Icons.power_settings_new_rounded,
                   label: '开机自动启动',
-                  desc: '系统启动时自动运行 ClipHist',
+                  desc: '系统启动时自动运行 My ClipHist',
                   value: s.autoStart,
                   onChanged: _onAutoStartChanged,
                 ),
@@ -766,7 +766,7 @@ class _AboutCard extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'ClipHist',
+                'My ClipHist',
                 style: TextStyle(
                   color: CliphistColors.textPrimary,
                   fontSize: 13,

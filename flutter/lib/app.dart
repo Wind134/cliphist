@@ -15,7 +15,7 @@ class ClipHistApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final zoom = ref.watch(settingsProvider).zoomLevel;
     return MaterialApp(
-      title: 'ClipHist',
+      title: 'My ClipHist',
       debugShowCheckedModeBanner: false,
       theme: cliphistTheme(),
       // Apply the persisted zoom level as a text scaler so text stays crisp

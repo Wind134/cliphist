@@ -1,8 +1,8 @@
-# ClipHist 架构说明
+# My ClipHist 架构说明
 
 ## 概览
 
-ClipHist 是一个 Flutter + Rust 桌面剪贴板历史工具。Flutter 负责界面、窗口、托盘和系统快捷键；Rust 负责剪贴板监控、历史持久化、双击修饰键监听和粘贴注入。两端通过 `flutter_rust_bridge` 调用和事件流协作。
+My ClipHist 是一个 Flutter + Rust 桌面剪贴板历史工具。Flutter 负责界面、窗口、托盘和系统快捷键；Rust 负责剪贴板监控、历史持久化、双击修饰键监听和粘贴注入。两端通过 `flutter_rust_bridge` 调用和事件流协作。
 
 ## 目录结构
 
@@ -71,7 +71,7 @@ Rust API ── Rust Core ── history.json / images / settings.json
 1. 托盘、全局快捷键或双击修饰键产生窗口动作请求。
 2. Flutter UI isolate 消费合并后的请求，执行显示、聚焦和置顶切换。
 3. 数字键 `1`–`9` 选中条目后，Rust 将内容写回剪贴板；Linux 会同时恢复文本、HTML、PNG 和文件 URI 等表示。Flutter 隐藏窗口，再由平台实现注入 `Ctrl+V`/`Cmd+V`。
-4. Linux 通过 `cliphist-evdev-helper` 完成全局修饰键监听和 uinput 粘贴；Windows/macOS 使用 `rdev`。
+4. Linux 通过 `my-cliphist-evdev-helper` 完成全局修饰键监听和 uinput 粘贴；Windows/macOS 使用 `rdev`。
 
 ### 退出
 
@@ -83,6 +83,7 @@ Rust API ── Rust Core ── history.json / images / settings.json
 - 图片：`images/<id>.png`
 - 设置：`settings.json`（支持缺字段迁移、集中校验和备份恢复）
 - 日志：`cliphist.log`（5 MiB 轮转）
+- 数据目录为 `my-cliphist`；若仅存在旧的 `ClipHist` 目录，启动时会尝试改名为新目录。
 - 数据目录与文件在 Unix 上分别固定为 `0700` / `0600`；JSON 和图片均使用同步临时文件后原子替换。
 - 富文本在持久化前使用 `ammonia` 清理。
 - 更新检查只请求 GitHub Releases API，不上传剪贴板数据。

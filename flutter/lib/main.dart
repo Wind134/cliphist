@@ -57,7 +57,7 @@ Future<void> main() async {
   // settings "开机自动启动" toggle can register/unregister a login entry.
   // The path is the resolved executable; packaging may override it with a
   // fixed installed path.
-  launchAtStartup.setup(appName: 'cliphist', appPath: Platform.executable);
+  launchAtStartup.setup(appName: 'my-cliphist', appPath: Platform.executable);
 
   // Route Flutter framework errors (widget build throws, rendering errors)
   // to the Rust log so a release-mode blank window is diagnosable. The Rust

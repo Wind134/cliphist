@@ -1,7 +1,7 @@
-//! Privileged evdev helper for ClipHist — runs as root via pkexec.
+//! Privileged evdev helper for My ClipHist — runs as root via pkexec.
 //!
 //! Invoked by the main process as:
-//!   cliphist-evdev-helper --key Ctrl --socket /run/user/1000/cliphist-dtap-<pid>.sock \
+//!   my-cliphist-evdev-helper --key Ctrl --socket /run/user/1000/my-cliphist-dtap-<pid>.sock \
 //!     --wayland-display wayland-0 --xdg-runtime-dir /run/user/1000
 //!
 //! It reads /dev/input/event* (accessible as root), detects a double-tap of
@@ -49,7 +49,7 @@ struct InputDevice {
 
 fn create_persistent_uinput() -> Option<UInputDevice> {
     let dev = Device::new()?;
-    dev.set_name("ClipHist Virtual Keyboard");
+    dev.set_name("My ClipHist Virtual Keyboard");
     dev.enable(&evdev_rs::enums::EventType::EV_KEY).ok()?;
     for code in [EV_KEY::KEY_LEFTCTRL, EV_KEY::KEY_V].iter() {
         dev.enable(&EventCode::EV_KEY(code.clone())).ok()?;
@@ -72,7 +72,7 @@ fn main() {
             "--xdg-runtime-dir" => xdg_runtime_dir = args.next().unwrap_or_default(),
             "-h" | "--help" => {
                 eprintln!(
-                    "Usage: cliphist-evdev-helper --key <Ctrl|Shift|Alt> --socket <path> \
+                    "Usage: my-cliphist-evdev-helper --key <Ctrl|Shift|Alt> --socket <path> \
                      --wayland-display <display> --xdg-runtime-dir <dir>"
                 );
                 std::process::exit(0);
@@ -142,7 +142,7 @@ fn validate_invocation(
         .and_then(|name| name.to_str())
         .ok_or_else(|| "socket name is invalid".to_string())?;
     if !valid_socket_name(socket_name) {
-        return Err("socket name is outside the ClipHist namespace".to_string());
+        return Err("socket name is outside the My ClipHist namespace".to_string());
     }
     let socket_parent = socket_path
         .parent()
@@ -171,7 +171,7 @@ fn validate_invocation(
 }
 
 fn valid_socket_name(name: &str) -> bool {
-    const PREFIX: &str = "cliphist-dtap-";
+    const PREFIX: &str = "my-cliphist-dtap-";
     const SUFFIX: &str = ".sock";
     if !name.starts_with(PREFIX) || !name.ends_with(SUFFIX) {
         return false;
@@ -693,9 +693,9 @@ mod tests {
 
     #[test]
     fn validates_names_crossing_the_privilege_boundary() {
-        assert!(valid_socket_name("cliphist-dtap-1234.sock"));
-        assert!(!valid_socket_name("cliphist-dtap-.sock"));
-        assert!(!valid_socket_name("other-1234.sock"));
+        assert!(valid_socket_name("my-cliphist-dtap-1234.sock"));
+        assert!(!valid_socket_name("my-cliphist-dtap-.sock"));
+        assert!(!valid_socket_name("cliphist-dtap-1234.sock"));
         assert!(valid_wayland_display("wayland-0"));
         assert!(!valid_wayland_display("../wayland-0"));
         assert!(!valid_wayland_display("nested/wayland-0"));

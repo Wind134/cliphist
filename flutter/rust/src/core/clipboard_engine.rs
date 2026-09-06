@@ -41,7 +41,7 @@ pub struct ClipboardItem {
 static DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
 static IMAGES_DIR: OnceLock<PathBuf> = OnceLock::new();
 
-/// Root ClipHist data dir (e.g. ~/.local/share/ClipHist).
+/// Root My ClipHist data dir (e.g. ~/.local/share/my-cliphist).
 /// Cached via `OnceLock` so `create_dir_all` runs only once.
 pub fn data_dir() -> &'static PathBuf {
     DATA_DIR.get_or_init(|| {

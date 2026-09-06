@@ -1,11 +1,11 @@
 [package]
-name = "cliphist-evdev-helper"
+name = "my-cliphist-evdev-helper"
 version = "0.1.0"
 edition = "2021"
-description = "Privileged evdev double-tap + paste-injection helper for ClipHist (Linux)"
+description = "Privileged evdev double-tap + paste-injection helper for My ClipHist (Linux)"
 
 [[bin]]
-name = "cliphist-evdev-helper"
+name = "my-cliphist-evdev-helper"
 path = "src/main.rs"
 
 [dependencies]

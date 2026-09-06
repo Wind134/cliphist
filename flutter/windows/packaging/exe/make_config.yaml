@@ -1,10 +1,13 @@
 # Inno Setup (NSIS-style .exe) config for `fastforge package --platform windows --targets exe`.
 # Unsigned installer (no code-signing, consistent with the old release pipeline).
+# AppId is unchanged so upgrades replace the previous ClipHist install.
 app_id: D0E0A5BA-AC73-46F5-977B-DE18A4535790
 publisher_name: ping
 publisher_url: https://github.com/Wind134/cliphist
-display_name: ClipHist
-executable_name: cliphist.exe
+display_name: My ClipHist
+executable_name: my-cliphist.exe
+install_dir_name: "{autopf}\\my-cliphist"
+script_template: inno_setup.iss
 create_desktop_icon: true
 setup_icon_file: assets/icon/icon.ico
 locales:
