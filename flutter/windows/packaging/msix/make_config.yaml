@@ -2,10 +2,10 @@
 # Unsigned (sign_msix: "false"); installing an unsigned MSIX requires the
 # "开发者模式" sideloading toggle. Signing can be enabled later by adding a
 # certificate_path + password and flipping sign_msix to "true".
-display_name: ClipHist
+display_name: My ClipHist
 publisher_display_name: ping
-identity_name: com.ping.cliphist
-msix_version: 2.0.10.0
+identity_name: com.ping.my-cliphist
+msix_version: 2.1.0.0
 logo_path: assets/icon/app.png
 capabilities: internetClient
 languages: zh-CN

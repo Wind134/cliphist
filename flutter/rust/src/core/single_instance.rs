@@ -74,7 +74,7 @@ pub enum Outcome {
     SignalSent,
 }
 
-/// Lock file path: `<data_local_dir>/ClipHist/cliphist.lock`. Created if
+/// Lock file path: `<data_local_dir>/my-cliphist/cliphist.lock`. Created if
 /// missing.
 fn lock_file_path() -> PathBuf {
     let mut p = storage::app_data_dir();

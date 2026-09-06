@@ -55,7 +55,7 @@ class ClipHistController with WindowListener, TrayListener {
 
     await windowManager.waitUntilReadyToShow(
       const WindowOptions(
-        title: 'ClipHist',
+        title: 'My ClipHist',
         minimumSize: Size(320, 400),
         titleBarStyle: TitleBarStyle.normal, // OS-native window decorations
         skipTaskbar: false,
@@ -436,12 +436,12 @@ class ClipHistController with WindowListener, TrayListener {
     // setTitle threw → setContextMenu + addListener never ran → no menu, no
     // click handlers).
     try {
-      await trayManager.setTitle('ClipHist');
+      await trayManager.setTitle('My ClipHist');
     } catch (_) {
       // setTitle not implemented on this platform (Windows) — ignore.
     }
     try {
-      await trayManager.setToolTip('ClipHist');
+      await trayManager.setToolTip('My ClipHist');
     } catch (_) {
       // setToolTip not implemented on this platform — ignore.
     }

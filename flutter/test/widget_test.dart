@@ -179,7 +179,7 @@ void main() {
     );
     await tester.pump();
     expect(tester.takeException(), isNull);
-    expect(find.text('ClipHist'), findsOneWidget);
+    expect(find.text('My ClipHist'), findsOneWidget);
   });
 
   testWidgets('truncated rows expose the complete selectable content', (
@@ -244,6 +244,6 @@ void main() {
     await tester.drag(find.byType(ListView), const Offset(0, -3000));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    expect(find.text('ClipHist'), findsOneWidget);
+    expect(find.text('My ClipHist'), findsOneWidget);
   });
 }

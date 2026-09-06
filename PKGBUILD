@@ -1,19 +1,21 @@
 # Maintainer: Ping <ping@users.noreply.github.com>
 # Builds the Flutter + Rust-core stack (post-migration).
-# The GUI uses its own package and command names so it can coexist with
+# Command and package names are my-cliphist so this GUI can coexist with
 # Arch's official sentriz/cliphist command-line clipboard manager.
-# The app bundle lives in /opt/cliphist/ and the privileged evdev helper sits
+# The app bundle lives in /opt/my-cliphist/ and the privileged evdev helper sits
 # next to it (the polkit policy authorizes exactly that path).
 
-pkgname=cliphist-desktop
-pkgver=2.0.10
-pkgrel=3
+pkgname=my-cliphist
+pkgver=2.1.0
+pkgrel=1
 pkgdesc="Wayland clipboard history manager with per-item paste injection (Flutter + Rust core)"
 arch=('x86_64')
 url="https://github.com/Wind134/cliphist"
 license=('MIT')
 depends=('gtk3' 'libayatana-appindicator' 'libevdev' 'polkit' 'wayland' 'systemd-libs')
 makedepends=('cargo' 'flutter' 'cmake' 'ninja' 'clang' 'pkgconf' 'libevdev' 'systemd-libs')
+replaces=('cliphist-desktop')
+conflicts=('cliphist-desktop')
 options=('!lto')
 source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz")
 sha256sums=('e08d443a6770faeb8c6b5eb393f2c533d94713caebf79bd77edcaf7573cf2519')
@@ -42,36 +44,36 @@ check() {
 
 package() {
   cd "$srcdir/cliphist-${pkgver}"
-  local bindir="$pkgdir/opt/cliphist"
+  local bindir="$pkgdir/opt/my-cliphist"
   install -d "$bindir"
 
   # Flutter release bundle (app binary + lib/ + data/).
   cp -a flutter/build/linux/x64/release/bundle/. "$bindir/"
 
   # Privileged evdev helper next to the main binary, plus its polkit policy.
-  install -Dm755 rust/evdev-helper/target/release/cliphist-evdev-helper \
-    "$bindir/cliphist-evdev-helper"
-  install -Dm644 flutter/assets/polkit/com.ping.cliphist.policy \
-    "$pkgdir/usr/share/polkit-1/actions/com.ping.cliphist.policy"
+  install -Dm755 rust/evdev-helper/target/release/my-cliphist-evdev-helper \
+    "$bindir/my-cliphist-evdev-helper"
+  install -Dm644 flutter/assets/polkit/com.ping.my-cliphist.policy \
+    "$pkgdir/usr/share/polkit-1/actions/com.ping.my-cliphist.policy"
 
   # PATH entry.
   install -d "$pkgdir/usr/bin"
-  ln -s /opt/cliphist/cliphist "$pkgdir/usr/bin/cliphist-desktop"
+  ln -s /opt/my-cliphist/my-cliphist "$pkgdir/usr/bin/my-cliphist"
 
   # Icons.
   install -Dm644 flutter/assets/icon/app.png \
-    "$pkgdir/usr/share/icons/hicolor/512x512/apps/cliphist.png"
+    "$pkgdir/usr/share/icons/hicolor/512x512/apps/my-cliphist.png"
   install -Dm644 flutter/assets/icon/icon.png \
-    "$pkgdir/usr/share/icons/hicolor/32x32/apps/cliphist.png"
+    "$pkgdir/usr/share/icons/hicolor/32x32/apps/my-cliphist.png"
 
   # Desktop entry.
-  install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/cliphist-desktop.desktop" <<'DESKTOP'
+  install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/my-cliphist.desktop" <<'DESKTOP'
 [Desktop Entry]
 Type=Application
-Name=ClipHist
+Name=My ClipHist
 Comment=Clipboard history manager
-Exec=/usr/bin/cliphist-desktop
-Icon=cliphist
+Exec=/usr/bin/my-cliphist
+Icon=my-cliphist
 Categories=Utility;
 Terminal=false
 StartupNotify=true

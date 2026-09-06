@@ -143,52 +143,21 @@ jobs:
       - name: Install fastforge
         run: dart pub global activate fastforge 0.6.12
 
-      # The appimage maker invokes `appimagetool` from PATH (no auto-download).
-      # GitHub runners have no FUSE, so extract the AppImage and use the inner
-      # binary directly. appimagetool shells out to `mksquashfs`, which it
-      # locates at <bindir>/../lib/appimagekit/mksquashfs — so copy the binary
-      # to /usr/local/bin and the appimagekit/ subdir to /usr/local/lib/.
-      # Copying the whole extracted usr/ tree is wrong: it also dumps the
-      # AppImage's bundled libstdc++/libgcc_s into /usr/local/lib (a standard
-      # linker path), which the `flutter build linux` link then picks up and
-      # fails with "clang: error: linker command failed with exit code 1".
-      - name: Install appimagetool
-        run: |
-          cd /tmp
-          APPIMAGETOOL_SHA256=b90f4a8b18967545fda78a445b27680a1642f1ef9488ced28b65398f2be7add2
-          curl --fail --location --silent --show-error \
-            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage \
-            --output appimagetool.AppImage
-          echo "$APPIMAGETOOL_SHA256  appimagetool.AppImage" | sha256sum --check --strict
-          chmod +x appimagetool.AppImage
-          ./appimagetool.AppImage --appimage-extract >/dev/null
-          sudo cp squashfs-root/usr/bin/appimagetool /usr/local/bin/
-          sudo mkdir -p /usr/local/lib/appimagekit
-          sudo cp squashfs-root/usr/lib/appimagekit/* /usr/local/lib/appimagekit/
-          test -x /usr/local/bin/appimagetool && test -x /usr/local/lib/appimagekit/mksquashfs
-
       # --hook-pre runs after `flutter build` and before the makers, so the
       # privileged helper + polkit policy get packed into the bundle (they land
-      # in /opt/cliphist/ of the deb; the deb postinstall moves the policy to
-      # /usr/share/polkit-1/actions/). The AppImage ignores them (see
-      # linux/packaging/appimage/make_config.yaml).
+      # in /opt/my-cliphist/ of the deb; the deb postinstall moves the policy to
+      # /usr/share/polkit-1/actions/).
       - name: Build Linux packages
         working-directory: flutter
         run: |
-          dart pub global run fastforge:main package --platform linux --targets deb,appimage \
+          dart pub global run fastforge:main package --platform linux --targets deb \
             --artifact-name '{{name}}-{{build_name}}-linux.{{ext}}' \
-            --hook-pre 'cp ../rust/evdev-helper/target/release/cliphist-evdev-helper build/linux/x64/release/bundle/ && cp assets/polkit/com.ping.cliphist.policy build/linux/x64/release/bundle/'
+            --hook-pre 'cp ../rust/evdev-helper/target/release/my-cliphist-evdev-helper build/linux/x64/release/bundle/ && cp assets/polkit/com.ping.my-cliphist.policy build/linux/x64/release/bundle/'
       - name: Upload deb
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: cliphist-linux-amd64-deb
+          name: my-cliphist-linux-amd64-deb
           path: flutter/dist/**/*.deb
-          retention-days: 5
-      - name: Upload AppImage
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: cliphist-linux-amd64-appimage
-          path: flutter/dist/**/*.AppImage
           retention-days: 5
 
   build-windows:
@@ -248,13 +217,13 @@ jobs:
       - name: Upload NSIS setup
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: cliphist-windows-x64-setup
+          name: my-cliphist-windows-x64-setup
           path: flutter/dist/**/*.exe
           retention-days: 5
       - name: Upload MSIX
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: cliphist-windows-x64-msix
+          name: my-cliphist-windows-x64-msix
           path: flutter/dist/**/*.msix
           retention-days: 5
 
@@ -302,7 +271,7 @@ jobs:
       - name: Upload DMG
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: cliphist-macos-arm64
+          name: my-cliphist-macos-arm64
           path: flutter/dist/**/*.dmg
           retention-days: 5
 
