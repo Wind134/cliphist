@@ -349,10 +349,21 @@ class ClipHistController with WindowListener, TrayListener {
         downloadProgress: 0,
         errorMessage: '',
       );
+      var lastProgress = -1.0;
+      var lastProgressAt = DateTime.fromMillisecondsSinceEpoch(0);
       final file = await service.downloadInstaller(
         installer: current.installer!,
         version: current.latestVersion,
         onProgress: (progress) {
+          final now = DateTime.now();
+          if (progress < 1 &&
+              progress - lastProgress < 0.02 &&
+              now.difference(lastProgressAt) <
+                  const Duration(milliseconds: 200)) {
+            return;
+          }
+          lastProgress = progress;
+          lastProgressAt = now;
           final latest = container.read(updateStateProvider);
           container.read(updateStateProvider.notifier).state = latest.copyWith(
             phase: UpdatePhase.downloading,
@@ -378,11 +389,12 @@ class ClipHistController with WindowListener, TrayListener {
       );
     } catch (e) {
       api_clipboard.feLog(message: 'in-app update failed: $e');
+      final message = UpdateService.friendlyError(e);
       container.read(updateStateProvider.notifier).state = current.copyWith(
         phase: UpdatePhase.available,
-        errorMessage: '$e',
+        errorMessage: message,
       );
-      showToast(container, '更新失败: $e');
+      showToast(container, '更新失败: $message');
     } finally {
       _updateInstallRunning = false;
     }

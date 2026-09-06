@@ -232,6 +232,18 @@ class UpdateService {
         rethrow;
       }
       await sink.close();
+      if (received == 0) {
+        try {
+          await dest.delete();
+        } catch (_) {}
+        throw const FormatException('安装包为空');
+      }
+      if (response.contentLength > 0 && received != response.contentLength) {
+        try {
+          await dest.delete();
+        } catch (_) {}
+        throw const FormatException('安装包下载不完整');
+      }
       onProgress?.call(1);
       return dest;
     } finally {
@@ -272,10 +284,18 @@ class UpdateService {
   }
 
   static void assertGithubDownload(Uri uri) {
-    if (uri.scheme != 'https' || uri.host != 'github.com') {
+    if (!isGithubReleaseAsset(uri)) {
       throw const FormatException('拒绝下载非 GitHub 安装包');
     }
   }
+
+  static bool isGithubReleaseAsset(Uri uri) {
+    return uri.scheme == 'https' &&
+        uri.host == 'github.com' &&
+        uri.path.startsWith('/Wind134/cliphist/releases/download/');
+  }
+
+  static String friendlyError(Object error) => _friendlyError(error);
 
   static String _downloadFileName(String version, String assetName) {
     var base = assetName.replaceAll('\\', '/');
@@ -309,8 +329,7 @@ class UpdateService {
       );
       if (name.isEmpty ||
           url == null ||
-          url.scheme != 'https' ||
-          url.host != 'github.com') {
+          !isGithubReleaseAsset(url)) {
         continue;
       }
       files.add((name: name, url: url));
@@ -331,13 +350,11 @@ class UpdateService {
     }
 
     final picked = switch (operatingSystem) {
-      'windows' =>
-        firstWhere(
-          (name) =>
-              match(name, ['.exe'], exclude: ['msix']) &&
-              name.toLowerCase().contains('setup'),
-        ) ??
-        firstWhere((name) => match(name, ['.exe'], exclude: ['msix'])),
+      'windows' => firstWhere(
+        (name) =>
+            match(name, ['.exe'], exclude: ['msix']) &&
+            name.toLowerCase().contains('setup'),
+      ),
       'macos' => firstWhere((name) => match(name, ['.dmg'])),
       _ => null,
     };

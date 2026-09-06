@@ -219,6 +219,27 @@ void main() {
       ], 'windows');
       expect(picked, isNull);
     });
+
+    test('rejects another GitHub repo', () {
+      final picked = UpdateService.pickInstaller([
+        {
+          'name': 'setup.exe',
+          'browser_download_url':
+              'https://github.com/other/repo/releases/download/v1/setup.exe',
+        },
+      ], 'windows');
+      expect(picked, isNull);
+    });
+
+    test('ignores a Windows exe that is not a setup installer', () {
+      final picked = UpdateService.pickInstaller([
+        {
+          'name': 'helper.exe',
+          'browser_download_url': '$github/helper.exe',
+        },
+      ], 'windows');
+      expect(picked, isNull);
+    });
   });
 }
 
