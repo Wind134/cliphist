@@ -6,7 +6,7 @@
 # next to it (the polkit policy authorizes exactly that path).
 
 pkgname=my-cliphist
-pkgver=2.1.0
+pkgver=2.1.1
 pkgrel=1
 pkgdesc="Wayland clipboard history manager with per-item paste injection (Flutter + Rust core)"
 arch=('x86_64')
@@ -60,22 +60,28 @@ package() {
   install -d "$pkgdir/usr/bin"
   ln -s /opt/my-cliphist/my-cliphist "$pkgdir/usr/bin/my-cliphist"
 
-  # Icons.
+  # Icons. Also install under the GTK application-id so icon lookup by
+  # app_id (KDE Wayland) finds the clipboard art.
   install -Dm644 flutter/assets/icon/app.png \
     "$pkgdir/usr/share/icons/hicolor/512x512/apps/my-cliphist.png"
+  install -Dm644 flutter/assets/icon/app.png \
+    "$pkgdir/usr/share/icons/hicolor/512x512/apps/com.ping.my-cliphist.png"
   install -Dm644 flutter/assets/icon/icon.png \
     "$pkgdir/usr/share/icons/hicolor/32x32/apps/my-cliphist.png"
 
-  # Desktop entry.
-  install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/my-cliphist.desktop" <<'DESKTOP'
+  # Desktop entry filename must match GTK APPLICATION_ID (com.ping.my-cliphist)
+  # or KDE/GNOME will not associate the running window with this launcher.
+  install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/com.ping.my-cliphist.desktop" <<'DESKTOP'
 [Desktop Entry]
 Type=Application
 Name=My ClipHist
 Comment=Clipboard history manager
+GenericName=Clipboard History Manager
 Exec=/usr/bin/my-cliphist
 Icon=my-cliphist
 Categories=Utility;
 Terminal=false
 StartupNotify=true
+StartupWMClass=com.ping.my-cliphist
 DESKTOP
 }

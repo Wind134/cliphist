@@ -5,7 +5,7 @@
 display_name: My ClipHist
 publisher_display_name: ping
 identity_name: com.ping.my-cliphist
-msix_version: 2.1.0.0
+msix_version: 2.1.1.0
 logo_path: assets/icon/app.png
 capabilities: internetClient
 languages: zh-CN

@@ -11,6 +11,27 @@ struct _MyApplication {
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 
+// KDE/GNOME taskbars use the window icon when the GTK application-id does
+// not match a .desktop file name. Load the bundled 512px clipboard art so
+// the dock is correct even before packaging installs a matching launcher.
+static void set_window_icon(GtkWindow* window) {
+  gtk_window_set_icon_name(window, "my-cliphist");
+
+  g_autoptr(GError) error = nullptr;
+  g_autofree gchar* exe_link = g_file_read_link("/proc/self/exe", &error);
+  if (exe_link == nullptr) {
+    return;
+  }
+  g_autofree gchar* exe_dir = g_path_get_dirname(exe_link);
+  g_autofree gchar* icon_path = g_build_filename(
+      exe_dir, "data", "flutter_assets", "assets", "icon", "app.png", nullptr);
+  if (!g_file_test(icon_path, G_FILE_TEST_IS_REGULAR)) {
+    return;
+  }
+  gtk_window_set_default_icon_from_file(icon_path, nullptr);
+  gtk_window_set_icon_from_file(window, icon_path, nullptr);
+}
+
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
@@ -29,6 +50,7 @@ static void my_application_activate(GApplication* application) {
   gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
 
   gtk_window_set_default_size(window, 1280, 720);
+  set_window_icon(window);
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(

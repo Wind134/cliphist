@@ -39,4 +39,7 @@ categories:
   - Utility
 
 startup_notify: true
+# Must match linux/CMakeLists.txt APPLICATION_ID so KDE/GNOME taskbars
+# bind the running window to this .desktop file (and its Icon=).
+startup_wm_class: com.ping.my-cliphist
 icon: assets/icon/app.png
