@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -736,10 +738,18 @@ class _AboutCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final update = ref.watch(updateStateProvider);
     final checking = update.phase == UpdatePhase.checking;
+    final downloading = update.phase == UpdatePhase.downloading;
+    final applying = update.phase == UpdatePhase.applying;
+    final busy = checking || downloading || applying;
     final version = update.currentVersion.isEmpty
         ? '版本信息读取中'
         : 'v${update.currentVersion}';
-    final subtitle = update.hasUpdate
+    final percent = (update.downloadProgress * 100).round();
+    final subtitle = downloading
+        ? '正在下载 $percent%'
+        : applying
+        ? (Platform.isWindows ? '正在启动安装程序…' : '正在打开安装包…')
+        : update.hasUpdate
         ? '发现新版本 v${update.latestVersion}'
         : update.phase == UpdatePhase.failed
         ? update.errorMessage
@@ -793,12 +803,12 @@ class _AboutCard extends ConsumerWidget {
       ],
     );
     final action = FilledButton.tonalIcon(
-      onPressed: checking
+      onPressed: busy
           ? null
           : update.hasUpdate
-          ? ClipHistController.instance.openLatestRelease
+          ? ClipHistController.instance.downloadAndInstallUpdate
           : ClipHistController.instance.checkForUpdates,
-      icon: checking
+      icon: busy
           ? const SizedBox(
               width: 14,
               height: 14,
@@ -806,10 +816,18 @@ class _AboutCard extends ConsumerWidget {
             )
           : Icon(
               update.hasUpdate
-                  ? Icons.open_in_new_rounded
+                  ? Icons.download_rounded
                   : Icons.refresh_rounded,
             ),
-      label: Text(update.hasUpdate ? '下载' : '检查更新'),
+      label: Text(
+        downloading
+            ? '下载中 $percent%'
+            : applying
+            ? '安装中'
+            : update.hasUpdate
+            ? (update.canInstallInApp ? '下载并安装' : '打开下载页')
+            : '检查更新',
+      ),
     );
     return LayoutBuilder(
       builder: (context, constraints) {

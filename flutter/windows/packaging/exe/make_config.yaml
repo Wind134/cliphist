@@ -6,7 +6,10 @@ publisher_name: ping
 publisher_url: https://github.com/Wind134/cliphist
 display_name: My ClipHist
 executable_name: my-cliphist.exe
-install_dir_name: "{autopf}\\my-cliphist"
+# Per-user install so PrivilegesRequired=none and in-app silent updates can
+# overwrite files. {autopf} (Program Files) needs admin and breaks auto-update.
+install_dir_name: "{userpf}\\my-cliphist"
+privileges_required: none
 script_template: inno_setup.iss
 create_desktop_icon: true
 setup_icon_file: assets/icon/icon.ico
