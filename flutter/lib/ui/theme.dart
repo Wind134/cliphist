@@ -99,7 +99,7 @@ String? get _platformFont {
   return null;
 }
 
-ThemeData cliphistTheme() {
+ThemeData cliphistTheme({bool acrylic = false}) {
   final font = _platformFont;
   final scheme = const ColorScheme(
     brightness: Brightness.light,
@@ -117,7 +117,12 @@ ThemeData cliphistTheme() {
     colorScheme: scheme,
     useMaterial3: true,
     fontFamily: font,
-    scaffoldBackgroundColor: CliphistColors.bgBase,
+    // Fully transparent fill made glyph AA composite onto the DWM blur and
+    // read as 糊. ~82% tint still shows acrylic in the gutters, while text
+    // on cards (opaque white) stays on a stable backing.
+    scaffoldBackgroundColor: acrylic
+        ? const Color(0xD0F5F7FA)
+        : CliphistColors.bgBase,
     cardColor: CliphistColors.surface,
     dividerColor: CliphistColors.borderSubtle,
     splashFactory: NoSplash.splashFactory,
@@ -133,6 +138,12 @@ ThemeData cliphistTheme() {
       style: FilledButton.styleFrom(
         backgroundColor: CliphistColors.accent,
         foregroundColor: Colors.white,
+        visualDensity: VisualDensity.standard,
+        textStyle: const TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          height: 1.2,
+        ),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(CliphistColors.radius),
         ),
@@ -140,16 +151,60 @@ ThemeData cliphistTheme() {
     ),
     dialogTheme: DialogThemeData(
       backgroundColor: CliphistColors.surface,
+      elevation: 16,
+      shadowColor: const Color(0x4017212B),
+      surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(CliphistColors.radiusXl),
       ),
+      titleTextStyle: TextStyle(
+        color: CliphistColors.textPrimary,
+        fontSize: 16,
+        fontWeight: FontWeight.w700,
+        height: 1.3,
+        fontFamily: font,
+      ),
+      contentTextStyle: TextStyle(
+        color: CliphistColors.textSecondary,
+        fontSize: 13,
+        height: 1.45,
+        fontFamily: font,
+      ),
+    ),
+    menuTheme: MenuThemeData(
+      style: MenuStyle(
+        elevation: const WidgetStatePropertyAll(12),
+        shadowColor: const WidgetStatePropertyAll(Color(0x3D17212B)),
+        surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+        backgroundColor: const WidgetStatePropertyAll(CliphistColors.surface),
+        padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(vertical: 6)),
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(CliphistColors.radiusLg),
+            side: const BorderSide(color: CliphistColors.borderSubtle),
+          ),
+        ),
+      ),
     ),
     tooltipTheme: TooltipThemeData(
+      waitDuration: const Duration(milliseconds: 400),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: CliphistColors.textPrimary,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x33000000),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
       ),
-      textStyle: const TextStyle(color: Colors.white, fontSize: 11),
+      textStyle: const TextStyle(
+        color: Colors.white,
+        fontSize: 12,
+        height: 1.2,
+      ),
     ),
     switchTheme: SwitchThemeData(
       thumbColor: const WidgetStatePropertyAll(CliphistColors.surface),

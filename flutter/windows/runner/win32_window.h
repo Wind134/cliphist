@@ -39,6 +39,9 @@ class Win32Window {
   // Show the current window. Returns true if the window was successfully shown.
   bool Show();
 
+  // Enable or disable Windows 11 acrylic backdrop. No-op on older Windows.
+  void SetAcrylicEnabled(bool enabled);
+
   // Release OS resources associated with window.
   void Destroy();
 

@@ -32,11 +32,6 @@ static void set_window_icon(GtkWindow* window) {
   gtk_window_set_icon_from_file(window, icon_path, nullptr);
 }
 
-// Called when first Flutter frame received.
-static void first_frame_cb(MyApplication* self, FlView* view) {
-  gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
-}
-
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
@@ -49,7 +44,7 @@ static void my_application_activate(GApplication* application) {
   gtk_header_bar_set_show_close_button(header_bar, TRUE);
   gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
 
-  gtk_window_set_default_size(window, 1280, 720);
+  gtk_window_set_default_size(window, 400, 600);
   set_window_icon(window);
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
@@ -65,10 +60,8 @@ static void my_application_activate(GApplication* application) {
   gtk_widget_show(GTK_WIDGET(view));
   gtk_container_add(GTK_CONTAINER(window), GTK_WIDGET(view));
 
-  // Show the window when Flutter renders.
-  // Requires the view to be realized so we can start rendering.
-  g_signal_connect_swapped(view, "first-frame", G_CALLBACK(first_frame_cb),
-                           self);
+  // Realize so Flutter can render into a still-hidden window. Dart/window_manager
+  // owns the first Show, otherwise silent start flashes on login.
   gtk_widget_realize(GTK_WIDGET(view));
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));

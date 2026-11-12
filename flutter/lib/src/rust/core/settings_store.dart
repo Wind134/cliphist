@@ -18,6 +18,11 @@ class Settings {
   final int windowWidth;
   final int windowHeight;
   final bool windowUserResized;
+  final int windowX;
+  final int windowY;
+  final bool windowPositioned;
+  final bool windowAdaptive;
+  final bool acrylicEnabled;
 
   const Settings({
     required this.closeToTray,
@@ -31,6 +36,11 @@ class Settings {
     required this.windowWidth,
     required this.windowHeight,
     required this.windowUserResized,
+    required this.windowX,
+    required this.windowY,
+    required this.windowPositioned,
+    required this.windowAdaptive,
+    required this.acrylicEnabled,
   });
 
   @override
@@ -45,7 +55,12 @@ class Settings {
       retentionDays.hashCode ^
       windowWidth.hashCode ^
       windowHeight.hashCode ^
-      windowUserResized.hashCode;
+      windowUserResized.hashCode ^
+      windowX.hashCode ^
+      windowY.hashCode ^
+      windowPositioned.hashCode ^
+      windowAdaptive.hashCode ^
+      acrylicEnabled.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -62,7 +77,12 @@ class Settings {
           retentionDays == other.retentionDays &&
           windowWidth == other.windowWidth &&
           windowHeight == other.windowHeight &&
-          windowUserResized == other.windowUserResized;
+          windowUserResized == other.windowUserResized &&
+          windowX == other.windowX &&
+          windowY == other.windowY &&
+          windowPositioned == other.windowPositioned &&
+          windowAdaptive == other.windowAdaptive &&
+          acrylicEnabled == other.acrylicEnabled;
 }
 
 /// A partial update to [`Settings`]. Every field is optional so the frontend
@@ -81,6 +101,11 @@ class SettingsPatch {
   final int? windowWidth;
   final int? windowHeight;
   final bool? windowUserResized;
+  final int? windowX;
+  final int? windowY;
+  final bool? windowPositioned;
+  final bool? windowAdaptive;
+  final bool? acrylicEnabled;
 
   const SettingsPatch({
     this.closeToTray,
@@ -94,6 +119,11 @@ class SettingsPatch {
     this.windowWidth,
     this.windowHeight,
     this.windowUserResized,
+    this.windowX,
+    this.windowY,
+    this.windowPositioned,
+    this.windowAdaptive,
+    this.acrylicEnabled,
   });
 
   @override
@@ -108,7 +138,12 @@ class SettingsPatch {
       retentionDays.hashCode ^
       windowWidth.hashCode ^
       windowHeight.hashCode ^
-      windowUserResized.hashCode;
+      windowUserResized.hashCode ^
+      windowX.hashCode ^
+      windowY.hashCode ^
+      windowPositioned.hashCode ^
+      windowAdaptive.hashCode ^
+      acrylicEnabled.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -125,5 +160,10 @@ class SettingsPatch {
           retentionDays == other.retentionDays &&
           windowWidth == other.windowWidth &&
           windowHeight == other.windowHeight &&
-          windowUserResized == other.windowUserResized;
+          windowUserResized == other.windowUserResized &&
+          windowX == other.windowX &&
+          windowY == other.windowY &&
+          windowPositioned == other.windowPositioned &&
+          windowAdaptive == other.windowAdaptive &&
+          acrylicEnabled == other.acrylicEnabled;
 }

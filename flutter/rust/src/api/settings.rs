@@ -49,6 +49,21 @@ pub fn update_settings(patch: SettingsPatch) -> Result<Settings, String> {
     if let Some(v) = patch.window_height {
         next.window_height = v;
     }
+    if let Some(v) = patch.window_x {
+        next.window_x = v;
+    }
+    if let Some(v) = patch.window_y {
+        next.window_y = v;
+    }
+    if let Some(v) = patch.window_positioned {
+        next.window_positioned = v;
+    }
+    if let Some(v) = patch.window_adaptive {
+        next.window_adaptive = v;
+    }
+    if let Some(v) = patch.acrylic_enabled {
+        next.acrylic_enabled = v;
+    }
 
     if let Some(v) = patch.hotkey {
         next.hotkey = v;

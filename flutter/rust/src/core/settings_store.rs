@@ -18,6 +18,11 @@ pub struct Settings {
     pub window_width: u32,
     pub window_height: u32,
     pub window_user_resized: bool,
+    pub window_x: i32,
+    pub window_y: i32,
+    pub window_positioned: bool,
+    pub window_adaptive: bool,
+    pub acrylic_enabled: bool,
 }
 
 /// A partial update to [`Settings`]. Every field is optional so the frontend
@@ -37,6 +42,11 @@ pub struct SettingsPatch {
     pub window_width: Option<u32>,
     pub window_height: Option<u32>,
     pub window_user_resized: Option<bool>,
+    pub window_x: Option<i32>,
+    pub window_y: Option<i32>,
+    pub window_positioned: Option<bool>,
+    pub window_adaptive: Option<bool>,
+    pub acrylic_enabled: Option<bool>,
 }
 
 impl Default for Settings {
@@ -53,6 +63,11 @@ impl Default for Settings {
             window_width: 400,
             window_height: 600,
             window_user_resized: false,
+            window_x: 0,
+            window_y: 0,
+            window_positioned: false,
+            window_adaptive: true,
+            acrylic_enabled: true,
         }
     }
 }
@@ -106,6 +121,12 @@ pub fn validate_settings(settings: &Settings) -> Result<(), String> {
     if !(400..=9999).contains(&settings.window_height) {
         return Err(format!("窗口高度超出范围: {}", settings.window_height));
     }
+    if !(consts::MIN_WINDOW_POS..=consts::MAX_WINDOW_POS).contains(&settings.window_x) {
+        return Err(format!("窗口 X 坐标超出范围: {}", settings.window_x));
+    }
+    if !(consts::MIN_WINDOW_POS..=consts::MAX_WINDOW_POS).contains(&settings.window_y) {
+        return Err(format!("窗口 Y 坐标超出范围: {}", settings.window_y));
+    }
     if !hotkey_parse::validate_shortcut(&settings.hotkey) {
         return Err(format!("无效的快捷键格式: {}", settings.hotkey));
     }
@@ -134,6 +155,13 @@ fn normalize_loaded_settings(mut settings: Settings) -> (Settings, bool) {
     }
     if !(400..=9999).contains(&settings.window_height) {
         settings.window_height = defaults.window_height;
+    }
+    if !(consts::MIN_WINDOW_POS..=consts::MAX_WINDOW_POS).contains(&settings.window_x)
+        || !(consts::MIN_WINDOW_POS..=consts::MAX_WINDOW_POS).contains(&settings.window_y)
+    {
+        settings.window_x = defaults.window_x;
+        settings.window_y = defaults.window_y;
+        settings.window_positioned = false;
     }
     if !hotkey_parse::validate_shortcut(&settings.hotkey) {
         settings.hotkey = defaults.hotkey;
@@ -184,6 +212,24 @@ mod tests {
         assert_eq!(settings.hotkey, Settings::default().hotkey);
         assert!(!settings.game_mode);
         assert_eq!(settings.window_width, Settings::default().window_width);
+        assert!(!settings.window_positioned);
+        assert!(settings.window_adaptive);
+        assert!(settings.acrylic_enabled);
+    }
+
+    #[test]
+    fn invalid_window_position_is_cleared() {
+        let settings = Settings {
+            window_x: i32::MIN,
+            window_y: 40,
+            window_positioned: true,
+            ..Settings::default()
+        };
+        let (normalized, changed) = normalize_loaded_settings(settings);
+        assert!(changed);
+        assert!(!normalized.window_positioned);
+        assert_eq!(normalized.window_x, 0);
+        assert_eq!(normalized.window_y, 0);
     }
 
     #[test]

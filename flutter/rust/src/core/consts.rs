@@ -13,3 +13,5 @@ pub const MAX_HISTORY_PAYLOAD_SIZE: usize = 16 * 1024 * 1024; // excludes image 
 pub const MAX_HISTORY_FILE_SIZE: u64 = 24 * 1024 * 1024;
 pub const MIN_ZOOM_LEVEL: f32 = 0.5;
 pub const MAX_ZOOM_LEVEL: f32 = 2.0;
+pub const MIN_WINDOW_POS: i32 = -100_000;
+pub const MAX_WINDOW_POS: i32 = 100_000;

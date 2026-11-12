@@ -2,6 +2,8 @@
 
 #include <optional>
 
+#include <flutter/standard_method_codec.h>
+
 #include "flutter/generated_plugin_registrant.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
@@ -27,19 +29,36 @@ bool FlutterWindow::OnCreate() {
   RegisterPlugins(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
-  flutter_controller_->engine()->SetNextFrameCallback([&]() {
-    this->Show();
-  });
+  window_fx_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(), "cliphist/window_fx",
+          &flutter::StandardMethodCodec::GetInstance());
+  window_fx_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        if (call.method_name() == "setAcrylic") {
+          const auto* enabled = std::get_if<bool>(call.arguments());
+          if (!enabled) {
+            result->Error("bad_args", "expected bool");
+            return;
+          }
+          SetAcrylicEnabled(*enabled);
+          result->Success();
+          return;
+        }
+        result->NotImplemented();
+      });
 
-  // Flutter can complete the first frame before the "show window" callback is
-  // registered. The following call ensures a frame is pending to ensure the
-  // window is shown. It is a no-op if the first frame hasn't completed yet.
+  // Visibility is owned by Dart. Showing on the first frame is what made
+  // silent start flash a 1280x720 window at the top-left on Windows login.
   flutter_controller_->ForceRedraw();
 
   return true;
 }
 
 void FlutterWindow::OnDestroy() {
+  window_fx_channel_ = nullptr;
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }
