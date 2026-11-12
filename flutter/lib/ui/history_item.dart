@@ -113,12 +113,18 @@ class _HistoryItemState extends State<HistoryItem>
     final isImage = item.contentType == 'image';
     return AnimatedBuilder(
       animation: _selectionScale,
-      builder: (context, child) => Transform.scale(
-        key: ValueKey('history-item-motion-${item.id}'),
-        scale: _selectionScale.value,
-        alignment: Alignment.center,
-        child: child,
-      ),
+      builder: (context, child) {
+        final scale = _selectionScale.value;
+        // A Transform layer even at 1.0 is rasterized through the compositor
+        // and is what made every history row's glyphs look slightly soft.
+        if ((scale - 1).abs() < 0.0005) return child!;
+        return Transform.scale(
+          key: ValueKey('history-item-motion-${item.id}'),
+          scale: scale,
+          alignment: Alignment.center,
+          child: child,
+        );
+      },
       child: Semantics(
         selected: widget.selected,
         button: true,
@@ -471,13 +477,18 @@ class _IconBtn extends StatelessWidget {
   Widget build(BuildContext context) {
     return Tooltip(
       message: tooltip,
-      child: InkWell(
+      child: Material(
         key: buttonKey,
-        borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(5),
-          child: Icon(icon, size: 16, color: CliphistColors.textSecondary),
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
+          hoverColor: CliphistColors.hover,
+          onTap: onTap,
+          child: SizedBox(
+            width: 26,
+            height: 26,
+            child: Icon(icon, size: 15, color: CliphistColors.textSecondary),
+          ),
         ),
       ),
     );

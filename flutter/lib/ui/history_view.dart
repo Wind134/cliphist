@@ -14,6 +14,7 @@ import '../update/update_service.dart';
 import '../util/image_cache.dart';
 import '../util/toast.dart';
 import 'category_tabs.dart';
+import 'chrome.dart';
 import 'history_item.dart';
 import 'status_bar.dart';
 import 'theme.dart';
@@ -169,7 +170,7 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
   void _ensureVisible(int index) {
     if (!_scrollCtrl.hasClients) return;
     final items = _filtered;
-    final zoom = ref.read(settingsProvider).zoomLevel.toDouble();
+    final zoom = MediaQuery.textScalerOf(context).scale(1);
     final h = _itemExtent(items[index], zoom);
     final viewport = _scrollCtrl.position.viewportDimension;
     final offset = _scrollCtrl.offset;
@@ -252,16 +253,26 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Icon(
               item.contentType == 'files'
                   ? Icons.folder_copy_outlined
                   : Icons.open_in_full_rounded,
-              size: 20,
+              size: 18,
               color: type.color,
             ),
-            const SizedBox(width: 9),
-            Expanded(child: Text('${type.label}详情')),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '${type.label}详情',
+                strutStyle: const StrutStyle(
+                  fontSize: 16,
+                  height: 1.3,
+                  forceStrutHeight: true,
+                ),
+              ),
+            ),
           ],
         ),
         content: ConstrainedBox(
@@ -322,13 +333,27 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
             onPressed: () => Navigator.pop(ctx),
             child: const Text('关闭'),
           ),
-          FilledButton.icon(
+          FilledButton(
             onPressed: () {
               Navigator.pop(ctx);
               unawaited(_copyItem(item));
             },
-            icon: const Icon(Icons.content_copy, size: 16),
-            label: const Text('复制'),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.content_copy, size: 16),
+                SizedBox(width: 6),
+                Text(
+                  '复制',
+                  strutStyle: StrutStyle(
+                    fontSize: 13,
+                    height: 1.2,
+                    leading: 0,
+                    forceStrutHeight: true,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -380,16 +405,14 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
     final category = ref.watch(currentCategoryProvider);
     final helper = ref.watch(helperConnectedProvider);
     final historyCount = ref.watch(historyProvider).length;
-    final zoom = ref
-        .watch(settingsProvider.select((s) => s.zoomLevel))
-        .toDouble();
+    final zoom = MediaQuery.textScalerOf(context).scale(1);
     final update = ref.watch(updateStateProvider);
 
     return Focus(
       focusNode: _viewFocus,
       autofocus: true,
       child: Container(
-        color: CliphistColors.bgBase,
+        color: Theme.of(context).scaffoldBackgroundColor,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -455,144 +478,29 @@ class _HeroHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      constraints: const BoxConstraints(minHeight: 62),
-      padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
-      decoration: const BoxDecoration(
-        color: CliphistColors.surface,
-        border: Border(bottom: BorderSide(color: CliphistColors.borderSubtle)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            padding: const EdgeInsets.all(5),
-            decoration: BoxDecoration(
-              color: CliphistColors.accentSoft,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Image.asset('assets/icon/app.png'),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'My ClipHist',
-                  style: TextStyle(
-                    color: CliphistColors.textPrimary,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.1,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '$count 条剪贴板记录',
-                  style: const TextStyle(
-                    color: CliphistColors.textMuted,
-                    fontSize: 11.5,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          _HeaderIconAction(
-            icon: Icons.delete_sweep_outlined,
-            tooltip: '清空历史',
-            onTap: onClearHistory,
-          ),
-          const SizedBox(width: 8),
-          _SettingsAction(onTap: onSettings),
-        ],
-      ),
-    );
-  }
-}
-
-class _HeaderIconAction extends StatelessWidget {
-  const _HeaderIconAction({
-    required this.icon,
-    required this.tooltip,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: SizedBox.square(
-        dimension: 32,
-        child: IconButton(
-          onPressed: onTap,
-          icon: Icon(icon, color: CliphistColors.textSecondary, size: 17),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints.tightFor(width: 32, height: 32),
-          style: IconButton.styleFrom(
-            backgroundColor: CliphistColors.surfaceSubtle,
-            hoverColor: CliphistColors.hover,
-            side: const BorderSide(color: CliphistColors.borderSubtle),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
+    return CliphistHeaderBar(
+      leading: CliphistHeaderBadge(
+        child: Padding(
+          padding: const EdgeInsets.all(5),
+          child: Image.asset('assets/icon/app.png'),
         ),
       ),
-    );
-  }
-}
-
-class _SettingsAction extends StatelessWidget {
-  const _SettingsAction({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final compact =
-        MediaQuery.sizeOf(context).width < 380 ||
-        MediaQuery.textScalerOf(context).scale(1) > 1.4;
-    if (compact) {
-      return _HeaderIconAction(
-        icon: Icons.settings_outlined,
-        tooltip: '设置',
-        onTap: onTap,
-      );
-    }
-    return Tooltip(
-      message: '设置',
-      child: SizedBox(
-        height: 32,
-        child: TextButton.icon(
-          onPressed: onTap,
-          icon: const Icon(Icons.settings_outlined, size: 16),
-          label: const Text('设置'),
-          style: TextButton.styleFrom(
-            foregroundColor: CliphistColors.accent,
-            backgroundColor: CliphistColors.accentSoft,
-            padding: const EdgeInsets.symmetric(horizontal: 9),
-            minimumSize: const Size(0, 32),
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            textStyle: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-            side: BorderSide(
-              color: CliphistColors.accent.withValues(alpha: 0.18),
-            ),
-          ),
+      title: 'My ClipHist',
+      subtitle: '$count 条剪贴板记录',
+      actions: [
+        CliphistHeaderButton(
+          icon: Icons.delete_sweep_outlined,
+          tooltip: '清空历史',
+          onTap: onClearHistory,
         ),
-      ),
+        CliphistHeaderButton(
+          icon: Icons.settings_outlined,
+          tooltip: '设置',
+          label: '设置',
+          accent: true,
+          onTap: onSettings,
+        ),
+      ],
     );
   }
 }
@@ -670,14 +578,21 @@ class _UpdateBanner extends StatelessWidget {
                   busy ? '' : '更新',
                   style: const TextStyle(
                     color: CliphistColors.accent,
-                    fontSize: 11.5,
+                    fontSize: 12,
                     fontWeight: FontWeight.w600,
+                    height: 1.2,
+                  ),
+                  strutStyle: const StrutStyle(
+                    fontSize: 12,
+                    height: 1.2,
+                    leading: 0,
+                    forceStrutHeight: true,
                   ),
                 ),
                 const SizedBox(width: 2),
                 const Icon(
                   Icons.chevron_right_rounded,
-                  size: 17,
+                  size: 16,
                   color: CliphistColors.accent,
                 ),
               ],

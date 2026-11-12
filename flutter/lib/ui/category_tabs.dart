@@ -78,6 +78,12 @@ class _Chip extends StatelessWidget {
                   fontWeight: active ? FontWeight.w600 : FontWeight.w500,
                   height: 1.2,
                 ),
+                strutStyle: const StrutStyle(
+                  fontSize: 12,
+                  height: 1.2,
+                  leading: 0,
+                  forceStrutHeight: true,
+                ),
               ),
             ],
           ),

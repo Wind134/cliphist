@@ -15,6 +15,9 @@ namespace {
 #ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
 #endif
+#ifndef DWMWA_SYSTEMBACKDROP_TYPE
+#define DWMWA_SYSTEMBACKDROP_TYPE 38
+#endif
 
 constexpr const wchar_t kWindowClassName[] = L"FLUTTER_RUNNER_WIN32_WINDOW";
 
@@ -136,7 +139,7 @@ bool Win32Window::Create(const std::wstring& title,
 
   HWND window = CreateWindow(
       window_class, title.c_str(), WS_OVERLAPPEDWINDOW,
-      Scale(origin.x, scale_factor), Scale(origin.y, scale_factor),
+      CW_USEDEFAULT, CW_USEDEFAULT,
       Scale(size.width, scale_factor), Scale(size.height, scale_factor),
       nullptr, nullptr, GetModuleHandle(nullptr), this);
 
@@ -151,6 +154,41 @@ bool Win32Window::Create(const std::wstring& title,
 
 bool Win32Window::Show() {
   return ShowWindow(window_handle_, SW_SHOWNORMAL);
+}
+
+void Win32Window::SetAcrylicEnabled(bool enabled) {
+  HWND hwnd = window_handle_;
+  if (!hwnd) {
+    return;
+  }
+
+  OSVERSIONINFOW vi{};
+  vi.dwOSVersionInfoSize = sizeof(vi);
+  bool win11 = false;
+  HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+  if (ntdll) {
+    using RtlGetVersionFn = LONG(WINAPI*)(OSVERSIONINFOW*);
+    auto rtl_get_version = reinterpret_cast<RtlGetVersionFn>(
+        GetProcAddress(ntdll, "RtlGetVersion"));
+    if (rtl_get_version && rtl_get_version(&vi) == 0) {
+      win11 = vi.dwBuildNumber >= 22000;
+    }
+  }
+
+  if (!win11) {
+    return;
+  }
+
+  // DWMSBT_TRANSIENTWINDOW is the Win11 acrylic backdrop.
+  enum DwmSystemBackdropType {
+    kAuto = 0,
+    kNone = 1,
+    kMica = 2,
+    kAcrylic = 3,
+    kTabbed = 4
+  };
+  DwmSystemBackdropType type = enabled ? kAcrylic : kNone;
+  DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &type, sizeof(type));
 }
 
 // static

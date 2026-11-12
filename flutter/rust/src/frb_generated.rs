@@ -764,6 +764,13 @@ impl SseDecode for f32 {
     }
 }
 
+impl SseDecode for i32 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        deserializer.cursor.read_i32::<NativeEndian>().unwrap()
+    }
+}
+
 impl SseDecode for Vec<String> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -835,6 +842,17 @@ impl SseDecode for Option<f32> {
     }
 }
 
+impl SseDecode for Option<i32> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<i32>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<u32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -882,6 +900,11 @@ impl SseDecode for crate::core::settings_store::Settings {
         let mut var_windowWidth = <u32>::sse_decode(deserializer);
         let mut var_windowHeight = <u32>::sse_decode(deserializer);
         let mut var_windowUserResized = <bool>::sse_decode(deserializer);
+        let mut var_windowX = <i32>::sse_decode(deserializer);
+        let mut var_windowY = <i32>::sse_decode(deserializer);
+        let mut var_windowPositioned = <bool>::sse_decode(deserializer);
+        let mut var_windowAdaptive = <bool>::sse_decode(deserializer);
+        let mut var_acrylicEnabled = <bool>::sse_decode(deserializer);
         return crate::core::settings_store::Settings {
             close_to_tray: var_closeToTray,
             zoom_level: var_zoomLevel,
@@ -894,6 +917,11 @@ impl SseDecode for crate::core::settings_store::Settings {
             window_width: var_windowWidth,
             window_height: var_windowHeight,
             window_user_resized: var_windowUserResized,
+            window_x: var_windowX,
+            window_y: var_windowY,
+            window_positioned: var_windowPositioned,
+            window_adaptive: var_windowAdaptive,
+            acrylic_enabled: var_acrylicEnabled,
         };
     }
 }
@@ -912,6 +940,11 @@ impl SseDecode for crate::core::settings_store::SettingsPatch {
         let mut var_windowWidth = <Option<u32>>::sse_decode(deserializer);
         let mut var_windowHeight = <Option<u32>>::sse_decode(deserializer);
         let mut var_windowUserResized = <Option<bool>>::sse_decode(deserializer);
+        let mut var_windowX = <Option<i32>>::sse_decode(deserializer);
+        let mut var_windowY = <Option<i32>>::sse_decode(deserializer);
+        let mut var_windowPositioned = <Option<bool>>::sse_decode(deserializer);
+        let mut var_windowAdaptive = <Option<bool>>::sse_decode(deserializer);
+        let mut var_acrylicEnabled = <Option<bool>>::sse_decode(deserializer);
         return crate::core::settings_store::SettingsPatch {
             close_to_tray: var_closeToTray,
             zoom_level: var_zoomLevel,
@@ -924,6 +957,11 @@ impl SseDecode for crate::core::settings_store::SettingsPatch {
             window_width: var_windowWidth,
             window_height: var_windowHeight,
             window_user_resized: var_windowUserResized,
+            window_x: var_windowX,
+            window_y: var_windowY,
+            window_positioned: var_windowPositioned,
+            window_adaptive: var_windowAdaptive,
+            acrylic_enabled: var_acrylicEnabled,
         };
     }
 }
@@ -963,13 +1001,6 @@ impl SseDecode for usize {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         deserializer.cursor.read_u64::<NativeEndian>().unwrap() as _
-    }
-}
-
-impl SseDecode for i32 {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        deserializer.cursor.read_i32::<NativeEndian>().unwrap()
     }
 }
 
@@ -1083,6 +1114,11 @@ impl flutter_rust_bridge::IntoDart for crate::core::settings_store::Settings {
             self.window_width.into_into_dart().into_dart(),
             self.window_height.into_into_dart().into_dart(),
             self.window_user_resized.into_into_dart().into_dart(),
+            self.window_x.into_into_dart().into_dart(),
+            self.window_y.into_into_dart().into_dart(),
+            self.window_positioned.into_into_dart().into_dart(),
+            self.window_adaptive.into_into_dart().into_dart(),
+            self.acrylic_enabled.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -1113,6 +1149,11 @@ impl flutter_rust_bridge::IntoDart for crate::core::settings_store::SettingsPatc
             self.window_width.into_into_dart().into_dart(),
             self.window_height.into_into_dart().into_dart(),
             self.window_user_resized.into_into_dart().into_dart(),
+            self.window_x.into_into_dart().into_dart(),
+            self.window_y.into_into_dart().into_dart(),
+            self.window_positioned.into_into_dart().into_dart(),
+            self.window_adaptive.into_into_dart().into_dart(),
+            self.acrylic_enabled.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -1222,6 +1263,13 @@ impl SseEncode for f32 {
     }
 }
 
+impl SseEncode for i32 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        serializer.cursor.write_i32::<NativeEndian>(self).unwrap();
+    }
+}
+
 impl SseEncode for Vec<String> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -1282,6 +1330,16 @@ impl SseEncode for Option<f32> {
     }
 }
 
+impl SseEncode for Option<i32> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <i32>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<u32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -1326,6 +1384,11 @@ impl SseEncode for crate::core::settings_store::Settings {
         <u32>::sse_encode(self.window_width, serializer);
         <u32>::sse_encode(self.window_height, serializer);
         <bool>::sse_encode(self.window_user_resized, serializer);
+        <i32>::sse_encode(self.window_x, serializer);
+        <i32>::sse_encode(self.window_y, serializer);
+        <bool>::sse_encode(self.window_positioned, serializer);
+        <bool>::sse_encode(self.window_adaptive, serializer);
+        <bool>::sse_encode(self.acrylic_enabled, serializer);
     }
 }
 
@@ -1343,6 +1406,11 @@ impl SseEncode for crate::core::settings_store::SettingsPatch {
         <Option<u32>>::sse_encode(self.window_width, serializer);
         <Option<u32>>::sse_encode(self.window_height, serializer);
         <Option<bool>>::sse_encode(self.window_user_resized, serializer);
+        <Option<i32>>::sse_encode(self.window_x, serializer);
+        <Option<i32>>::sse_encode(self.window_y, serializer);
+        <Option<bool>>::sse_encode(self.window_positioned, serializer);
+        <Option<bool>>::sse_encode(self.window_adaptive, serializer);
+        <Option<bool>>::sse_encode(self.acrylic_enabled, serializer);
     }
 }
 
@@ -1380,13 +1448,6 @@ impl SseEncode for usize {
             .cursor
             .write_u64::<NativeEndian>(self as _)
             .unwrap();
-    }
-}
-
-impl SseEncode for i32 {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        serializer.cursor.write_i32::<NativeEndian>(self).unwrap();
     }
 }
 

@@ -715,6 +715,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  int dco_decode_box_autoadd_i_32(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as int;
+  }
+
+  @protected
   SettingsPatch dco_decode_box_autoadd_settings_patch(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_settings_patch(raw);
@@ -755,6 +761,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  int dco_decode_i_32(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as int;
+  }
+
+  @protected
   List<String> dco_decode_list_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_String).toList();
@@ -791,6 +803,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  int? dco_decode_opt_box_autoadd_i_32(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_i_32(raw);
+  }
+
+  @protected
   int? dco_decode_opt_box_autoadd_u_32(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_u_32(raw);
@@ -812,8 +830,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Settings dco_decode_settings(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 11)
-      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
+    if (arr.length != 16)
+      throw Exception('unexpected arr length: expect 16 but see ${arr.length}');
     return Settings(
       closeToTray: dco_decode_bool(arr[0]),
       zoomLevel: dco_decode_f_32(arr[1]),
@@ -826,6 +844,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       windowWidth: dco_decode_u_32(arr[8]),
       windowHeight: dco_decode_u_32(arr[9]),
       windowUserResized: dco_decode_bool(arr[10]),
+      windowX: dco_decode_i_32(arr[11]),
+      windowY: dco_decode_i_32(arr[12]),
+      windowPositioned: dco_decode_bool(arr[13]),
+      windowAdaptive: dco_decode_bool(arr[14]),
+      acrylicEnabled: dco_decode_bool(arr[15]),
     );
   }
 
@@ -833,8 +856,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   SettingsPatch dco_decode_settings_patch(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 11)
-      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
+    if (arr.length != 16)
+      throw Exception('unexpected arr length: expect 16 but see ${arr.length}');
     return SettingsPatch(
       closeToTray: dco_decode_opt_box_autoadd_bool(arr[0]),
       zoomLevel: dco_decode_opt_box_autoadd_f_32(arr[1]),
@@ -847,6 +870,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       windowWidth: dco_decode_opt_box_autoadd_u_32(arr[8]),
       windowHeight: dco_decode_opt_box_autoadd_u_32(arr[9]),
       windowUserResized: dco_decode_opt_box_autoadd_bool(arr[10]),
+      windowX: dco_decode_opt_box_autoadd_i_32(arr[11]),
+      windowY: dco_decode_opt_box_autoadd_i_32(arr[12]),
+      windowPositioned: dco_decode_opt_box_autoadd_bool(arr[13]),
+      windowAdaptive: dco_decode_opt_box_autoadd_bool(arr[14]),
+      acrylicEnabled: dco_decode_opt_box_autoadd_bool(arr[15]),
     );
   }
 
@@ -942,6 +970,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  int sse_decode_box_autoadd_i_32(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_i_32(deserializer));
+  }
+
+  @protected
   SettingsPatch sse_decode_box_autoadd_settings_patch(
     SseDeserializer deserializer,
   ) {
@@ -990,6 +1024,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   double sse_decode_f_32(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getFloat32();
+  }
+
+  @protected
+  int sse_decode_i_32(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return deserializer.buffer.getInt32();
   }
 
   @protected
@@ -1059,6 +1099,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  int? sse_decode_opt_box_autoadd_i_32(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_i_32(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   int? sse_decode_opt_box_autoadd_u_32(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -1105,6 +1156,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_windowWidth = sse_decode_u_32(deserializer);
     var var_windowHeight = sse_decode_u_32(deserializer);
     var var_windowUserResized = sse_decode_bool(deserializer);
+    var var_windowX = sse_decode_i_32(deserializer);
+    var var_windowY = sse_decode_i_32(deserializer);
+    var var_windowPositioned = sse_decode_bool(deserializer);
+    var var_windowAdaptive = sse_decode_bool(deserializer);
+    var var_acrylicEnabled = sse_decode_bool(deserializer);
     return Settings(
       closeToTray: var_closeToTray,
       zoomLevel: var_zoomLevel,
@@ -1117,6 +1173,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       windowWidth: var_windowWidth,
       windowHeight: var_windowHeight,
       windowUserResized: var_windowUserResized,
+      windowX: var_windowX,
+      windowY: var_windowY,
+      windowPositioned: var_windowPositioned,
+      windowAdaptive: var_windowAdaptive,
+      acrylicEnabled: var_acrylicEnabled,
     );
   }
 
@@ -1134,6 +1195,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_windowWidth = sse_decode_opt_box_autoadd_u_32(deserializer);
     var var_windowHeight = sse_decode_opt_box_autoadd_u_32(deserializer);
     var var_windowUserResized = sse_decode_opt_box_autoadd_bool(deserializer);
+    var var_windowX = sse_decode_opt_box_autoadd_i_32(deserializer);
+    var var_windowY = sse_decode_opt_box_autoadd_i_32(deserializer);
+    var var_windowPositioned = sse_decode_opt_box_autoadd_bool(deserializer);
+    var var_windowAdaptive = sse_decode_opt_box_autoadd_bool(deserializer);
+    var var_acrylicEnabled = sse_decode_opt_box_autoadd_bool(deserializer);
     return SettingsPatch(
       closeToTray: var_closeToTray,
       zoomLevel: var_zoomLevel,
@@ -1146,6 +1212,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       windowWidth: var_windowWidth,
       windowHeight: var_windowHeight,
       windowUserResized: var_windowUserResized,
+      windowX: var_windowX,
+      windowY: var_windowY,
+      windowPositioned: var_windowPositioned,
+      windowAdaptive: var_windowAdaptive,
+      acrylicEnabled: var_acrylicEnabled,
     );
   }
 
@@ -1183,12 +1254,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   BigInt sse_decode_usize(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getBigUint64();
-  }
-
-  @protected
-  int sse_decode_i_32(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return deserializer.buffer.getInt32();
   }
 
   @protected
@@ -1276,6 +1341,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_i_32(int self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_settings_patch(
     SettingsPatch self,
     SseSerializer serializer,
@@ -1311,6 +1382,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_f_32(double self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putFloat32(self);
+  }
+
+  @protected
+  void sse_encode_i_32(int self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    serializer.buffer.putInt32(self);
   }
 
   @protected
@@ -1375,6 +1452,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_i_32(int? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_i_32(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_u_32(int? self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -1424,6 +1511,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.windowWidth, serializer);
     sse_encode_u_32(self.windowHeight, serializer);
     sse_encode_bool(self.windowUserResized, serializer);
+    sse_encode_i_32(self.windowX, serializer);
+    sse_encode_i_32(self.windowY, serializer);
+    sse_encode_bool(self.windowPositioned, serializer);
+    sse_encode_bool(self.windowAdaptive, serializer);
+    sse_encode_bool(self.acrylicEnabled, serializer);
   }
 
   @protected
@@ -1440,6 +1532,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_box_autoadd_u_32(self.windowWidth, serializer);
     sse_encode_opt_box_autoadd_u_32(self.windowHeight, serializer);
     sse_encode_opt_box_autoadd_bool(self.windowUserResized, serializer);
+    sse_encode_opt_box_autoadd_i_32(self.windowX, serializer);
+    sse_encode_opt_box_autoadd_i_32(self.windowY, serializer);
+    sse_encode_opt_box_autoadd_bool(self.windowPositioned, serializer);
+    sse_encode_opt_box_autoadd_bool(self.windowAdaptive, serializer);
+    sse_encode_opt_box_autoadd_bool(self.acrylicEnabled, serializer);
   }
 
   @protected
@@ -1473,11 +1570,5 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_usize(BigInt self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putBigUint64(self);
-  }
-
-  @protected
-  void sse_encode_i_32(int self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    serializer.buffer.putInt32(self);
   }
 }

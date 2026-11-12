@@ -1,3 +1,4 @@
+import 'package:cliphist/app.dart';
 import 'package:cliphist/src/rust/core/clipboard_engine.dart';
 import 'package:cliphist/src/rust/core/settings_store.dart';
 import 'package:cliphist/state/history_provider.dart';
@@ -22,6 +23,30 @@ const testSettings = Settings(
   windowWidth: 320,
   windowHeight: 400,
   windowUserResized: true,
+  windowX: 0,
+  windowY: 0,
+  windowPositioned: false,
+  windowAdaptive: false,
+  acrylicEnabled: false,
+);
+
+const layoutSettings = Settings(
+  closeToTray: true,
+  zoomLevel: 1,
+  hotkey: 'Ctrl+Shift+V',
+  autoStart: false,
+  silentStart: true,
+  doubleTapKey: 'Ctrl',
+  gameMode: false,
+  retentionDays: 3,
+  windowWidth: 400,
+  windowHeight: 600,
+  windowUserResized: true,
+  windowX: 120,
+  windowY: 80,
+  windowPositioned: true,
+  windowAdaptive: true,
+  acrylicEnabled: false,
 );
 
 final testHistory = <ClipboardItem>[
@@ -169,8 +194,9 @@ void main() {
         child: MaterialApp(
           theme: cliphistTheme(),
           builder: (context, child) => MediaQuery(
-            data: MediaQuery.of(context)
-                .copyWith(textScaler: const TextScaler.linear(2)),
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: const TextScaler.linear(2)),
             child: child!,
           ),
           home: const Scaffold(body: HistoryView()),
@@ -225,8 +251,9 @@ void main() {
         child: MaterialApp(
           theme: cliphistTheme(),
           builder: (context, child) => MediaQuery(
-            data: MediaQuery.of(context)
-                .copyWith(textScaler: const TextScaler.linear(2)),
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: const TextScaler.linear(2)),
             child: child!,
           ),
           home: const Scaffold(body: SettingsScreen()),
@@ -235,15 +262,141 @@ void main() {
     );
     await tester.pump();
     await tester.scrollUntilVisible(
+      find.text('窗口自适应'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('窗口自适应'), findsOneWidget);
+    await tester.scrollUntilVisible(
       find.text('游戏模式'),
       200,
       scrollable: find.byType(Scrollable).first,
     );
     expect(find.text('游戏模式'), findsOneWidget);
-    expect(find.text('暂停双击修饰键唤醒，剪贴板记录和普通快捷键仍可用'), findsOneWidget);
+    expect(find.text('暂停双击唤醒，其它功能仍可用'), findsOneWidget);
     await tester.drag(find.byType(ListView), const Offset(0, -3000));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.text('My ClipHist'), findsOneWidget);
+  });
+
+  test('acrylic theme uses a translucent scaffold', () {
+    final opaque = cliphistTheme();
+    final acrylic = cliphistTheme(acrylic: true);
+    expect(opaque.scaffoldBackgroundColor, CliphistColors.bgBase);
+    expect(acrylic.scaffoldBackgroundColor.a, greaterThan(0.7));
+    expect(acrylic.scaffoldBackgroundColor.a, lessThan(1));
+  });
+
+  testWidgets('settings slides in and back returns to history', (tester) async {
+    tester.view.physicalSize = const Size(400, 600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final container = ProviderContainer(
+      overrides: [
+        settingsProvider.overrideWith((ref) => layoutSettings),
+        historyProvider.overrideWith((ref) => testHistory),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(theme: cliphistTheme(), home: const MainScreen()),
+      ),
+    );
+    await tester.pump();
+    expect(find.text('My ClipHist'), findsOneWidget);
+    expect(find.text('偏好设置'), findsNothing);
+
+    await tester.tap(find.text('设置'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 80));
+    expect(find.text('偏好设置'), findsOneWidget);
+
+    await tester.pumpAndSettle();
+    expect(find.text('窗口自适应'), findsOneWidget);
+    expect(find.text('静默启动'), findsOneWidget);
+    expect(find.byKey(const ValueKey('settings')), findsOneWidget);
+    expect(find.byKey(const ValueKey('history')), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('settings-close')));
+    await tester.pumpAndSettle();
+    expect(find.text('偏好设置'), findsNothing);
+    expect(find.text('My ClipHist'), findsOneWidget);
+    expect(find.byKey(const ValueKey('history')), findsOneWidget);
+  });
+
+  testWidgets('adaptive mode scales UI with window width', (tester) async {
+    tester.view.physicalSize = const Size(540, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          settingsProvider.overrideWith((ref) => layoutSettings),
+          historyProvider.overrideWith((ref) => testHistory),
+        ],
+        child: const ClipHistApp(),
+      ),
+    );
+    await tester.pump();
+    final scaler = MediaQuery.textScalerOf(
+      tester.element(find.text('My ClipHist')),
+    );
+    expect(scaler.scale(1), closeTo(1.35, 0.01));
+  });
+
+  testWidgets('history and settings layout across common window sizes', (
+    tester,
+  ) async {
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    const sizes = <Size>[
+      Size(320, 400),
+      Size(400, 600),
+      Size(600, 800),
+      Size(800, 1000),
+    ];
+    for (final size in sizes) {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            settingsProvider.overrideWith((ref) => layoutSettings),
+            historyProvider.overrideWith((ref) => testHistory),
+          ],
+          child: const ClipHistApp(),
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull, reason: 'history $size');
+      expect(find.text('My ClipHist'), findsOneWidget);
+
+      final container = ProviderContainer(
+        overrides: [
+          settingsProvider.overrideWith((ref) => layoutSettings),
+          settingsOpenProvider.overrideWith((ref) => true),
+          historyProvider.overrideWith((ref) => testHistory),
+        ],
+      );
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const ClipHistApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull, reason: 'settings $size');
+      expect(find.text('偏好设置'), findsOneWidget);
+    }
   });
 }

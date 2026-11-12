@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui' show Size;
+import 'dart:ui' show Color, Offset, Rect, Size;
 
+import 'package:flutter/painting.dart' show Alignment;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hotkey_manager_platform_interface/hotkey_manager_platform_interface.dart';
 import 'package:launch_at_startup/launch_at_startup.dart';
+import 'package:screen_retriever/screen_retriever.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -13,11 +15,13 @@ import 'src/rust/api/clipboard.dart' as api_clipboard;
 import 'src/rust/api/history.dart' as api_history;
 import 'src/rust/api/settings.dart' as api_settings;
 import 'src/rust/api/stream.dart' as api_stream;
-import 'src/rust/core/settings_store.dart' show SettingsPatch;
+import 'src/rust/core/settings_store.dart' show Settings, SettingsPatch;
 import 'state/providers.dart';
 import 'update/update_service.dart';
 import 'util/hotkey_parser.dart';
 import 'util/toast.dart';
+import 'util/window_fx.dart';
+import 'util/window_geometry.dart';
 
 /// Process-singleton owning the native window + tray lifecycle and the
 /// Rust→Dart stream subscriptions. The window-action dance runs here because
@@ -49,35 +53,35 @@ class ClipHistController with WindowListener, TrayListener {
     final s = api_settings.getSettings();
     container.read(settingsProvider.notifier).state = s;
 
-    final size = s.windowUserResized
-        ? Size(s.windowWidth.toDouble(), s.windowHeight.toDouble())
-        : const Size(400, 600);
-
-    await windowManager.waitUntilReadyToShow(
-      const WindowOptions(
-        title: 'My ClipHist',
-        minimumSize: Size(320, 400),
-        titleBarStyle: TitleBarStyle.normal, // OS-native window decorations
-        skipTaskbar: false,
-      ),
-      () async {
-        if (s.windowUserResized) {
-          await windowManager.setSize(size);
-        }
-        // Silent start: create the window then immediately hide to tray so it
-        // does not steal focus on login. The tray / hotkey reveals it later.
-        // `forceVisible` (a cold `--toggle-window` launch) overrides this so
-        // the window shows even if silentStart is on — the user pressed the
-        // shortcut expecting to see it.
-        if (s.silentStart && !forceVisible) {
-          await windowManager.show();
-          await windowManager.hide();
-        } else {
-          await windowManager.show();
-          await windowManager.focus();
-        }
-      },
+    final size = WindowGeometry.clampSize(
+      s.windowWidth.toDouble(),
+      s.windowHeight.toDouble(),
     );
+
+    // Do not pass an async callback to waitUntilReadyToShow — it is typed as
+    // VoidCallback and the Future is discarded, so show/hide would race.
+    await windowManager.waitUntilReadyToShow(
+      WindowOptions(
+        title: 'My ClipHist',
+        size: size,
+        minimumSize: WindowGeometry.minSize,
+        titleBarStyle: TitleBarStyle.normal,
+        skipTaskbar: s.silentStart && !forceVisible,
+      ),
+    );
+
+    await _applyWindowGeometry(s, size: size);
+    await applyAcrylic(s.acrylicEnabled);
+
+    // Native runners stay hidden until Dart decides. Silent start must not
+    // show-then-hide (that is the boot flash + jump to the top-left).
+    if (s.silentStart && !forceVisible) {
+      await windowManager.hide();
+    } else {
+      await windowManager.setSkipTaskbar(false);
+      await windowManager.show();
+      await windowManager.focus();
+    }
 
     // Intercept the native close button so it respects "close to tray".
     try {
@@ -185,6 +189,8 @@ class ClipHistController with WindowListener, TrayListener {
         try {
           // Showing/restoring before the temporary top-most pulse is more
           // reliable on Windows than hiding an already-hidden window first.
+          await windowManager.setSkipTaskbar(false);
+          await _applyWindowGeometry(container.read(settingsProvider));
           await windowManager.show();
           await windowManager.restore();
           await windowManager.setAlwaysOnTop(true);
@@ -212,7 +218,22 @@ class ClipHistController with WindowListener, TrayListener {
   /// Hide the window to the tray (no quit). Used after a copy when
   /// `closeToTray` is on.
   Future<void> hideWindow() async {
+    container.read(settingsOpenProvider.notifier).state = false;
+    await _persistWindowGeometry();
     await windowManager.hide();
+  }
+
+  /// Enable or disable the Windows acrylic backdrop. No-op on other platforms.
+  Future<void> applyAcrylic(bool enabled) async {
+    if (!Platform.isWindows) return;
+    try {
+      await windowManager.setBackgroundColor(
+        enabled ? const Color(0x00000000) : const Color(0xFFF5F7FA),
+      );
+      await WindowFx.setAcrylic(enabled);
+    } catch (e) {
+      api_clipboard.feLog(message: 'applyAcrylic($enabled) failed: $e');
+    }
   }
 
   /// Register/unregister a login auto-launch entry. Persistence of the
@@ -335,8 +356,7 @@ class ClipHistController with WindowListener, TrayListener {
     if (_updateInstallRunning) return;
     final current = container.read(updateStateProvider);
     if (!current.hasUpdate) return;
-    if (!current.canInstallInApp ||
-        !(Platform.isWindows || Platform.isMacOS)) {
+    if (!current.canInstallInApp || !(Platform.isWindows || Platform.isMacOS)) {
       await openLatestRelease();
       return;
     }
@@ -607,7 +627,7 @@ class ClipHistController with WindowListener, TrayListener {
   Future<void> _handleTrayIconMouseDown() async {
     final visible = await windowManager.isVisible();
     if (visible) {
-      await windowManager.hide();
+      await hideWindow();
     } else {
       await performWindowDance(source: 'tray icon');
     }
@@ -643,7 +663,7 @@ class ClipHistController with WindowListener, TrayListener {
   Future<void> _handleWindowClose() async {
     final closeToTray = container.read(settingsProvider).closeToTray;
     if (closeToTray) {
-      await windowManager.hide();
+      await hideWindow();
     } else {
       quit();
     }
@@ -651,27 +671,89 @@ class ClipHistController with WindowListener, TrayListener {
 
   @override
   void onWindowResized() {
-    // Trailing-edge debounce: persist the final settled size instead of an
-    // arbitrary intermediate sample from a continuous drag.
+    _scheduleGeometryPersist();
+  }
+
+  @override
+  void onWindowMoved() {
+    _scheduleGeometryPersist();
+  }
+
+  void _scheduleGeometryPersist() {
     _resizeSaveTimer?.cancel();
     _resizeSaveTimer = Timer(const Duration(milliseconds: 500), () {
-      unawaited(_persistWindowSize());
+      unawaited(_persistWindowGeometry());
     });
   }
 
-  Future<void> _persistWindowSize() async {
-    final size = await windowManager.getSize();
+  Future<void> _applyWindowGeometry(Settings s, {Size? size}) async {
+    final resolved =
+        size ??
+        WindowGeometry.clampSize(
+          s.windowWidth.toDouble(),
+          s.windowHeight.toDouble(),
+        );
     try {
+      await windowManager.setSize(resolved);
+    } catch (e) {
+      api_clipboard.feLog(message: 'setSize failed: $e');
+    }
+    try {
+      if (s.windowPositioned) {
+        final pos = Offset(s.windowX.toDouble(), s.windowY.toDouble());
+        final displays = await _displayRects();
+        if (WindowGeometry.isUsablePosition(pos, resolved, displays)) {
+          await windowManager.setPosition(pos);
+          return;
+        }
+      }
+      await windowManager.setAlignment(Alignment.center);
+    } catch (e) {
+      api_clipboard.feLog(message: 'setPosition failed: $e');
+    }
+  }
+
+  Future<List<Rect>> _displayRects() async {
+    try {
+      final displays = await screenRetriever.getAllDisplays();
+      return [
+        for (final d in displays)
+          Rect.fromLTWH(
+            d.visiblePosition?.dx ?? 0,
+            d.visiblePosition?.dy ?? 0,
+            (d.visibleSize ?? d.size).width,
+            (d.visibleSize ?? d.size).height,
+          ),
+      ];
+    } catch (e) {
+      api_clipboard.feLog(message: 'getAllDisplays failed: $e');
+      return const [];
+    }
+  }
+
+  Future<void> _persistWindowGeometry() async {
+    try {
+      if (await windowManager.isMaximized() ||
+          await windowManager.isMinimized()) {
+        return;
+      }
+    } catch (_) {}
+    try {
+      final size = await windowManager.getSize();
+      final pos = await windowManager.getPosition();
       final updated = await api_settings.updateSettings(
         patch: SettingsPatch(
           windowWidth: size.width.round(),
           windowHeight: size.height.round(),
           windowUserResized: true,
+          windowX: pos.dx.round(),
+          windowY: pos.dy.round(),
+          windowPositioned: true,
         ),
       );
       container.read(settingsProvider.notifier).state = updated;
     } catch (e) {
-      api_clipboard.feLog(message: 'resize persist failed: $e');
+      api_clipboard.feLog(message: 'geometry persist failed: $e');
     }
   }
 
@@ -683,7 +765,7 @@ class ClipHistController with WindowListener, TrayListener {
       return;
     }
     if (container.read(settingsProvider).closeToTray) {
-      await windowManager.hide();
+      await hideWindow();
     } else {
       quit();
     }
@@ -693,6 +775,13 @@ class ClipHistController with WindowListener, TrayListener {
     if (_quitting) return;
     _quitting = true;
     _resizeSaveTimer?.cancel();
+    unawaited(_exitAfterPersist());
+  }
+
+  Future<void> _exitAfterPersist() async {
+    try {
+      await _persistWindowGeometry().timeout(const Duration(milliseconds: 400));
+    } catch (_) {}
     // Do not await cancellation of permanent FRB streams here. Their Rust
     // producers intentionally live for the process lifetime, so `cancel()` can
     // wait forever. The Windows log proved quit previously stopped on the very
