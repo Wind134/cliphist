@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -44,7 +43,6 @@ class HistoryItem extends StatefulWidget {
     this.expanded = false,
     this.compact = false,
     this.query = '',
-    this.onPeekChange,
   });
 
   final ClipboardItem item;
@@ -58,7 +56,6 @@ class HistoryItem extends StatefulWidget {
   final VoidCallback onShowDetails;
   final VoidCallback onCopy;
   final VoidCallback onDelete;
-  final ValueChanged<bool>? onPeekChange;
 
   @override
   State<HistoryItem> createState() => _HistoryItemState();
@@ -66,40 +63,9 @@ class HistoryItem extends StatefulWidget {
 
 class _HistoryItemState extends State<HistoryItem> {
   bool _hovered = false;
-  final OverlayPortalController _peek = OverlayPortalController();
-  final LayerLink _link = LayerLink();
-  Timer? _peekTimer;
 
   bool get _active => _hovered || widget.selected;
   bool get _isImage => widget.item.contentType == 'image';
-
-  @override
-  void didUpdateWidget(covariant HistoryItem oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.expanded && _peek.isShowing) _hidePeek();
-  }
-
-  @override
-  void dispose() {
-    _peekTimer?.cancel();
-    super.dispose();
-  }
-
-  void _schedulePeek() {
-    if (!_isImage || widget.expanded) return;
-    _peekTimer?.cancel();
-    _peekTimer = Timer(const Duration(milliseconds: 300), () {
-      if (!mounted || widget.expanded || !_hovered) return;
-      _peek.show();
-      widget.onPeekChange?.call(true);
-    });
-  }
-
-  void _hidePeek() {
-    _peekTimer?.cancel();
-    if (_peek.isShowing) _peek.hide();
-    widget.onPeekChange?.call(false);
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -110,14 +76,8 @@ class _HistoryItemState extends State<HistoryItem> {
 
     final row = MouseRegion(
       cursor: SystemMouseCursors.click,
-      onEnter: (_) {
-        setState(() => _hovered = true);
-        _schedulePeek();
-      },
-      onExit: (_) {
-        setState(() => _hovered = false);
-        _hidePeek();
-      },
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
       child: Listener(
         onPointerDown: (_) => widget.onTap(),
         child: GestureDetector(
@@ -126,7 +86,9 @@ class _HistoryItemState extends State<HistoryItem> {
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 120),
             constraints: BoxConstraints(
-              minHeight: compact ? Sizes.rowCompact : Sizes.row,
+              minHeight: _isImage
+                  ? (compact ? 40.0 : 60.0)
+                  : (compact ? Sizes.rowCompact : Sizes.row),
             ),
             decoration: BoxDecoration(
               color: widget.selected
@@ -161,11 +123,7 @@ class _HistoryItemState extends State<HistoryItem> {
                         ),
                       ),
                       SizedBox(width: gap),
-                      _Lead(
-                        icon: typeIconOf(item),
-                        compact: compact,
-                        active: _active,
-                      ),
+                      _Lead(item: item, compact: compact, active: _active),
                       SizedBox(width: gap),
                       Expanded(
                         child: _Texts(
@@ -219,15 +177,7 @@ class _HistoryItemState extends State<HistoryItem> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        CompositedTransformTarget(
-          link: _link,
-          child: OverlayPortal(
-            controller: _peek,
-            overlayChildBuilder: (_) =>
-                _ImagePeekOverlay(link: _link, item: item),
-            child: row,
-          ),
-        ),
+        row,
         if (widget.expanded) _ExpandBody(item: item),
       ],
     );
@@ -275,16 +225,19 @@ class _IndexBadge extends StatelessWidget {
 
 class _Lead extends StatelessWidget {
   const _Lead({
-    required this.icon,
+    required this.item,
     required this.compact,
     required this.active,
   });
-  final IconData icon;
+  final ClipboardItem item;
   final bool compact;
   final bool active;
 
   @override
   Widget build(BuildContext context) {
+    if (item.contentType == 'image') {
+      return _Thumb(id: item.id, compact: compact);
+    }
     final c = context.c;
     final size = compact
         ? const Size(Sizes.leadCompactW, Sizes.leadCompactH)
@@ -302,7 +255,71 @@ class _Lead extends StatelessWidget {
             tween: ColorTween(end: active ? c.accent : c.text2),
             duration: const Duration(milliseconds: 120),
             builder: (_, color, _) =>
-                Icon(icon, size: compact ? 14 : 16, color: color),
+                Icon(typeIconOf(item), size: compact ? 14 : 16, color: color),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// In-row image so each picture row is identifiable without hovering.
+class _Thumb extends StatelessWidget {
+  const _Thumb({required this.id, required this.compact});
+  final BigInt id;
+  final bool compact;
+
+  static const sizeStd = Size(72, 48);
+  static const sizeCompact = Size(48, 32);
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.c;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final size = compact ? sizeCompact : sizeStd;
+    final radius = BorderRadius.circular(compact ? 4 : 6);
+    return SizedBox.fromSize(
+      size: size,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: c.leadBg,
+          borderRadius: radius,
+          border: Border.all(color: c.imgHairline),
+        ),
+        child: ClipRRect(
+          borderRadius: radius,
+          child: FutureBuilder<Uint8List?>(
+            future: getImageData(id),
+            builder: (context, snap) {
+              final bytes = snap.data;
+              if (bytes == null) {
+                return Center(
+                  child: Icon(
+                    LucideIcons.image,
+                    size: compact ? 14 : 16,
+                    color: c.text3,
+                  ),
+                );
+              }
+              Widget img = Image.memory(
+                bytes,
+                fit: BoxFit.cover,
+                width: size.width,
+                height: size.height,
+                cacheWidth: (size.width * 2).round(),
+                gaplessPlayback: true,
+              );
+              if (dark) {
+                img = ColorFiltered(
+                  colorFilter: const ColorFilter.mode(
+                    Color(0x24000000),
+                    BlendMode.srcATop,
+                  ),
+                  child: img,
+                );
+              }
+              return img;
+            },
           ),
         ),
       ),
@@ -323,31 +340,38 @@ class _Texts extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.c;
-    final preview = item.preview.isNotEmpty ? item.preview : item.content;
+    final raw = item.contentType == 'files'
+        ? (item.filePaths?.join('  ') ?? item.content)
+        : (item.content.isNotEmpty ? item.content : item.preview);
+    final body = raw.replaceAll(RegExp(r'[\t\r\n]+'), ' ').trim();
     final mono =
         item.contentType == 'link' ||
         item.contentType == 'files' ||
         looksLikeCode(item);
+    final isImage = item.contentType == 'image';
+    final lines = showMeta ? 2 : 1;
+    final showBody = !isImage || body.isNotEmpty;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text.rich(
-          highlightSpans(
-            preview.replaceAll('\n', ' '),
-            query,
-            TextStyle(
-              fontSize: mono ? 12 : 13,
-              height: 18 / (mono ? 12 : 13),
-              color: c.text,
-              fontFamily: mono ? monoFamily : null,
-              fontFamilyFallback: mono ? monoFallback : null,
+        if (showBody)
+          Text.rich(
+            highlightSpans(
+              body,
+              query,
+              TextStyle(
+                fontSize: mono ? 12 : 13,
+                height: 18 / (mono ? 12 : 13),
+                color: c.text,
+                fontFamily: mono ? monoFamily : null,
+                fontFamilyFallback: mono ? monoFallback : null,
+              ),
+              c.warn.withValues(alpha: 0.35),
             ),
-            c.warn.withValues(alpha: 0.35),
+            maxLines: isImage ? 1 : lines,
+            overflow: TextOverflow.ellipsis,
           ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
         if (showMeta) ...[
           const SizedBox(height: 1),
           Text.rich(
@@ -654,128 +678,6 @@ class _ExpandImage extends StatelessWidget {
           style: TextStyle(fontSize: 11, color: c.text3),
         ),
       ],
-    );
-  }
-}
-
-class _ImagePeekOverlay extends StatelessWidget {
-  const _ImagePeekOverlay({required this.link, required this.item});
-  final LayerLink link;
-  final ClipboardItem item;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.c;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    return CompositedTransformFollower(
-      link: link,
-      showWhenUnlinked: false,
-      targetAnchor: Alignment.bottomLeft,
-      followerAnchor: Alignment.topLeft,
-      offset: const Offset(37, 4),
-      child: IgnorePointer(
-        child: TweenAnimationBuilder<double>(
-          tween: Tween(begin: 0, end: 1),
-          duration: const Duration(milliseconds: 140),
-          curve: Curves.easeOut,
-          builder: (_, t, child) => Opacity(
-            opacity: t,
-            child: Transform.translate(
-              offset: Offset(0, -4 * (1 - t)),
-              child: Transform.scale(
-                scale: 0.98 + 0.02 * t,
-                alignment: Alignment.topLeft,
-                child: child,
-              ),
-            ),
-          ),
-          child: Material(
-            color: c.bg,
-            elevation: 12,
-            shadowColor: Colors.black38,
-            borderRadius: BorderRadius.circular(10),
-            child: Padding(
-              padding: const EdgeInsets.all(6),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 220),
-                child: FutureBuilder<Uint8List?>(
-                  future: getImageData(item.id),
-                  builder: (context, snap) {
-                    final bytes = snap.data;
-                    if (bytes == null) {
-                      return const SizedBox(
-                        width: 120,
-                        height: 80,
-                        child: Center(
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                      );
-                    }
-                    Widget img = ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(
-                          maxWidth: 220,
-                          maxHeight: 140,
-                        ),
-                        child: Image.memory(
-                          bytes,
-                          fit: BoxFit.contain,
-                          cacheWidth: 440,
-                        ),
-                      ),
-                    );
-                    if (dark) {
-                      img = ColorFiltered(
-                        colorFilter: const ColorFilter.mode(
-                          Color(0x24000000),
-                          BlendMode.srcATop,
-                        ),
-                        child: img,
-                      );
-                    }
-                    final w = item.imageWidth ?? 0;
-                    final h = item.imageHeight ?? 0;
-                    return Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        img,
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(2, 5, 2, 1),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  item.preview.isNotEmpty ? item.preview : '图片',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: c.text3,
-                                  ),
-                                ),
-                              ),
-                              if (w > 0 && h > 0)
-                                Text(
-                                  '$w × $h',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: c.text3,
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }
