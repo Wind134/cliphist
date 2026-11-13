@@ -269,6 +269,18 @@ class ClipHistController with WindowListener, TrayListener {
     }
   }
 
+  /// Drop the OS-level hook so the user can type that combo inside the app
+  /// (e.g. while recording a new shortcut). No-op on Linux.
+  Future<void> suspendHotkey() async {
+    if (Platform.isLinux) return;
+    try {
+      await HotKeyManagerPlatform.instance.unregisterAll();
+      _registeredHotKey = null;
+    } catch (e) {
+      api_clipboard.feLog(message: 'suspendHotkey failed: $e');
+    }
+  }
+
   /// Register a system-wide hotkey through a native Flutter plugin. Keeping
   /// this out of FRB is important: macOS requires registration on its main
   /// event loop, while Windows hotkey handles are thread-affine.

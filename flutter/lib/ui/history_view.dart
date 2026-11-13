@@ -250,6 +250,9 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
   Future<void> _copyItem(ClipboardItem item, {bool hideAfter = false}) async {
     try {
       await api_clipboard.copyToClipboard(id: item.id);
+      try {
+        await api_history.moveToTop(id: item.id);
+      } catch (_) {}
       showToast(_container, '已复制');
     } catch (e) {
       showToast(_container, '复制失败: $e');
