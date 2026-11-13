@@ -411,12 +411,19 @@ class _ClipContent extends StatelessWidget {
           onOverflowChanged(overflows);
         });
 
-        final body = SelectionArea(
-          child: Text.rich(
-            highlightSpans(text, query, style, c.warn.withValues(alpha: 0.35)),
-            key: ValueKey('history-item-full-content-${item.id}'),
-            maxLines: (overflows && !expanded) ? maxLines : null,
-            style: style,
+        final body = ExcludeSemantics(
+          child: SelectionArea(
+            child: Text.rich(
+              highlightSpans(
+                text,
+                query,
+                style,
+                c.warn.withValues(alpha: 0.35),
+              ),
+              key: ValueKey('history-item-full-content-${item.id}'),
+              maxLines: (overflows && !expanded) ? maxLines : null,
+              style: style,
+            ),
           ),
         );
 

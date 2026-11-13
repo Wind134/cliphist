@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../src/rust/api/stream.dart' as api_stream;
+import '../src/rust/core/clipboard_engine.dart' show ClipboardItem;
 import '../state/history_provider.dart';
 import '../util/image_cache.dart';
 
@@ -45,13 +46,36 @@ List<StreamSubscription<dynamic>> subscribeClipboardStreams(
     api_stream.streamItemMovedToTop().listen((id) {
       final cur = container.read(historyProvider);
       final i = cur.indexWhere((x) => x.id == id);
-      if (i <= 0) return;
+      if (i < 0) return;
       final nh = [...cur];
       final it = nh.removeAt(i);
-      nh.insert(0, it);
+      nh.insert(0, _stampNow(it));
       container.read(historyProvider.notifier).state = nh;
     }),
   );
 
   return subs;
+}
+
+String _nowStamp() {
+  final n = DateTime.now();
+  String two(int v) => v.toString().padLeft(2, '0');
+  return '${n.year}-${two(n.month)}-${two(n.day)} ${two(n.hour)}:${two(n.minute)}:${two(n.second)}';
+}
+
+ClipboardItem _stampNow(ClipboardItem it) {
+  return ClipboardItem(
+    id: it.id,
+    content: it.content,
+    contentType: it.contentType,
+    timestamp: _nowStamp(),
+    preview: it.preview,
+    charCount: it.charCount,
+    imagePath: it.imagePath,
+    imageWidth: it.imageWidth,
+    imageHeight: it.imageHeight,
+    htmlContent: it.htmlContent,
+    filePaths: it.filePaths,
+    contentHash: it.contentHash,
+  );
 }

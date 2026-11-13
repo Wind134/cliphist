@@ -26,11 +26,20 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _recording = false;
-  final FocusNode _hotkeyFocus = FocusNode(debugLabel: 'hotkey-recorder');
+  String _recordHint = '';
+  bool _handlerAttached = false;
 
   @override
   void dispose() {
-    _hotkeyFocus.dispose();
+    _detachKeyHandler();
+    if (_recording) {
+      try {
+        final current = ClipHistController.instance.container
+            .read(settingsProvider)
+            .hotkey;
+        unawaited(ClipHistController.instance.applyHotkey(current));
+      } catch (_) {}
+    }
     super.dispose();
   }
 
@@ -90,7 +99,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     try {
       final valid = api_settings.validateHotkey(hotkey: value);
       if (!valid) {
-        showToast(_container, '格式错误，例如：Ctrl+Shift+V');
+        showToast(_container, '需要修饰键，例如：Ctrl+Shift+V');
+        await ClipHistController.instance.applyHotkey(previous);
         return;
       }
       await ClipHistController.instance.applyHotkey(value);
@@ -100,17 +110,71 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       }
     } catch (e) {
       showToast(_container, '保存失败: $e');
+      await ClipHistController.instance.applyHotkey(previous);
     }
   }
 
-  KeyEventResult _onRecordKey(FocusNode node, KeyEvent event) {
-    if (!_recording || event is! KeyDownEvent) return KeyEventResult.ignored;
-    final key = event.logicalKey;
-    if (key == LogicalKeyboardKey.escape) {
-      setState(() => _recording = false);
-      return KeyEventResult.handled;
+  Future<void> _startRecording() async {
+    if (_recording) return;
+    // OS RegisterHotKey swallows the combo before Flutter sees it.
+    await ClipHistController.instance.suspendHotkey();
+    if (!mounted) return;
+    if (!_handlerAttached) {
+      HardwareKeyboard.instance.addHandler(_onHardwareKey);
+      _handlerAttached = true;
     }
-    if (key == LogicalKeyboardKey.shift ||
+    setState(() {
+      _recording = true;
+      _recordHint = '';
+    });
+  }
+
+  Future<void> _stopRecording({String? apply}) async {
+    _detachKeyHandler();
+    if (mounted) {
+      setState(() {
+        _recording = false;
+        _recordHint = '';
+      });
+    }
+    if (apply != null) {
+      await _applyHotkey(apply);
+    } else {
+      final current = ref.read(settingsProvider).hotkey;
+      await ClipHistController.instance.applyHotkey(current);
+    }
+  }
+
+  void _detachKeyHandler() {
+    if (!_handlerAttached) return;
+    HardwareKeyboard.instance.removeHandler(_onHardwareKey);
+    _handlerAttached = false;
+  }
+
+  bool _onHardwareKey(KeyEvent event) {
+    if (!_recording) return false;
+    // Swallow everything while recording so 1–9 / Esc don't hit the list.
+    if (event is! KeyDownEvent) return true;
+    final key = event.logicalKey;
+    if (_isModifier(key)) return true;
+    if (key == LogicalKeyboardKey.escape) {
+      unawaited(_stopRecording());
+      return true;
+    }
+    final label = _keyLabel(key);
+    if (label == null) return true;
+    final parts = _modifierParts();
+    if (parts.isEmpty) {
+      setState(() => _recordHint = '请先按住 Ctrl / Shift / Alt');
+      return true;
+    }
+    parts.add(label);
+    unawaited(_stopRecording(apply: parts.join('+')));
+    return true;
+  }
+
+  static bool _isModifier(LogicalKeyboardKey key) {
+    return key == LogicalKeyboardKey.shift ||
         key == LogicalKeyboardKey.shiftLeft ||
         key == LogicalKeyboardKey.shiftRight ||
         key == LogicalKeyboardKey.control ||
@@ -121,56 +185,107 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         key == LogicalKeyboardKey.altRight ||
         key == LogicalKeyboardKey.meta ||
         key == LogicalKeyboardKey.metaLeft ||
-        key == LogicalKeyboardKey.metaRight) {
-      return KeyEventResult.handled;
-    }
+        key == LogicalKeyboardKey.metaRight;
+  }
+
+  static List<String> _modifierParts() {
     final pressed = HardwareKeyboard.instance.logicalKeysPressed;
     final parts = <String>[];
     if (pressed.contains(LogicalKeyboardKey.controlLeft) ||
-        pressed.contains(LogicalKeyboardKey.controlRight)) {
+        pressed.contains(LogicalKeyboardKey.controlRight) ||
+        pressed.contains(LogicalKeyboardKey.control)) {
       parts.add('Ctrl');
     }
     if (pressed.contains(LogicalKeyboardKey.shiftLeft) ||
-        pressed.contains(LogicalKeyboardKey.shiftRight)) {
+        pressed.contains(LogicalKeyboardKey.shiftRight) ||
+        pressed.contains(LogicalKeyboardKey.shift)) {
       parts.add('Shift');
     }
     if (pressed.contains(LogicalKeyboardKey.altLeft) ||
-        pressed.contains(LogicalKeyboardKey.altRight)) {
+        pressed.contains(LogicalKeyboardKey.altRight) ||
+        pressed.contains(LogicalKeyboardKey.alt)) {
       parts.add('Alt');
     }
     if (pressed.contains(LogicalKeyboardKey.metaLeft) ||
-        pressed.contains(LogicalKeyboardKey.metaRight)) {
+        pressed.contains(LogicalKeyboardKey.metaRight) ||
+        pressed.contains(LogicalKeyboardKey.meta)) {
       parts.add(Platform.isMacOS ? 'Cmd' : 'Meta');
     }
-    final label = _keyLabel(key);
-    if (label == null) return KeyEventResult.handled;
-    parts.add(label);
-    setState(() => _recording = false);
-    unawaited(_applyHotkey(parts.join('+')));
-    return KeyEventResult.handled;
+    return parts;
   }
 
   static String? _keyLabel(LogicalKeyboardKey key) {
-    final k = key.keyLabel;
-    if (k.length == 1) return k.toUpperCase();
-    const map = {
-      'F1': 'F1',
-      'F2': 'F2',
-      'F3': 'F3',
-      'F4': 'F4',
-      'F5': 'F5',
-      'F6': 'F6',
-      'F7': 'F7',
-      'F8': 'F8',
-      'F9': 'F9',
-      'F10': 'F10',
-      'F11': 'F11',
-      'F12': 'F12',
-      'Space': 'Space',
-      'Enter': 'Enter',
-      'Tab': 'Tab',
+    final letters = <LogicalKeyboardKey, String>{
+      LogicalKeyboardKey.keyA: 'A',
+      LogicalKeyboardKey.keyB: 'B',
+      LogicalKeyboardKey.keyC: 'C',
+      LogicalKeyboardKey.keyD: 'D',
+      LogicalKeyboardKey.keyE: 'E',
+      LogicalKeyboardKey.keyF: 'F',
+      LogicalKeyboardKey.keyG: 'G',
+      LogicalKeyboardKey.keyH: 'H',
+      LogicalKeyboardKey.keyI: 'I',
+      LogicalKeyboardKey.keyJ: 'J',
+      LogicalKeyboardKey.keyK: 'K',
+      LogicalKeyboardKey.keyL: 'L',
+      LogicalKeyboardKey.keyM: 'M',
+      LogicalKeyboardKey.keyN: 'N',
+      LogicalKeyboardKey.keyO: 'O',
+      LogicalKeyboardKey.keyP: 'P',
+      LogicalKeyboardKey.keyQ: 'Q',
+      LogicalKeyboardKey.keyR: 'R',
+      LogicalKeyboardKey.keyS: 'S',
+      LogicalKeyboardKey.keyT: 'T',
+      LogicalKeyboardKey.keyU: 'U',
+      LogicalKeyboardKey.keyV: 'V',
+      LogicalKeyboardKey.keyW: 'W',
+      LogicalKeyboardKey.keyX: 'X',
+      LogicalKeyboardKey.keyY: 'Y',
+      LogicalKeyboardKey.keyZ: 'Z',
+      LogicalKeyboardKey.digit0: '0',
+      LogicalKeyboardKey.digit1: '1',
+      LogicalKeyboardKey.digit2: '2',
+      LogicalKeyboardKey.digit3: '3',
+      LogicalKeyboardKey.digit4: '4',
+      LogicalKeyboardKey.digit5: '5',
+      LogicalKeyboardKey.digit6: '6',
+      LogicalKeyboardKey.digit7: '7',
+      LogicalKeyboardKey.digit8: '8',
+      LogicalKeyboardKey.digit9: '9',
+      LogicalKeyboardKey.numpad0: '0',
+      LogicalKeyboardKey.numpad1: '1',
+      LogicalKeyboardKey.numpad2: '2',
+      LogicalKeyboardKey.numpad3: '3',
+      LogicalKeyboardKey.numpad4: '4',
+      LogicalKeyboardKey.numpad5: '5',
+      LogicalKeyboardKey.numpad6: '6',
+      LogicalKeyboardKey.numpad7: '7',
+      LogicalKeyboardKey.numpad8: '8',
+      LogicalKeyboardKey.numpad9: '9',
+      LogicalKeyboardKey.space: 'Space',
+      LogicalKeyboardKey.enter: 'Enter',
+      LogicalKeyboardKey.tab: 'Tab',
+      LogicalKeyboardKey.backspace: 'Backspace',
+      LogicalKeyboardKey.f1: 'F1',
+      LogicalKeyboardKey.f2: 'F2',
+      LogicalKeyboardKey.f3: 'F3',
+      LogicalKeyboardKey.f4: 'F4',
+      LogicalKeyboardKey.f5: 'F5',
+      LogicalKeyboardKey.f6: 'F6',
+      LogicalKeyboardKey.f7: 'F7',
+      LogicalKeyboardKey.f8: 'F8',
+      LogicalKeyboardKey.f9: 'F9',
+      LogicalKeyboardKey.f10: 'F10',
+      LogicalKeyboardKey.f11: 'F11',
+      LogicalKeyboardKey.f12: 'F12',
     };
-    return map[key.keyLabel] ?? (k.isEmpty ? null : k);
+    final mapped = letters[key];
+    if (mapped != null) return mapped;
+    final k = key.keyLabel;
+    if (k.length == 1 && RegExp(r'[A-Za-z0-9]').hasMatch(k)) {
+      return k.toUpperCase();
+    }
+    return null;
   }
 
   @override
@@ -308,17 +423,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   SettingRow(
                     title: '全局快捷键',
                     subtitle: '唤醒窗口的快捷键',
-                    trailing: Focus(
-                      focusNode: _hotkeyFocus,
-                      onKeyEvent: _onRecordKey,
-                      child: _HotkeyBox(
-                        hotkey: s.hotkey,
-                        recording: _recording,
-                        onTap: () {
-                          setState(() => _recording = true);
-                          _hotkeyFocus.requestFocus();
-                        },
-                      ),
+                    trailing: _HotkeyBox(
+                      hotkey: s.hotkey,
+                      recording: _recording,
+                      hint: _recordHint,
+                      onTap: () => unawaited(_startRecording()),
                     ),
                   ),
                   SettingRow(
@@ -645,14 +754,17 @@ class _HotkeyBox extends StatelessWidget {
     required this.hotkey,
     required this.recording,
     required this.onTap,
+    this.hint = '',
   });
   final String hotkey;
   final bool recording;
   final VoidCallback onTap;
+  final String hint;
 
   @override
   Widget build(BuildContext context) {
     final c = context.c;
+    final label = recording ? (hint.isEmpty ? '按下新的快捷键…' : hint) : null;
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
@@ -667,7 +779,7 @@ class _HotkeyBox extends StatelessWidget {
               : null,
         ),
         child: recording
-            ? Text('按下新的快捷键…', style: TextStyle(fontSize: 12, color: c.accent))
+            ? Text(label!, style: TextStyle(fontSize: 12, color: c.accent))
             : Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [

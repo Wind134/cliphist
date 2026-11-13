@@ -11,10 +11,8 @@ pub fn get_history() -> Vec<ClipboardItem> {
     state::st().history.lock().clone()
 }
 
-/// Move an existing history item to the front (most-recently-used first) and
-/// persist the new order. Triggered by the frontend's number-key quick-paste
-/// (1-9) so the just-used entry floats to the top. Other copy actions
-/// (double-click, copy button, Enter) intentionally do NOT reorder.
+/// Move an existing history item to the front (most-recently-used first),
+/// stamp it as now, and persist. Every paste/copy from history is LRU.
 pub fn move_to_top(id: usize) -> Result<(), String> {
     {
         let st = state::st();
@@ -22,11 +20,9 @@ pub fn move_to_top(id: usize) -> Result<(), String> {
         let Some(pos) = history.iter().position(|i| i.id == id) else {
             return Err("历史记录不存在".to_string());
         };
-        if pos == 0 {
-            return Ok(());
-        }
         let mut next = history.clone();
-        let item = next.remove(pos);
+        let mut item = next.remove(pos);
+        item.timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         next.insert(0, item);
         clipboard_engine::save_history(&next)?;
         *history = next;
