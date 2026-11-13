@@ -171,8 +171,8 @@ class _HistoryItemState extends State<HistoryItem> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           SizedBox(
-                            width: 18,
-                            height: 18,
+                            width: context.sp(18),
+                            height: context.sp(18),
                             child: Center(
                               child: _IndexBadge(
                                 index: widget.index,
@@ -187,13 +187,34 @@ class _HistoryItemState extends State<HistoryItem> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                SizedBox(
-                                  height: 18,
-                                  child: Row(
-                                    children: [
-                                      Expanded(
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        _metaLine(item),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          height: 18 / 11,
+                                          color: c.text3,
+                                          fontFeatures: const [
+                                            FontFeature.tabularFigures(),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    SizedBox(
+                                      width: context.sp(Sizes.timeCol),
+                                      child: Visibility(
+                                        visible: !_active,
+                                        maintainSize: true,
+                                        maintainAnimation: true,
+                                        maintainState: true,
                                         child: Text(
-                                          _metaLine(item),
+                                          relativeTime(item.timestamp),
+                                          textAlign: TextAlign.right,
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: TextStyle(
@@ -206,32 +227,8 @@ class _HistoryItemState extends State<HistoryItem> {
                                           ),
                                         ),
                                       ),
-                                      const SizedBox(width: 8),
-                                      SizedBox(
-                                        width: Sizes.timeCol,
-                                        child: Visibility(
-                                          visible: !_active,
-                                          maintainSize: true,
-                                          maintainAnimation: true,
-                                          maintainState: true,
-                                          child: Text(
-                                            relativeTime(item.timestamp),
-                                            textAlign: TextAlign.right,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              height: 18 / 11,
-                                              color: c.text3,
-                                              fontFeatures: const [
-                                                FontFeature.tabularFigures(),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                                    ),
+                                  ],
                                 ),
                                 SizedBox(height: compact ? 2 : 4),
                                 if (_isImage)
@@ -298,9 +295,10 @@ class _IndexBadge extends StatelessWidget {
         decoration: BoxDecoration(color: c.text4, shape: BoxShape.circle),
       );
     }
+    final box = context.sp(18);
     return Container(
-      width: 18,
-      height: 18,
+      width: box,
+      height: box,
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: Colors.transparent,
@@ -335,8 +333,8 @@ class _Lead extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.c;
     final size = compact
-        ? const Size(Sizes.leadCompactW, Sizes.leadCompactH)
-        : const Size(Sizes.leadW, Sizes.leadH);
+        ? Size(context.sp(Sizes.leadCompactW), context.sp(Sizes.leadCompactH))
+        : Size(context.sp(Sizes.leadW), context.sp(Sizes.leadH));
     return SizedBox.fromSize(
       size: size,
       child: DecoratedBox(

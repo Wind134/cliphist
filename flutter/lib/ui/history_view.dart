@@ -459,7 +459,10 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
                         for (final g in groups) ...[
                           SliverPersistentHeader(
                             pinned: true,
-                            delegate: _GroupHeaderDelegate(g.label),
+                            delegate: _GroupHeaderDelegate(
+                              g.label,
+                              MediaQuery.textScalerOf(context).scale(1),
+                            ),
                           ),
                           SliverList.builder(
                             itemCount: g.items.length,
@@ -510,13 +513,17 @@ class _Group {
 }
 
 class _GroupHeaderDelegate extends SliverPersistentHeaderDelegate {
-  _GroupHeaderDelegate(this.label);
+  _GroupHeaderDelegate(this.label, this.textScale);
   final String label;
+  final double textScale;
+
+  // Padding is unscaled; the 11/14 overline is scaled by MediaQuery.
+  double get _extent => 12 + 6 + 14 * textScale;
 
   @override
-  double get minExtent => 28;
+  double get minExtent => _extent;
   @override
-  double get maxExtent => 28;
+  double get maxExtent => _extent;
 
   @override
   Widget build(
@@ -525,25 +532,32 @@ class _GroupHeaderDelegate extends SliverPersistentHeaderDelegate {
     bool overlapsContent,
   ) {
     final c = context.c;
-    return Container(
-      color: Theme.of(context).scaffoldBackgroundColor,
-      alignment: Alignment.centerLeft,
-      padding: const EdgeInsets.fromLTRB(9, 12, 9, 6),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 11,
-          height: 14 / 11,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.3,
-          color: c.text3,
+    return ColoredBox(
+      color: c.bg,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(9, 12, 9, 6),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 11,
+              height: 14 / 11,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.3,
+              color: c.text3,
+            ),
+          ),
         ),
       ),
     );
   }
 
   @override
-  bool shouldRebuild(covariant _GroupHeaderDelegate old) => old.label != label;
+  bool shouldRebuild(covariant _GroupHeaderDelegate old) =>
+      old.label != label || old.textScale != textScale;
 }
 
 int? quickPasteIndexForKey(LogicalKeyboardKey key) {

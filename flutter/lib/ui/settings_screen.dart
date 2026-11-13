@@ -26,6 +26,13 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _recording = false;
+  final FocusNode _hotkeyFocus = FocusNode(debugLabel: 'hotkey-recorder');
+
+  @override
+  void dispose() {
+    _hotkeyFocus.dispose();
+    super.dispose();
+  }
 
   ProviderContainer get _container => ClipHistController.instance.container;
 
@@ -302,11 +309,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     title: '全局快捷键',
                     subtitle: '唤醒窗口的快捷键',
                     trailing: Focus(
+                      focusNode: _hotkeyFocus,
                       onKeyEvent: _onRecordKey,
                       child: _HotkeyBox(
                         hotkey: s.hotkey,
                         recording: _recording,
-                        onTap: () => setState(() => _recording = true),
+                        onTap: () {
+                          setState(() => _recording = true);
+                          _hotkeyFocus.requestFocus();
+                        },
                       ),
                     ),
                   ),
