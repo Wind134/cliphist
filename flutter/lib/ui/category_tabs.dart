@@ -2,109 +2,110 @@ import 'package:flutter/material.dart';
 
 import 'theme.dart';
 
-/// Category filter tabs. Modern pill chips: each carries a small colored dot
-/// (the type accent) + label; the active chip is filled with a soft accent tint
-/// and the type-colored dot, the rest sit on a subtle surface. Horizontally
-/// scrollable so a narrow window still reaches every tab.
 class CategoryTabs extends StatelessWidget {
   const CategoryTabs({
     super.key,
     required this.current,
     required this.onChanged,
+    this.counts = const {},
   });
 
   final String current;
   final ValueChanged<String> onChanged;
+  final Map<String, int> counts;
 
   @override
   Widget build(BuildContext context) {
-    final scale = MediaQuery.textScalerOf(context).scale(1);
-    return Container(
-      height: 42 + (scale - 1).clamp(0, 1).toDouble() * 12,
-      decoration: const BoxDecoration(
-        color: CliphistColors.surface,
-        border: Border(bottom: BorderSide(color: CliphistColors.borderSubtle)),
-      ),
+    return SizedBox(
+      height: Sizes.chip,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.fromLTRB(12, 4, 12, 7),
         itemCount: ClipType.byKey.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 6),
+        separatorBuilder: (_, _) => const SizedBox(width: 4),
         itemBuilder: (_, i) {
           final t = ClipType.byKey[i];
-          final active = t.key == current;
-          return _Chip(type: t, active: active, onTap: () => onChanged(t.key));
+          return _Chip(
+            type: t,
+            active: t.key == current,
+            count: t.key == 'all' ? null : counts[t.key],
+            onTap: () => onChanged(t.key),
+          );
         },
       ),
     );
   }
 }
 
-class _Chip extends StatelessWidget {
-  const _Chip({required this.type, required this.active, required this.onTap});
+class _Chip extends StatefulWidget {
+  const _Chip({
+    required this.type,
+    required this.active,
+    required this.onTap,
+    this.count,
+  });
 
   final ClipType type;
   final bool active;
   final VoidCallback onTap;
+  final int? count;
+
+  @override
+  State<_Chip> createState() => _ChipState();
+}
+
+class _ChipState extends State<_Chip> {
+  bool _hover = false;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
-        onTap: onTap,
+    final c = context.c;
+    final bg = widget.active
+        ? c.accentSoft
+        : _hover
+        ? c.hover
+        : Colors.transparent;
+    final fg = widget.active ? c.accent : (_hover ? c.text : c.text2);
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 120),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          height: Sizes.chip,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
           decoration: BoxDecoration(
-            color: type.color.withValues(alpha: active ? 0.12 : 0.055),
-            borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
-            border: Border.all(
-              color: type.color.withValues(alpha: active ? 0.32 : 0.14),
-              width: 1,
-            ),
+            color: bg,
+            borderRadius: BorderRadius.circular(6),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _Dot(color: type.color.withValues(alpha: active ? 1 : 0.72)),
-              const SizedBox(width: 6),
               Text(
-                type.label,
+                widget.type.label,
                 style: TextStyle(
-                  color: type.color.withValues(alpha: active ? 1 : 0.88),
                   fontSize: 12,
-                  fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-                  height: 1.2,
-                ),
-                strutStyle: const StrutStyle(
-                  fontSize: 12,
-                  height: 1.2,
-                  leading: 0,
-                  forceStrutHeight: true,
+                  height: 16 / 12,
+                  fontWeight: FontWeight.w500,
+                  color: fg,
                 ),
               ),
+              if (widget.active && widget.count != null) ...[
+                const SizedBox(width: 4),
+                Text(
+                  '${widget.count}',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    height: 1.2,
+                    fontWeight: FontWeight.w500,
+                    color: c.accent.withValues(alpha: 0.75),
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ],
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _Dot extends StatelessWidget {
-  const _Dot({required this.color});
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 7,
-      height: 7,
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(4),
       ),
     );
   }

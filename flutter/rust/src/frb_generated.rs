@@ -905,6 +905,8 @@ impl SseDecode for crate::core::settings_store::Settings {
         let mut var_windowPositioned = <bool>::sse_decode(deserializer);
         let mut var_windowAdaptive = <bool>::sse_decode(deserializer);
         let mut var_acrylicEnabled = <bool>::sse_decode(deserializer);
+        let mut var_themeMode = <String>::sse_decode(deserializer);
+        let mut var_listDensity = <String>::sse_decode(deserializer);
         return crate::core::settings_store::Settings {
             close_to_tray: var_closeToTray,
             zoom_level: var_zoomLevel,
@@ -922,6 +924,8 @@ impl SseDecode for crate::core::settings_store::Settings {
             window_positioned: var_windowPositioned,
             window_adaptive: var_windowAdaptive,
             acrylic_enabled: var_acrylicEnabled,
+            theme_mode: var_themeMode,
+            list_density: var_listDensity,
         };
     }
 }
@@ -945,6 +949,8 @@ impl SseDecode for crate::core::settings_store::SettingsPatch {
         let mut var_windowPositioned = <Option<bool>>::sse_decode(deserializer);
         let mut var_windowAdaptive = <Option<bool>>::sse_decode(deserializer);
         let mut var_acrylicEnabled = <Option<bool>>::sse_decode(deserializer);
+        let mut var_themeMode = <Option<String>>::sse_decode(deserializer);
+        let mut var_listDensity = <Option<String>>::sse_decode(deserializer);
         return crate::core::settings_store::SettingsPatch {
             close_to_tray: var_closeToTray,
             zoom_level: var_zoomLevel,
@@ -962,6 +968,8 @@ impl SseDecode for crate::core::settings_store::SettingsPatch {
             window_positioned: var_windowPositioned,
             window_adaptive: var_windowAdaptive,
             acrylic_enabled: var_acrylicEnabled,
+            theme_mode: var_themeMode,
+            list_density: var_listDensity,
         };
     }
 }
@@ -1119,6 +1127,8 @@ impl flutter_rust_bridge::IntoDart for crate::core::settings_store::Settings {
             self.window_positioned.into_into_dart().into_dart(),
             self.window_adaptive.into_into_dart().into_dart(),
             self.acrylic_enabled.into_into_dart().into_dart(),
+            self.theme_mode.into_into_dart().into_dart(),
+            self.list_density.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -1154,6 +1164,8 @@ impl flutter_rust_bridge::IntoDart for crate::core::settings_store::SettingsPatc
             self.window_positioned.into_into_dart().into_dart(),
             self.window_adaptive.into_into_dart().into_dart(),
             self.acrylic_enabled.into_into_dart().into_dart(),
+            self.theme_mode.into_into_dart().into_dart(),
+            self.list_density.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -1389,6 +1401,8 @@ impl SseEncode for crate::core::settings_store::Settings {
         <bool>::sse_encode(self.window_positioned, serializer);
         <bool>::sse_encode(self.window_adaptive, serializer);
         <bool>::sse_encode(self.acrylic_enabled, serializer);
+        <String>::sse_encode(self.theme_mode, serializer);
+        <String>::sse_encode(self.list_density, serializer);
     }
 }
 
@@ -1411,6 +1425,8 @@ impl SseEncode for crate::core::settings_store::SettingsPatch {
         <Option<bool>>::sse_encode(self.window_positioned, serializer);
         <Option<bool>>::sse_encode(self.window_adaptive, serializer);
         <Option<bool>>::sse_encode(self.acrylic_enabled, serializer);
+        <Option<String>>::sse_encode(self.theme_mode, serializer);
+        <Option<String>>::sse_encode(self.list_density, serializer);
     }
 }
 

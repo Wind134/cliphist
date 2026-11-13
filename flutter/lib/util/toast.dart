@@ -11,7 +11,7 @@ Timer? _toastTimer;
 void showToast(ProviderContainer container, String message) {
   container.read(toastMessageProvider.notifier).state = message;
   _toastTimer?.cancel();
-  _toastTimer = Timer(const Duration(milliseconds: 2000), () {
+  _toastTimer = Timer(const Duration(milliseconds: 1400), () {
     container.read(toastMessageProvider.notifier).state = '';
   });
 }

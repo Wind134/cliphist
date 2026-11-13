@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../app_controller.dart';
 import '../src/rust/api/clipboard.dart' as api_clipboard;
@@ -12,22 +13,18 @@ import '../state/history_provider.dart';
 import '../state/providers.dart';
 import '../update/update_service.dart';
 import '../util/image_cache.dart';
+import '../util/relative_time.dart';
 import '../util/toast.dart';
 import 'category_tabs.dart';
 import 'chrome.dart';
 import 'history_item.dart';
+import 'kbd.dart';
 import 'status_bar.dart';
 import 'theme.dart';
 
-/// Full history screen (search + category tabs + list + empty states +
-/// keyboard navigation). The search field also carries the clear/settings
-/// actions so the layout stays compact alongside the OS title bar.
-///
-/// Keyboard model:
-///  - When the search box is focused: ↑/↓ move selection, Enter copies the
-///    selected row, Escape blurs the search box (does NOT hide the app).
-///  - When the search box is NOT focused: digits 1-9 quick-paste the nth row.
-///  - Arrow/Enter also work when the search is not focused.
+/// Full history screen. Keyboard:
+///  - Search focused: ↑/↓ select, Enter copies, Esc clears then blurs.
+///  - List focused: 1–9 quick-paste, Space expands, Del deletes.
 class HistoryView extends ConsumerStatefulWidget {
   const HistoryView({super.key, this.onQuickPaste});
 
@@ -43,16 +40,18 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
   final FocusNode _viewFocus = FocusNode(debugLabel: 'history-view');
   final FocusNode _searchFocus = FocusNode(debugLabel: 'history-search');
   bool _quickPastePending = false;
-
-  static const double _rowHeight = 84;
-  static const double _imageRowHeight = 108;
-  static const double _richRowHeight = 120;
+  bool _searchFocused = false;
+  BigInt? _expandedId;
 
   @override
   void initState() {
     super.initState();
     _searchFocus.onKeyEvent = _onSearchKeyEvent;
     _viewFocus.onKeyEvent = _onViewKeyEvent;
+    _searchFocus.addListener(() {
+      if (mounted) setState(() => _searchFocused = _searchFocus.hasFocus);
+    });
+    _scrollCtrl.addListener(_onScroll);
   }
 
   @override
@@ -68,18 +67,23 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
 
   List<ClipboardItem> get _filtered => ref.read(filteredHistoryProvider);
 
+  void _onScroll() {
+    // Close any image peek by rebuilding; tiles hide on pointer exit too.
+  }
+
   void _onSearchQueryChanged(String q) {
     ref.read(searchQueryProvider.notifier).state = q;
     ref.read(selectedIndexProvider.notifier).state = -1;
+    setState(() => _expandedId = null);
   }
 
   void _onCategoryChanged(String cat) {
     ref.read(currentCategoryProvider.notifier).state = cat;
     ref.read(selectedIndexProvider.notifier).state = -1;
+    setState(() => _expandedId = null);
     _viewFocus.requestFocus();
   }
 
-  // ── Keyboard ────────────────────────────────────────────────────────────
   KeyEventResult _onSearchKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final key = event.logicalKey;
@@ -93,8 +97,12 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
       _handleEnter();
       return KeyEventResult.handled;
     } else if (key == LogicalKeyboardKey.escape) {
-      // Blur search so the app-level Escape (hide/quit) takes over next.
-      _viewFocus.requestFocus();
+      if (_searchCtrl.text.isNotEmpty) {
+        _searchCtrl.clear();
+        _onSearchQueryChanged('');
+      } else {
+        _viewFocus.requestFocus();
+      }
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
@@ -103,6 +111,26 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
   KeyEventResult _onViewKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final key = event.logicalKey;
+    final mods = HardwareKeyboard.instance.logicalKeysPressed;
+    final ctrl =
+        mods.contains(LogicalKeyboardKey.controlLeft) ||
+        mods.contains(LogicalKeyboardKey.controlRight) ||
+        mods.contains(LogicalKeyboardKey.metaLeft) ||
+        mods.contains(LogicalKeyboardKey.metaRight);
+
+    if (ctrl && key == LogicalKeyboardKey.keyF) {
+      _searchFocus.requestFocus();
+      _searchCtrl.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _searchCtrl.text.length,
+      );
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.slash && !ctrl) {
+      _searchFocus.requestFocus();
+      return KeyEventResult.handled;
+    }
+
     final quickPasteIndex = quickPasteIndexForKey(key);
     if (quickPasteIndex != null) return _quickPaste(quickPasteIndex);
     if (key == LogicalKeyboardKey.arrowUp) {
@@ -117,10 +145,18 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
       _handleEnter();
       return KeyEventResult.handled;
     }
+    if (key == LogicalKeyboardKey.space) {
+      _toggleExpandSelected();
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.delete ||
+        key == LogicalKeyboardKey.backspace) {
+      _deleteSelected();
+      return KeyEventResult.handled;
+    }
     return KeyEventResult.ignored;
   }
 
-  /// Quick-paste the nth row (1-based). Returns `handled` if a row existed.
   KeyEventResult _quickPaste(int n) {
     final items = _filtered;
     if (n < 1 || n > items.length || n > 9) return KeyEventResult.ignored;
@@ -133,10 +169,6 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
   }
 
   Future<void> _dispatchQuickPaste(BigInt id) async {
-    // Leave enough time for the number-key release and the selection bounce to
-    // render before the native window is hidden. Hiding on KeyDown could send
-    // the corresponding KeyUp to the target application and made the shortcut
-    // feel intermittent on Windows.
     await Future<void>.delayed(const Duration(milliseconds: 120));
     try {
       final override = widget.onQuickPaste;
@@ -163,21 +195,17 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
     if (cur < 0) {
       cur = delta > 0 ? -1 : 0;
     }
-    int next = (cur + delta).clamp(0, items.length - 1);
+    final next = (cur + delta).clamp(0, items.length - 1);
     _selectIndex(next);
   }
 
   void _ensureVisible(int index) {
     if (!_scrollCtrl.hasClients) return;
-    final items = _filtered;
-    final zoom = MediaQuery.textScalerOf(context).scale(1);
-    final h = _itemExtent(items[index], zoom);
-    final viewport = _scrollCtrl.position.viewportDimension;
+    final compact = ref.read(settingsProvider).listDensity == 'compact';
+    final h = compact ? Sizes.rowCompact : Sizes.row;
+    final target = index * (h + 18); // rough: group headers
     final offset = _scrollCtrl.offset;
-    var target = 0.0;
-    for (var i = 0; i < index; i++) {
-      target += _itemExtent(items[i], zoom);
-    }
+    final viewport = _scrollCtrl.position.viewportDimension;
     if (target < offset) {
       unawaited(
         _scrollCtrl.animateTo(
@@ -197,17 +225,6 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
     }
   }
 
-  double _itemExtent(ClipboardItem item, double zoom) {
-    final base = switch (item.contentType) {
-      'image' => _imageRowHeight,
-      'rich' => _richRowHeight,
-      _ => _rowHeight,
-    };
-    // Text scales through MediaQuery. Give it corresponding vertical room so
-    // 150–200% zoom never overflows fixed list extents.
-    return base + (zoom - 1).clamp(0, 1).toDouble() * 50;
-  }
-
   void _handleEnter() {
     final items = _filtered;
     final idx = ref.read(selectedIndexProvider);
@@ -215,7 +232,21 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
     unawaited(_copyItem(items[idx], hideAfter: true));
   }
 
-  // ── Actions ────────────────────────────────────────────────────────────
+  void _toggleExpandSelected() {
+    final items = _filtered;
+    final idx = ref.read(selectedIndexProvider);
+    if (idx < 0 || idx >= items.length) return;
+    final id = items[idx].id;
+    setState(() => _expandedId = _expandedId == id ? null : id);
+  }
+
+  void _deleteSelected() {
+    final items = _filtered;
+    final idx = ref.read(selectedIndexProvider);
+    if (idx < 0 || idx >= items.length) return;
+    unawaited(_deleteItem(items[idx]));
+  }
+
   Future<void> _copyItem(ClipboardItem item, {bool hideAfter = false}) async {
     try {
       await api_clipboard.copyToClipboard(id: item.id);
@@ -232,11 +263,9 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
 
   Future<void> _deleteItem(ClipboardItem item) async {
     try {
-      // Rust persists first and emits a full replacement snapshot. Avoid an
-      // optimistic rollback: restoring an old local list could erase captures
-      // that arrived while the delete request was in flight.
       await api_history.deleteItem(id: item.id);
       evictImage(item.id);
+      if (_expandedId == item.id) setState(() => _expandedId = null);
       ref.read(selectedIndexProvider.notifier).state = -1;
       showToast(_container, '已删除');
     } catch (e) {
@@ -244,153 +273,93 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
     }
   }
 
-  Future<void> _showItemDetails(ClipboardItem item) async {
-    final type = ClipType.of(item.contentType) ?? ClipType.all;
-    final text = item.contentType == 'files'
-        ? (item.filePaths?.join('\n') ?? item.content)
-        : item.content;
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Icon(
-              item.contentType == 'files'
-                  ? Icons.folder_copy_outlined
-                  : Icons.open_in_full_rounded,
-              size: 18,
-              color: type.color,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                '${type.label}详情',
-                strutStyle: const StrutStyle(
-                  fontSize: 16,
-                  height: 1.3,
-                  forceStrutHeight: true,
-                ),
-              ),
-            ),
-          ],
-        ),
-        content: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 620, maxHeight: 520),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (item.imagePath != null) ...[
-                  FutureBuilder<Uint8List?>(
-                    future: getImageData(item.id),
-                    builder: (context, snapshot) {
-                      final bytes = snapshot.data;
-                      if (bytes != null) {
-                        return ConstrainedBox(
-                          constraints: const BoxConstraints(maxHeight: 360),
-                          child: Image.memory(bytes, fit: BoxFit.contain),
-                        );
-                      }
-                      if (snapshot.connectionState != ConnectionState.done) {
-                        return const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(24),
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        );
-                      }
-                      return const Text('图片文件无法读取');
-                    },
-                  ),
-                  if (text.isNotEmpty) const SizedBox(height: 16),
-                ],
-                if (text.isNotEmpty)
-                  SelectionArea(
-                    child: Text(
-                      text,
-                      key: ValueKey('history-item-full-content-${item.id}'),
-                      style: TextStyle(
-                        color: CliphistColors.textPrimary,
-                        fontSize: 13,
-                        height: 1.5,
-                        fontFamily:
-                            item.contentType == 'files' || text.contains('\n')
-                            ? 'monospace'
-                            : null,
-                      ),
-                    ),
-                  ),
-                if (text.isEmpty && item.imagePath == null)
-                  const Text('该记录没有可显示的纯文本内容'),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('关闭'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              unawaited(_copyItem(item));
-            },
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.content_copy, size: 16),
-                SizedBox(width: 6),
-                Text(
-                  '复制',
-                  strutStyle: StrutStyle(
-                    fontSize: 13,
-                    height: 1.2,
-                    leading: 0,
-                    forceStrutHeight: true,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _clearAll() async {
+    final c = context.c;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('清空历史'),
-        content: const Text('确定清空全部剪贴板历史？此操作不可撤销。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: CliphistColors.danger,
+      builder: (ctx) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 40),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 300),
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '清空全部记录？',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: c.text,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '此操作不可撤销。',
+                  style: TextStyle(fontSize: 12.5, color: c.text2),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('取消'),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: c.danger,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(0, 30),
+                      ),
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: const Text('清空'),
+                    ),
+                  ],
+                ),
+              ],
             ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('清空'),
           ),
-        ],
+        ),
       ),
     );
     if (confirmed != true) return;
     try {
-      await api_history.clearHistory(); // emits history-replace([])
+      await api_history.clearHistory();
       showToast(_container, '已清空');
     } catch (e) {
       showToast(_container, '清空失败: $e');
     }
   }
 
-  // ── Build ──────────────────────────────────────────────────────────────
+  Map<String, int> _countsFor(List<ClipboardItem> hist, String query) {
+    var items = hist;
+    if (query.isNotEmpty) {
+      final q = query.toLowerCase();
+      items = items.where((i) => i.content.toLowerCase().contains(q)).toList();
+    }
+    final map = <String, int>{};
+    for (final i in items) {
+      map[i.contentType] = (map[i.contentType] ?? 0) + 1;
+    }
+    return map;
+  }
+
+  List<_Group> _groups(List<ClipboardItem> items) {
+    final groups = <_Group>[];
+    for (var i = 0; i < items.length; i++) {
+      final label = groupLabel(items[i].timestamp);
+      if (groups.isEmpty || groups.last.label != label) {
+        groups.add(_Group(label, []));
+      }
+      groups.last.items.add((i, items[i]));
+    }
+    return groups;
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.listen<int>(windowWakeGenerationProvider, (_, _) {
@@ -404,105 +373,176 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
     final query = ref.watch(searchQueryProvider);
     final category = ref.watch(currentCategoryProvider);
     final helper = ref.watch(helperConnectedProvider);
-    final historyCount = ref.watch(historyProvider).length;
-    final zoom = MediaQuery.textScalerOf(context).scale(1);
+    final history = ref.watch(historyProvider);
+    final settings = ref.watch(settingsProvider);
     final update = ref.watch(updateStateProvider);
+    final compact = settings.listDensity == 'compact';
+    final groups = _groups(filtered);
+    final counts = _countsFor(history, query);
+    final c = context.c;
 
     return Focus(
       focusNode: _viewFocus,
       autofocus: true,
-      child: Container(
-        color: Theme.of(context).scaffoldBackgroundColor,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _HeroHeader(
-              count: historyCount,
-              onClearHistory: _clearAll,
-              onSettings: () =>
-                  ref.read(settingsOpenProvider.notifier).state = true,
-            ),
-            _SearchBar(
-              controller: _searchCtrl,
-              focusNode: _searchFocus,
-              value: query,
-              onChanged: _onSearchQueryChanged,
-              onClear: () {
-                _searchCtrl.clear();
-                _onSearchQueryChanged('');
-              },
-            ),
-            if (update.hasUpdate) _UpdateBanner(update: update),
-            CategoryTabs(current: category, onChanged: _onCategoryChanged),
-            Expanded(
-              child: filtered.isEmpty
-                  ? _EmptyState(query: query, category: category)
-                  : ListView.builder(
-                      controller: _scrollCtrl,
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                      itemCount: filtered.length,
-                      itemExtentBuilder: (i, _) =>
-                          _itemExtent(filtered[i], zoom),
-                      itemBuilder: (ctx, i) => HistoryItem(
-                        key: ValueKey(filtered[i].id),
-                        item: filtered[i],
-                        index: i + 1,
-                        selected: i == selected,
-                        onTap: () => _selectIndex(i),
-                        onDoubleTap: () =>
-                            _copyItem(filtered[i], hideAfter: true),
-                        onShowDetails: () => _showItemDetails(filtered[i]),
-                        onCopy: () => _copyItem(filtered[i]),
-                        onDelete: () => _deleteItem(filtered[i]),
-                      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AppTitleBar(
+            leading: Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    '剪贴板历史',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      height: 18 / 13,
+                      fontWeight: FontWeight.w600,
+                      color: c.text,
                     ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                CountPill(history.length),
+              ],
             ),
-            StatusBar(helperConnected: helper, count: filtered.length),
-          ],
-        ),
+            actions: [
+              IconBtn(
+                icon: LucideIcons.trash2,
+                tooltip: '清空全部记录',
+                danger: true,
+                onTap: _clearAll,
+              ),
+              IconBtn(
+                key: const ValueKey('open-settings'),
+                icon: LucideIcons.settings,
+                tooltip: isMac ? '设置 (⌘,)' : '设置 (Ctrl+,)',
+                onTap: () =>
+                    ref.read(settingsOpenProvider.notifier).state = true,
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: Column(
+              children: [
+                _SearchField(
+                  controller: _searchCtrl,
+                  focusNode: _searchFocus,
+                  focused: _searchFocused,
+                  value: query,
+                  onChanged: _onSearchQueryChanged,
+                  onClear: () {
+                    _searchCtrl.clear();
+                    _onSearchQueryChanged('');
+                  },
+                ),
+                const SizedBox(height: 8),
+                CategoryTabs(
+                  current: category,
+                  onChanged: _onCategoryChanged,
+                  counts: counts,
+                ),
+              ],
+            ),
+          ),
+          if (update.hasUpdate) _UpdateBanner(update: update),
+          Expanded(
+            child: filtered.isEmpty
+                ? _EmptyState(query: query, category: category)
+                : Padding(
+                    padding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
+                    child: CustomScrollView(
+                      controller: _scrollCtrl,
+                      slivers: [
+                        for (final g in groups) ...[
+                          SliverPersistentHeader(
+                            pinned: true,
+                            delegate: _GroupHeaderDelegate(g.label),
+                          ),
+                          SliverList.builder(
+                            itemCount: g.items.length,
+                            itemBuilder: (ctx, i) {
+                              final (idx, item) = g.items[i];
+                              return HistoryItem(
+                                key: ValueKey(item.id),
+                                item: item,
+                                index: idx + 1,
+                                selected: idx == selected,
+                                expanded: _expandedId == item.id,
+                                compact: compact,
+                                query: query,
+                                onTap: () => _selectIndex(idx),
+                                onDoubleTap: () =>
+                                    _copyItem(item, hideAfter: true),
+                                onShowDetails: () => setState(
+                                  () => _expandedId = _expandedId == item.id
+                                      ? null
+                                      : item.id,
+                                ),
+                                onCopy: () => _copyItem(item),
+                                onDelete: () => _deleteItem(item),
+                              );
+                            },
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+          ),
+          StatusBar(
+            helperConnected: helper,
+            gameMode: settings.gameMode,
+            doubleTapKey: settings.doubleTapKey,
+          ),
+        ],
       ),
     );
   }
 }
 
-class _HeroHeader extends StatelessWidget {
-  const _HeroHeader({
-    required this.count,
-    required this.onClearHistory,
-    required this.onSettings,
-  });
+class _Group {
+  _Group(this.label, this.items);
+  final String label;
+  final List<(int, ClipboardItem)> items;
+}
 
-  final int count;
-  final VoidCallback onClearHistory;
-  final VoidCallback onSettings;
+class _GroupHeaderDelegate extends SliverPersistentHeaderDelegate {
+  _GroupHeaderDelegate(this.label);
+  final String label;
 
   @override
-  Widget build(BuildContext context) {
-    return CliphistHeaderBar(
-      leading: CliphistHeaderBadge(
-        child: Padding(
-          padding: const EdgeInsets.all(5),
-          child: Image.asset('assets/icon/app.png'),
+  double get minExtent => 28;
+  @override
+  double get maxExtent => 28;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    final c = context.c;
+    return Container(
+      color: Theme.of(context).scaffoldBackgroundColor,
+      alignment: Alignment.centerLeft,
+      padding: const EdgeInsets.fromLTRB(9, 10, 9, 4),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          height: 14 / 11,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.3,
+          color: c.text3,
         ),
       ),
-      title: 'My ClipHist',
-      subtitle: '$count 条剪贴板记录',
-      actions: [
-        CliphistHeaderButton(
-          icon: Icons.delete_sweep_outlined,
-          tooltip: '清空历史',
-          onTap: onClearHistory,
-        ),
-        CliphistHeaderButton(
-          icon: Icons.settings_outlined,
-          tooltip: '设置',
-          label: '设置',
-          accent: true,
-          onTap: onSettings,
-        ),
-      ],
     );
   }
+
+  @override
+  bool shouldRebuild(covariant _GroupHeaderDelegate old) => old.label != label;
 }
 
 int? quickPasteIndexForKey(LogicalKeyboardKey key) {
@@ -535,6 +575,7 @@ class _UpdateBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.c;
     final downloading = update.phase == UpdatePhase.downloading;
     final applying = update.phase == UpdatePhase.applying;
     final busy = downloading || applying;
@@ -545,56 +586,40 @@ class _UpdateBanner extends StatelessWidget {
         ? '正在安装 v${update.latestVersion}…'
         : '新版本 v${update.latestVersion} 已可用';
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
       child: Material(
-        color: CliphistColors.accentSoft,
-        borderRadius: BorderRadius.circular(CliphistColors.radius),
+        color: c.accentSoft,
+        borderRadius: BorderRadius.circular(8),
         child: InkWell(
-          borderRadius: BorderRadius.circular(CliphistColors.radius),
+          borderRadius: BorderRadius.circular(8),
           onTap: busy
               ? null
               : ClipHistController.instance.downloadAndInstallUpdate,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Row(
               children: [
-                const Icon(
-                  Icons.auto_awesome_rounded,
-                  size: 16,
-                  color: CliphistColors.accent,
-                ),
+                Icon(LucideIcons.sparkles, size: 14, color: c.accent),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     title,
-                    style: const TextStyle(
-                      color: CliphistColors.accentHover,
+                    style: TextStyle(
+                      color: c.accent,
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
-                Text(
-                  busy ? '' : '更新',
-                  style: const TextStyle(
-                    color: CliphistColors.accent,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    height: 1.2,
+                if (!busy)
+                  Text(
+                    '更新',
+                    style: TextStyle(
+                      color: c.accent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                  strutStyle: const StrutStyle(
-                    fontSize: 12,
-                    height: 1.2,
-                    leading: 0,
-                    forceStrutHeight: true,
-                  ),
-                ),
-                const SizedBox(width: 2),
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  size: 16,
-                  color: CliphistColors.accent,
-                ),
               ],
             ),
           ),
@@ -604,10 +629,11 @@ class _UpdateBanner extends StatelessWidget {
   }
 }
 
-class _SearchBar extends StatelessWidget {
-  const _SearchBar({
+class _SearchField extends StatelessWidget {
+  const _SearchField({
     required this.controller,
     required this.focusNode,
+    required this.focused,
     required this.value,
     required this.onChanged,
     required this.onClear,
@@ -615,6 +641,7 @@ class _SearchBar extends StatelessWidget {
 
   final TextEditingController controller;
   final FocusNode focusNode;
+  final bool focused;
   final String value;
   final ValueChanged<String> onChanged;
   final VoidCallback onClear;
@@ -622,73 +649,52 @@ class _SearchBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (controller.text != value) controller.text = value;
+    final c = context.c;
     final hasText = value.isNotEmpty;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-      color: CliphistColors.surface,
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 120),
+      height: Sizes.search,
+      decoration: BoxDecoration(
+        color: focused ? c.bg : c.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: focused ? c.selBorder : Colors.transparent),
+        boxShadow: focused
+            ? [BoxShadow(color: c.accentSoft, spreadRadius: 3, blurRadius: 0)]
+            : null,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10),
       child: Row(
         children: [
+          Icon(LucideIcons.search, size: 16, color: c.text3),
+          const SizedBox(width: 8),
           Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: CliphistColors.surface,
-                borderRadius: BorderRadius.circular(CliphistColors.radiusLg),
-                border: Border.all(color: CliphistColors.border),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.search_rounded,
-                    size: 17,
-                    color: CliphistColors.textMuted,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: controller,
-                      focusNode: focusNode,
-                      onChanged: onChanged,
-                      style: const TextStyle(
-                        color: CliphistColors.textPrimary,
-                        fontSize: 13,
-                        height: 1.3,
-                      ),
-                      cursorColor: CliphistColors.accent,
-                      decoration: InputDecoration(
-                        isDense: true,
-                        hintText: '搜索剪贴板历史…',
-                        hintStyle: const TextStyle(
-                          color: CliphistColors.textMuted,
-                          fontSize: 13,
-                        ),
-                        border: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        focusedBorder: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(vertical: 9),
-                        suffixIcon: hasText
-                            ? IconButton(
-                                visualDensity: VisualDensity.compact,
-                                iconSize: 16,
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(
-                                  minWidth: 28,
-                                  minHeight: 28,
-                                ),
-                                icon: const Icon(
-                                  Icons.close_rounded,
-                                  color: CliphistColors.textMuted,
-                                ),
-                                onPressed: onClear,
-                              )
-                            : null,
-                      ),
-                    ),
-                  ),
-                ],
+            child: TextField(
+              controller: controller,
+              focusNode: focusNode,
+              onChanged: onChanged,
+              style: TextStyle(color: c.text, fontSize: 13, height: 18 / 13),
+              cursorColor: c.accent,
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: '搜索剪贴板历史…',
+                hintStyle: TextStyle(color: c.text3, fontSize: 13),
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(vertical: 9),
               ),
             ),
           ),
+          if (hasText)
+            GestureDetector(
+              onTap: onClear,
+              child: Icon(LucideIcons.x, size: 14, color: c.text3),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: Kbd(isMac ? '⌘F' : 'Ctrl F'),
+            ),
         ],
       ),
     );
@@ -702,7 +708,8 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasFilter = query.isNotEmpty || category != 'all';
+    final c = context.c;
+    final searching = query.isNotEmpty;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -710,18 +717,24 @@ class _EmptyState extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              hasFilter ? Icons.search_off_rounded : Icons.history_rounded,
-              size: 40,
-              color: CliphistColors.textMuted,
+              searching ? LucideIcons.search : LucideIcons.clipboard,
+              size: 28,
+              color: c.text3.withValues(alpha: 0.6),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             Text(
-              hasFilter ? '没有匹配的记录' : '暂无剪贴板历史',
-              style: const TextStyle(
-                color: CliphistColors.textSecondary,
-                fontSize: 13,
-              ),
+              searching
+                  ? '没有找到包含「$query」的记录'
+                  : category != 'all'
+                  ? '没有匹配的记录'
+                  : '这里还没有记录',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: c.text3, fontSize: 12.5),
             ),
+            if (!searching && category == 'all') ...[
+              const SizedBox(height: 4),
+              Text('复制点什么试试吧', style: TextStyle(color: c.text4, fontSize: 12)),
+            ],
           ],
         ),
       ),

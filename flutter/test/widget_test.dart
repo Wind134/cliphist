@@ -28,6 +28,8 @@ const testSettings = Settings(
   windowPositioned: false,
   windowAdaptive: false,
   acrylicEnabled: false,
+  themeMode: 'light',
+  listDensity: 'standard',
 );
 
 const layoutSettings = Settings(
@@ -47,6 +49,8 @@ const layoutSettings = Settings(
   windowPositioned: true,
   windowAdaptive: true,
   acrylicEnabled: false,
+  themeMode: 'light',
+  listDensity: 'standard',
 );
 
 final testHistory = <ClipboardItem>[
@@ -164,13 +168,6 @@ void main() {
     await tester.pump();
     expect(container.read(selectedIndexProvider), 0);
 
-    final motionFinder = find.byKey(
-      ValueKey('history-item-motion-${BigInt.one}'),
-    );
-    await tester.pump(const Duration(milliseconds: 60));
-    final transform = tester.widget<Transform>(motionFinder);
-    expect(transform.transform.getMaxScaleOnAxis(), greaterThan(1));
-
     await tester.sendKeyDownEvent(LogicalKeyboardKey.digit2);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.digit2);
     await tester.pump(const Duration(milliseconds: 130));
@@ -205,7 +202,7 @@ void main() {
     );
     await tester.pump();
     expect(tester.takeException(), isNull);
-    expect(find.text('My ClipHist'), findsOneWidget);
+    expect(find.text('剪贴板历史'), findsOneWidget);
   });
 
   testWidgets('truncated rows expose the complete selectable content', (
@@ -229,7 +226,6 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('history-item-details-42')));
     await tester.pumpAndSettle();
 
-    expect(find.text('文本详情'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('history-item-full-content-42')),
       findsOneWidget,
@@ -309,13 +305,13 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(find.text('My ClipHist'), findsOneWidget);
-    expect(find.text('偏好设置'), findsNothing);
+    expect(find.text('剪贴板历史'), findsOneWidget);
+    expect(find.byKey(const ValueKey('settings')), findsNothing);
 
-    await tester.tap(find.text('设置'));
+    await tester.tap(find.byKey(const ValueKey('open-settings')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 80));
-    expect(find.text('偏好设置'), findsOneWidget);
+    expect(find.text('设置'), findsWidgets);
 
     await tester.pumpAndSettle();
     expect(find.text('窗口自适应'), findsOneWidget);
@@ -325,8 +321,8 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('settings-close')));
     await tester.pumpAndSettle();
-    expect(find.text('偏好设置'), findsNothing);
-    expect(find.text('My ClipHist'), findsOneWidget);
+    expect(find.byKey(const ValueKey('settings')), findsNothing);
+    expect(find.text('剪贴板历史'), findsOneWidget);
     expect(find.byKey(const ValueKey('history')), findsOneWidget);
   });
 
@@ -346,9 +342,7 @@ void main() {
       ),
     );
     await tester.pump();
-    final scaler = MediaQuery.textScalerOf(
-      tester.element(find.text('My ClipHist')),
-    );
+    final scaler = MediaQuery.textScalerOf(tester.element(find.text('剪贴板历史')));
     expect(scaler.scale(1), closeTo(1.35, 0.01));
   });
 
@@ -378,7 +372,7 @@ void main() {
       );
       await tester.pump();
       expect(tester.takeException(), isNull, reason: 'history $size');
-      expect(find.text('My ClipHist'), findsOneWidget);
+      expect(find.text('剪贴板历史'), findsOneWidget);
 
       final container = ProviderContainer(
         overrides: [
@@ -396,7 +390,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull, reason: 'settings $size');
-      expect(find.text('偏好设置'), findsOneWidget);
+      expect(find.text('设置'), findsWidgets);
     }
   });
 }

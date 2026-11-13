@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui' show Color, Offset, Rect, Size;
+import 'dart:ui' show Brightness, Color, Offset, PlatformDispatcher, Rect, Size;
 
 import 'package:flutter/painting.dart' show Alignment;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -65,7 +65,9 @@ class ClipHistController with WindowListener, TrayListener {
         title: 'My ClipHist',
         size: size,
         minimumSize: WindowGeometry.minSize,
-        titleBarStyle: TitleBarStyle.normal,
+        titleBarStyle: TitleBarStyle.hidden,
+        windowButtonVisibility: true,
+        backgroundColor: const Color(0x00000000),
         skipTaskbar: s.silentStart && !forceVisible,
       ),
     );
@@ -227,13 +229,25 @@ class ClipHistController with WindowListener, TrayListener {
   Future<void> applyAcrylic(bool enabled) async {
     if (!Platform.isWindows) return;
     try {
-      await windowManager.setBackgroundColor(
-        enabled ? const Color(0x00000000) : const Color(0xFFF5F7FA),
-      );
+      final dark = _isDarkTheme();
+      final Color color;
+      if (enabled) {
+        color = dark ? const Color(0xB81C1C20) : const Color(0xB8FAFAFC);
+      } else {
+        color = dark ? const Color(0xFF1B1B1E) : const Color(0xFFFFFFFF);
+      }
+      await windowManager.setBackgroundColor(color);
       await WindowFx.setAcrylic(enabled);
     } catch (e) {
       api_clipboard.feLog(message: 'applyAcrylic($enabled) failed: $e');
     }
+  }
+
+  bool _isDarkTheme() {
+    final mode = container.read(settingsProvider).themeMode;
+    if (mode == 'dark') return true;
+    if (mode == 'light') return false;
+    return PlatformDispatcher.instance.platformBrightness == Brightness.dark;
   }
 
   /// Register/unregister a login auto-launch entry. Persistence of the

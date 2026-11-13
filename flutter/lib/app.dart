@@ -19,10 +19,17 @@ class ClipHistApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
     final acrylic = Platform.isWindows && settings.acrylicEnabled;
+    final mode = switch (settings.themeMode) {
+      'light' => ThemeMode.light,
+      'dark' => ThemeMode.dark,
+      _ => ThemeMode.system,
+    };
     return MaterialApp(
       title: 'My ClipHist',
       debugShowCheckedModeBanner: false,
-      theme: cliphistTheme(acrylic: acrylic),
+      theme: buildTheme(Brightness.light, acrylic: acrylic),
+      darkTheme: buildTheme(Brightness.dark, acrylic: acrylic),
+      themeMode: mode,
       builder: (context, child) => LayoutBuilder(
         builder: (context, constraints) {
           final scale = WindowGeometry.adaptiveScale(
@@ -43,9 +50,6 @@ class ClipHistApp extends ConsumerWidget {
   }
 }
 
-/// App shell: hosts the history/settings transition, Escape shortcut and toast.
-/// The OS-native title bar already carries the window title, so there is no
-/// separate in-app top bar.
 class MainScreen extends ConsumerWidget {
   const MainScreen({super.key});
 
@@ -53,14 +57,27 @@ class MainScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final settingsOpen = ref.watch(settingsOpenProvider);
     final toast = ref.watch(toastMessageProvider);
+    final c = context.c;
 
     return Shortcuts(
-      shortcuts: {LogicalKeySet(LogicalKeyboardKey.escape): _EscapeIntent()},
+      shortcuts: {
+        LogicalKeySet(LogicalKeyboardKey.escape): const _EscapeIntent(),
+        LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.comma):
+            const _SettingsIntent(),
+        LogicalKeySet(LogicalKeyboardKey.meta, LogicalKeyboardKey.comma):
+            const _SettingsIntent(),
+      },
       child: Actions(
         actions: {
           _EscapeIntent: CallbackAction<_EscapeIntent>(
             onInvoke: (_) {
               unawaited(ClipHistController.instance.onEscape());
+              return null;
+            },
+          ),
+          _SettingsIntent: CallbackAction<_SettingsIntent>(
+            onInvoke: (_) {
+              ref.read(settingsOpenProvider.notifier).state = true;
               return null;
             },
           ),
@@ -73,7 +90,12 @@ class MainScreen extends ConsumerWidget {
               child: Stack(
                 children: [
                   MainPane(settingsOpen: settingsOpen),
-                  if (toast.isNotEmpty) _ToastOverlay(message: toast),
+                  if (toast.isNotEmpty)
+                    _ToastOverlay(
+                      message: toast,
+                      invertedBg: c.text,
+                      invertedFg: c.bg,
+                    ),
                 ],
               ),
             ),
@@ -84,8 +106,6 @@ class MainScreen extends ConsumerWidget {
   }
 }
 
-/// One page at a time: settings slides in from the right, history slides back
-/// on close. No overlay, so the close/back control always receives taps.
 class MainPane extends StatelessWidget {
   const MainPane({super.key, required this.settingsOpen});
 
@@ -127,37 +147,36 @@ class _EscapeIntent extends Intent {
   const _EscapeIntent();
 }
 
+class _SettingsIntent extends Intent {
+  const _SettingsIntent();
+}
+
 class _ToastOverlay extends StatelessWidget {
-  const _ToastOverlay({required this.message});
+  const _ToastOverlay({
+    required this.message,
+    required this.invertedBg,
+    required this.invertedFg,
+  });
   final String message;
+  final Color invertedBg;
+  final Color invertedFg;
 
   @override
   Widget build(BuildContext context) {
     return Positioned(
       left: 0,
       right: 0,
-      bottom: 44,
+      bottom: 42,
       child: Center(
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: const Color(0xFF1B1F24).withValues(alpha: 0.92),
-            borderRadius: BorderRadius.circular(CliphistColors.radius),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x29000000),
-                blurRadius: 12,
-                offset: Offset(0, 4),
-              ),
-            ],
+            color: invertedBg,
+            borderRadius: BorderRadius.circular(999),
           ),
           child: Text(
             message,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 13,
-              height: 1.3,
-            ),
+            style: TextStyle(color: invertedFg, fontSize: 12, height: 1.3),
           ),
         ),
       ),

@@ -1,20 +1,35 @@
 import 'dart:async';
 import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
-import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../src/rust/core/clipboard_engine.dart' show ClipboardItem;
 import '../util/image_cache.dart';
+import '../util/relative_time.dart';
 import 'theme.dart';
 
-/// One history row. Modern layout:
-///   `[index] · [preview line(s)] … [hover actions]`
-///   `[meta: timestamp · count]`
-/// with a leading type dot, a 3px accent rail on the selected row, and a soft
-/// hover wash. Type is conveyed by the dot color (kept calm — the old colored
-/// chip + colored rail competed with the text). Image rows show a thumbnail
-/// on the left.
+IconData typeIconOf(ClipboardItem item) {
+  return switch (item.contentType) {
+    'image' => LucideIcons.image,
+    'link' => LucideIcons.link,
+    'files' => LucideIcons.file,
+    'short' => LucideIcons.type,
+    'rich' => LucideIcons.baseline,
+    _ => looksLikeCode(item) ? LucideIcons.code : LucideIcons.alignLeft,
+  };
+}
+
+bool looksLikeCode(ClipboardItem item) {
+  final s = item.content;
+  if (!s.contains('\n')) return false;
+  return s.contains('{') ||
+      s.contains('=>') ||
+      s.contains('function ') ||
+      s.contains('import ') ||
+      s.contains('def ') ||
+      s.contains('class ');
+}
+
 class HistoryItem extends StatefulWidget {
   const HistoryItem({
     super.key,
@@ -26,468 +41,738 @@ class HistoryItem extends StatefulWidget {
     required this.onShowDetails,
     required this.onCopy,
     required this.onDelete,
+    this.expanded = false,
+    this.compact = false,
+    this.query = '',
+    this.onPeekChange,
   });
 
   final ClipboardItem item;
-
-  /// 1-based display index (1-9 quick-paste hint); rows past 9 show no badge.
   final int index;
   final bool selected;
+  final bool expanded;
+  final bool compact;
+  final String query;
   final VoidCallback onTap;
   final VoidCallback onDoubleTap;
   final VoidCallback onShowDetails;
   final VoidCallback onCopy;
   final VoidCallback onDelete;
+  final ValueChanged<bool>? onPeekChange;
 
   @override
   State<HistoryItem> createState() => _HistoryItemState();
 }
 
-class _HistoryItemState extends State<HistoryItem>
-    with SingleTickerProviderStateMixin {
+class _HistoryItemState extends State<HistoryItem> {
   bool _hovered = false;
-  late final AnimationController _selectionBounce;
-  late final Animation<double> _selectionScale;
+  final OverlayPortalController _peek = OverlayPortalController();
+  final LayerLink _link = LayerLink();
+  Timer? _peekTimer;
 
-  @override
-  void initState() {
-    super.initState();
-    _selectionBounce = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 260),
-    );
-    _selectionScale = TweenSequence<double>([
-      TweenSequenceItem(
-        tween: Tween<double>(
-          begin: 1,
-          end: 1.014,
-        ).chain(CurveTween(curve: Curves.easeOutCubic)),
-        weight: 42,
-      ),
-      TweenSequenceItem(
-        tween: Tween<double>(
-          begin: 1.014,
-          end: 0.997,
-        ).chain(CurveTween(curve: Curves.easeInOutCubic)),
-        weight: 30,
-      ),
-      TweenSequenceItem(
-        tween: Tween<double>(
-          begin: 0.997,
-          end: 1,
-        ).chain(CurveTween(curve: Curves.easeOutCubic)),
-        weight: 28,
-      ),
-    ]).animate(_selectionBounce);
-  }
+  bool get _active => _hovered || widget.selected;
+  bool get _isImage => widget.item.contentType == 'image';
 
   @override
   void didUpdateWidget(covariant HistoryItem oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.selected && !oldWidget.selected) {
-      unawaited(_selectionBounce.forward(from: 0));
-    } else if (!widget.selected && oldWidget.selected) {
-      _selectionBounce
-        ..stop()
-        ..value = 0;
-    }
+    if (widget.expanded && _peek.isShowing) _hidePeek();
   }
 
   @override
   void dispose() {
-    _selectionBounce.dispose();
+    _peekTimer?.cancel();
     super.dispose();
   }
 
-  ClipType get _type => ClipType.of(widget.item.contentType) ?? ClipType.all;
+  void _schedulePeek() {
+    if (!_isImage || widget.expanded) return;
+    _peekTimer?.cancel();
+    _peekTimer = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted || widget.expanded || !_hovered) return;
+      _peek.show();
+      widget.onPeekChange?.call(true);
+    });
+  }
 
-  Color get _rowBg {
-    if (widget.selected) return CliphistColors.selected;
-    if (_hovered) return CliphistColors.hover;
-    return CliphistColors.surface;
+  void _hidePeek() {
+    _peekTimer?.cancel();
+    if (_peek.isShowing) _peek.hide();
+    widget.onPeekChange?.call(false);
   }
 
   @override
   Widget build(BuildContext context) {
+    final c = context.c;
+    final compact = widget.compact;
+    final gap = compact ? 8.0 : 10.0;
     final item = widget.item;
-    final isImage = item.contentType == 'image';
-    return AnimatedBuilder(
-      animation: _selectionScale,
-      builder: (context, child) {
-        final scale = _selectionScale.value;
-        // A Transform layer even at 1.0 is rasterized through the compositor
-        // and is what made every history row's glyphs look slightly soft.
-        if ((scale - 1).abs() < 0.0005) return child!;
-        return Transform.scale(
-          key: ValueKey('history-item-motion-${item.id}'),
-          scale: scale,
-          alignment: Alignment.center,
-          child: child,
-        );
+
+    final row = MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) {
+        setState(() => _hovered = true);
+        _schedulePeek();
       },
-      child: Semantics(
-        selected: widget.selected,
-        button: true,
-        onTap: widget.onTap,
-        child: MouseRegion(
-          cursor: SystemMouseCursors.click,
-          onEnter: (_) => setState(() => _hovered = true),
-          onExit: (_) => setState(() => _hovered = false),
-          child: Listener(
-            // Select immediately on pointer down. Waiting for GestureDetector's
-            // double-tap arbitration made row selection feel sluggish.
-            onPointerDown: (_) => widget.onTap(),
-            child: GestureDetector(
-              key: ValueKey('history-item-tap-${item.id}'),
-              onDoubleTap: widget.onDoubleTap,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                curve: Curves.easeOutCubic,
-                margin: const EdgeInsets.only(bottom: 6),
-                decoration: BoxDecoration(
-                  color: _rowBg,
-                  borderRadius: BorderRadius.circular(CliphistColors.radiusLg),
-                  border: Border.all(
-                    color: widget.selected
-                        ? CliphistColors.accent.withValues(alpha: 0.42)
-                        : CliphistColors.borderSubtle,
+      onExit: (_) {
+        setState(() => _hovered = false);
+        _hidePeek();
+      },
+      child: Listener(
+        onPointerDown: (_) => widget.onTap(),
+        child: GestureDetector(
+          key: ValueKey('history-item-tap-${item.id}'),
+          onDoubleTap: widget.onDoubleTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            constraints: BoxConstraints(
+              minHeight: compact ? Sizes.rowCompact : Sizes.row,
+            ),
+            decoration: BoxDecoration(
+              color: widget.selected
+                  ? c.rowSel
+                  : _hovered
+                  ? c.hover
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: widget.selected ? c.rowSelBorder : Colors.transparent,
+              ),
+            ),
+            child: Stack(
+              alignment: Alignment.centerRight,
+              children: [
+                Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: compact ? 4 : 6,
                   ),
-                  boxShadow: widget.selected
-                      ? [
-                          BoxShadow(
-                            color: CliphistColors.accent.withValues(
-                              alpha: 0.10,
-                            ),
-                            blurRadius: 12,
-                            offset: const Offset(0, 3),
-                          ),
-                        ]
-                      : null,
-                ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    // Keep the rail in the layout while animating its color and
-                    // height so selection never shifts the row contents.
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      curve: Curves.easeOutCubic,
-                      width: 3,
-                      height: widget.selected ? 36 : 18,
-                      decoration: BoxDecoration(
-                        color: widget.selected
-                            ? CliphistColors.accent
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                    const SizedBox(width: 9),
-                    _Index(index: widget.index, selected: widget.selected),
-                    const SizedBox(width: 10),
-                    if (isImage) ...[
-                      _ImagePreview(id: item.id),
-                      const SizedBox(width: 12),
-                    ] else
-                      _TypeBadge(type: _type),
-                    const SizedBox(width: 10),
-                    Expanded(child: _body(item, isImage)),
-                    SizedBox(
-                      width: 81,
-                      child: AnimatedOpacity(
-                        opacity: _hovered || widget.selected ? 1 : 0,
-                        duration: const Duration(milliseconds: 120),
-                        child: IgnorePointer(
-                          ignoring: !_hovered && !widget.selected,
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              _IconBtn(
-                                buttonKey: ValueKey(
-                                  'history-item-details-${item.id}',
-                                ),
-                                icon: Icons.open_in_full_rounded,
-                                tooltip: '查看完整内容',
-                                onTap: widget.onShowDetails,
-                              ),
-                              _IconBtn(
-                                icon: Icons.content_copy,
-                                tooltip: '复制',
-                                onTap: widget.onCopy,
-                              ),
-                              _IconBtn(
-                                icon: Icons.delete_outline,
-                                tooltip: '删除',
-                                onTap: widget.onDelete,
-                              ),
-                            ],
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: Center(
+                          child: _IndexBadge(
+                            index: widget.index,
+                            selected: widget.selected,
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                      SizedBox(width: gap),
+                      _Lead(
+                        icon: typeIconOf(item),
+                        compact: compact,
+                        active: _active,
+                      ),
+                      SizedBox(width: gap),
+                      Expanded(
+                        child: _Texts(
+                          item: item,
+                          query: widget.query,
+                          showMeta: !compact,
+                        ),
+                      ),
+                      SizedBox(
+                        width: Sizes.timeCol,
+                        child: Opacity(
+                          opacity: _active ? 0 : 1,
+                          child: Text(
+                            relativeTime(item.timestamp),
+                            textAlign: TextAlign.right,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            softWrap: false,
+                            style: TextStyle(
+                              fontSize: 11,
+                              height: 18 / 11,
+                              color: c.text3,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+                if (_active)
+                  Positioned(
+                    right: 8,
+                    child: _ItemActions(
+                      id: item.id,
+                      expanded: widget.expanded,
+                      onExpand: widget.onShowDetails,
+                      onCopy: widget.onCopy,
+                      onDelete: widget.onDelete,
+                    ),
+                  ),
+              ],
             ),
           ),
         ),
       ),
     );
-  }
 
-  Widget _body(ClipboardItem item, bool isImage) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _preview(item),
-        const SizedBox(height: 3),
-        Text(
-          _meta(item),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: CliphistColors.textMuted,
-            fontSize: 11,
-            height: 1.25,
-            fontFeatures: [FontFeature.tabularFigures()],
+        CompositedTransformTarget(
+          link: _link,
+          child: OverlayPortal(
+            controller: _peek,
+            overlayChildBuilder: (_) =>
+                _ImagePeekOverlay(link: _link, item: item),
+            child: row,
           ),
         ),
+        if (widget.expanded) _ExpandBody(item: item),
       ],
     );
   }
-
-  Widget _preview(ClipboardItem item) {
-    if (item.contentType == 'rich' && item.htmlContent != null) {
-      // HTML is sanitized at add-time in Rust (ammonia); the Dart widget is a
-      // second line of defense. Constrain height so the row stays compact.
-      return ClipRect(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 72),
-          child: HtmlWidget(
-            item.htmlContent!,
-            textStyle: const TextStyle(
-              color: CliphistColors.textPrimary,
-              fontSize: 13,
-              height: 1.35,
-            ),
-            renderMode: RenderMode.column,
-          ),
-        ),
-      );
-    }
-    final preview = item.preview.isNotEmpty ? item.preview : item.content;
-    return Text(
-      preview,
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
-      style: TextStyle(
-        color: CliphistColors.textPrimary,
-        fontSize: 13,
-        height: 1.35,
-        fontFamily: item.contentType == 'files' || preview.contains('\n')
-            ? 'monospace'
-            : null,
-      ),
-    );
-  }
-
-  String _meta(ClipboardItem item) {
-    final time = item.timestamp;
-    if (item.contentType == 'image') {
-      final w = item.imageWidth ?? 0;
-      final h = item.imageHeight ?? 0;
-      final dim = w > 0 && h > 0 ? '$w × $h px' : '图片';
-      return '$time · $dim';
-    }
-    if (item.contentType == 'files') {
-      final count = item.filePaths?.length ?? item.charCount.toInt();
-      return '$time · $count 个文件';
-    }
-    final count = item.charCount.toInt();
-    return '$time · $count 字符';
-  }
 }
 
-class _Index extends StatelessWidget {
-  const _Index({required this.index, required this.selected});
+class _IndexBadge extends StatelessWidget {
+  const _IndexBadge({required this.index, required this.selected});
   final int index;
   final bool selected;
 
   @override
   Widget build(BuildContext context) {
-    if (index < 1 || index > 9) return const SizedBox(width: 24);
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 150),
-      curve: Curves.easeOutCubic,
-      width: 24,
-      height: 24,
+    final c = context.c;
+    if (index < 1) return const SizedBox.shrink();
+    if (index > 9) {
+      return Container(
+        width: 4,
+        height: 4,
+        decoration: BoxDecoration(color: c.text4, shape: BoxShape.circle),
+      );
+    }
+    return Container(
+      width: 18,
+      height: 18,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: selected ? CliphistColors.accent : CliphistColors.surface,
-        borderRadius: BorderRadius.circular(7),
-        border: Border.all(
-          color: selected ? CliphistColors.accent : CliphistColors.border,
-        ),
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: selected ? c.borderStrong : c.border),
       ),
       child: Text(
         '$index',
-        textAlign: TextAlign.center,
         style: TextStyle(
-          color: selected ? Colors.white : CliphistColors.textSecondary,
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          height: 1.2,
-          fontFeatures: [FontFeature.tabularFigures()],
+          fontSize: 10.5,
+          height: 1.1,
+          fontWeight: FontWeight.w500,
+          color: selected ? c.text2 : c.text3,
+          fontFeatures: const [FontFeature.tabularFigures()],
         ),
       ),
     );
   }
 }
 
-class _TypeBadge extends StatelessWidget {
-  const _TypeBadge({required this.type});
-  final ClipType type;
-
-  IconData get _icon => switch (type.key) {
-    'link' => Icons.link_rounded,
-    'rich' => Icons.format_color_text_rounded,
-    'files' => Icons.folder_copy_outlined,
-    'short' => Icons.short_text_rounded,
-    _ => Icons.notes_rounded,
-  };
+class _Lead extends StatelessWidget {
+  const _Lead({
+    required this.icon,
+    required this.compact,
+    required this.active,
+  });
+  final IconData icon;
+  final bool compact;
+  final bool active;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 30,
-      height: 30,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: type.color.withValues(alpha: 0.09),
-        borderRadius: BorderRadius.circular(9),
-        border: Border.all(color: type.color.withValues(alpha: 0.18)),
-      ),
-      child: Icon(_icon, size: 16, color: type.color),
-    );
-  }
-}
-
-class _ImagePreview extends StatefulWidget {
-  const _ImagePreview({required this.id});
-  final BigInt id;
-
-  @override
-  State<_ImagePreview> createState() => _ImagePreviewState();
-}
-
-class _ImagePreviewState extends State<_ImagePreview> {
-  Uint8List? _bytes;
-  bool _loaded = false;
-  bool _failed = false;
-
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_load());
-  }
-
-  Future<void> _load() async {
-    try {
-      final b = await getImageData(widget.id);
-      if (!mounted) return;
-      if (b != null) {
-        setState(() {
-          _bytes = b;
-          _loaded = true;
-        });
-      } else {
-        setState(() => _failed = true);
-      }
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _failed = true);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_failed) {
-      return Container(
-        width: 64,
-        height: 64,
+    final c = context.c;
+    final size = compact
+        ? const Size(Sizes.leadCompactW, Sizes.leadCompactH)
+        : const Size(Sizes.leadW, Sizes.leadH);
+    return SizedBox.fromSize(
+      size: size,
+      child: DecoratedBox(
         decoration: BoxDecoration(
-          color: CliphistColors.surfaceSubtle,
-          borderRadius: BorderRadius.circular(CliphistColors.radius),
+          color: c.leadBg,
+          borderRadius: BorderRadius.circular(compact ? 4 : 6),
+          border: Border.all(color: c.leadBorder),
         ),
-        child: const Icon(
-          Icons.broken_image_outlined,
-          size: 20,
-          color: CliphistColors.textMuted,
-        ),
-      );
-    }
-    if (!_loaded) {
-      return Container(
-        width: 64,
-        height: 64,
-        decoration: BoxDecoration(
-          color: CliphistColors.surfaceSubtle,
-          borderRadius: BorderRadius.circular(CliphistColors.radius),
-        ),
-        child: const Center(
-          child: SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: CliphistColors.textMuted,
-            ),
+        child: Center(
+          child: TweenAnimationBuilder<Color?>(
+            tween: ColorTween(end: active ? c.accent : c.text2),
+            duration: const Duration(milliseconds: 120),
+            builder: (_, color, _) =>
+                Icon(icon, size: compact ? 14 : 16, color: color),
           ),
         ),
-      );
-    }
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(CliphistColors.radius),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 72, maxWidth: 96),
-        child: Image.memory(_bytes!, fit: BoxFit.contain),
       ),
     );
   }
 }
 
-class _IconBtn extends StatelessWidget {
-  const _IconBtn({
+class _Texts extends StatelessWidget {
+  const _Texts({
+    required this.item,
+    required this.query,
+    required this.showMeta,
+  });
+  final ClipboardItem item;
+  final String query;
+  final bool showMeta;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.c;
+    final preview = item.preview.isNotEmpty ? item.preview : item.content;
+    final mono =
+        item.contentType == 'link' ||
+        item.contentType == 'files' ||
+        looksLikeCode(item);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text.rich(
+          highlightSpans(
+            preview.replaceAll('\n', ' '),
+            query,
+            TextStyle(
+              fontSize: mono ? 12 : 13,
+              height: 18 / (mono ? 12 : 13),
+              color: c.text,
+              fontFamily: mono ? monoFamily : null,
+              fontFamilyFallback: mono ? monoFallback : null,
+            ),
+            c.warn.withValues(alpha: 0.35),
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        if (showMeta) ...[
+          const SizedBox(height: 1),
+          Text.rich(
+            TextSpan(
+              style: TextStyle(
+                fontSize: 11,
+                height: 15 / 11,
+                color: c.text3,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+              children: _metaSpans(item, c),
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+List<InlineSpan> _metaSpans(ClipboardItem item, AppColors c) {
+  final type = ClipType.of(item.contentType)?.label ?? '文本';
+  final parts = <String>[type];
+  if (item.contentType == 'image') {
+    final w = item.imageWidth ?? 0;
+    final h = item.imageHeight ?? 0;
+    if (w > 0 && h > 0) parts.add('$w × $h px');
+  } else if (item.contentType == 'files') {
+    final n = item.filePaths?.length ?? item.charCount.toInt();
+    parts.add('$n 个文件');
+  } else if (item.contentType == 'link') {
+    try {
+      parts.add(Uri.parse(item.content).host);
+    } catch (_) {}
+  } else {
+    parts.add('${item.charCount.toInt()} 字');
+  }
+  final spans = <InlineSpan>[];
+  for (var i = 0; i < parts.length; i++) {
+    if (i > 0) {
+      spans.add(
+        TextSpan(
+          text: ' · ',
+          style: TextStyle(color: c.text4),
+        ),
+      );
+    }
+    spans.add(TextSpan(text: parts[i]));
+  }
+  return spans;
+}
+
+TextSpan highlightSpans(
+  String text,
+  String query,
+  TextStyle style,
+  Color mark,
+) {
+  if (query.isEmpty) return TextSpan(text: text, style: style);
+  final lower = text.toLowerCase();
+  final q = query.toLowerCase();
+  final children = <InlineSpan>[];
+  var start = 0;
+  while (true) {
+    final i = lower.indexOf(q, start);
+    if (i < 0) {
+      if (start < text.length) {
+        children.add(TextSpan(text: text.substring(start), style: style));
+      }
+      break;
+    }
+    if (i > start) {
+      children.add(TextSpan(text: text.substring(start, i), style: style));
+    }
+    children.add(
+      TextSpan(
+        text: text.substring(i, i + q.length),
+        style: style.copyWith(backgroundColor: mark),
+      ),
+    );
+    start = i + q.length;
+  }
+  return TextSpan(children: children, style: style);
+}
+
+class _ItemActions extends StatelessWidget {
+  const _ItemActions({
+    required this.id,
+    required this.expanded,
+    required this.onExpand,
+    required this.onCopy,
+    required this.onDelete,
+  });
+  final BigInt id;
+  final bool expanded;
+  final VoidCallback onExpand;
+  final VoidCallback onCopy;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.c;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children:
+          [
+                _ActionBtn(
+                  buttonKey: ValueKey('history-item-details-$id'),
+                  icon: expanded
+                      ? LucideIcons.chevronUp
+                      : LucideIcons.chevronDown,
+                  tooltip: '展开 (Space)',
+                  onTap: onExpand,
+                ),
+                _ActionBtn(
+                  icon: LucideIcons.copy,
+                  tooltip: '复制 (Enter)',
+                  onTap: onCopy,
+                ),
+                _ActionBtn(
+                  icon: LucideIcons.trash2,
+                  tooltip: '删除 (Del)',
+                  danger: true,
+                  onTap: onDelete,
+                ),
+              ]
+              .map(
+                (w) => Container(
+                  margin: const EdgeInsets.only(left: 2),
+                  decoration: BoxDecoration(
+                    color: c.bg,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: c.border),
+                  ),
+                  child: w,
+                ),
+              )
+              .toList(),
+    );
+  }
+}
+
+class _ActionBtn extends StatefulWidget {
+  const _ActionBtn({
     this.buttonKey,
     required this.icon,
     required this.tooltip,
     required this.onTap,
+    this.danger = false,
   });
-
   final Key? buttonKey;
   final IconData icon;
   final String tooltip;
   final VoidCallback onTap;
+  final bool danger;
+
+  @override
+  State<_ActionBtn> createState() => _ActionBtnState();
+}
+
+class _ActionBtnState extends State<_ActionBtn> {
+  bool _hover = false;
 
   @override
   Widget build(BuildContext context) {
+    final c = context.c;
+    final fg = widget.danger && _hover
+        ? c.danger
+        : _hover
+        ? c.text
+        : c.text2;
     return Tooltip(
-      message: tooltip,
-      child: Material(
-        key: buttonKey,
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(CliphistColors.radiusSm),
-          hoverColor: CliphistColors.hover,
-          onTap: onTap,
+      message: widget.tooltip,
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() => _hover = false),
+        child: GestureDetector(
+          key: widget.buttonKey,
+          onTap: widget.onTap,
           child: SizedBox(
             width: 26,
             height: 26,
-            child: Icon(icon, size: 15, color: CliphistColors.textSecondary),
+            child: Icon(widget.icon, size: 14, color: fg),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ExpandBody extends StatelessWidget {
+  const _ExpandBody({required this.item});
+  final ClipboardItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.c;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(37, 2, 9, 6),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: c.bgSub,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: c.border),
+        ),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 220),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: item.contentType == 'image'
+                ? _ExpandImage(item: item, dark: dark)
+                : SelectionArea(
+                    child: Text(
+                      item.contentType == 'files'
+                          ? (item.filePaths?.join('\n') ?? item.content)
+                          : item.content,
+                      key: ValueKey('history-item-full-content-${item.id}'),
+                      style: TextStyle(
+                        fontSize:
+                            item.contentType == 'link' || looksLikeCode(item)
+                            ? 12
+                            : 12.5,
+                        height: 1.6,
+                        color: c.text,
+                        fontFamily:
+                            item.contentType == 'files' ||
+                                looksLikeCode(item) ||
+                                item.contentType == 'link'
+                            ? monoFamily
+                            : null,
+                        fontFamilyFallback: monoFallback,
+                      ),
+                    ),
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ExpandImage extends StatelessWidget {
+  const _ExpandImage({required this.item, required this.dark});
+  final ClipboardItem item;
+  final bool dark;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.c;
+    final w = item.imageWidth ?? 0;
+    final h = item.imageHeight ?? 0;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        FutureBuilder<Uint8List?>(
+          future: getImageData(item.id),
+          builder: (context, snap) {
+            final bytes = snap.data;
+            if (bytes == null) {
+              return const SizedBox(
+                height: 80,
+                child: Center(
+                  child: SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              );
+            }
+            Widget img = ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 150),
+                child: Image.memory(bytes, fit: BoxFit.contain),
+              ),
+            );
+            if (dark) {
+              img = ColorFiltered(
+                colorFilter: const ColorFilter.mode(
+                  Color(0x24000000),
+                  BlendMode.srcATop,
+                ),
+                child: img,
+              );
+            }
+            return DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border.all(color: c.imgHairline),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: img,
+            );
+          },
+        ),
+        const SizedBox(height: 6),
+        Text(
+          [
+            if (w > 0 && h > 0) '$w × $h px',
+            relativeTime(item.timestamp),
+          ].join(' · '),
+          style: TextStyle(fontSize: 11, color: c.text3),
+        ),
+      ],
+    );
+  }
+}
+
+class _ImagePeekOverlay extends StatelessWidget {
+  const _ImagePeekOverlay({required this.link, required this.item});
+  final LayerLink link;
+  final ClipboardItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.c;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return CompositedTransformFollower(
+      link: link,
+      showWhenUnlinked: false,
+      targetAnchor: Alignment.bottomLeft,
+      followerAnchor: Alignment.topLeft,
+      offset: const Offset(37, 4),
+      child: IgnorePointer(
+        child: TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0, end: 1),
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOut,
+          builder: (_, t, child) => Opacity(
+            opacity: t,
+            child: Transform.translate(
+              offset: Offset(0, -4 * (1 - t)),
+              child: Transform.scale(
+                scale: 0.98 + 0.02 * t,
+                alignment: Alignment.topLeft,
+                child: child,
+              ),
+            ),
+          ),
+          child: Material(
+            color: c.bg,
+            elevation: 12,
+            shadowColor: Colors.black38,
+            borderRadius: BorderRadius.circular(10),
+            child: Padding(
+              padding: const EdgeInsets.all(6),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 220),
+                child: FutureBuilder<Uint8List?>(
+                  future: getImageData(item.id),
+                  builder: (context, snap) {
+                    final bytes = snap.data;
+                    if (bytes == null) {
+                      return const SizedBox(
+                        width: 120,
+                        height: 80,
+                        child: Center(
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      );
+                    }
+                    Widget img = ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxWidth: 220,
+                          maxHeight: 140,
+                        ),
+                        child: Image.memory(
+                          bytes,
+                          fit: BoxFit.contain,
+                          cacheWidth: 440,
+                        ),
+                      ),
+                    );
+                    if (dark) {
+                      img = ColorFiltered(
+                        colorFilter: const ColorFilter.mode(
+                          Color(0x24000000),
+                          BlendMode.srcATop,
+                        ),
+                        child: img,
+                      );
+                    }
+                    final w = item.imageWidth ?? 0;
+                    final h = item.imageHeight ?? 0;
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        img,
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(2, 5, 2, 1),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  item.preview.isNotEmpty ? item.preview : '图片',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: c.text3,
+                                  ),
+                                ),
+                              ),
+                              if (w > 0 && h > 0)
+                                Text(
+                                  '$w × $h',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: c.text3,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
           ),
         ),
       ),

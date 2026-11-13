@@ -23,6 +23,10 @@ pub struct Settings {
     pub window_positioned: bool,
     pub window_adaptive: bool,
     pub acrylic_enabled: bool,
+    /// `system` | `light` | `dark`
+    pub theme_mode: String,
+    /// `standard` | `compact`
+    pub list_density: String,
 }
 
 /// A partial update to [`Settings`]. Every field is optional so the frontend
@@ -47,6 +51,8 @@ pub struct SettingsPatch {
     pub window_positioned: Option<bool>,
     pub window_adaptive: Option<bool>,
     pub acrylic_enabled: Option<bool>,
+    pub theme_mode: Option<String>,
+    pub list_density: Option<String>,
 }
 
 impl Default for Settings {
@@ -68,6 +74,8 @@ impl Default for Settings {
             window_positioned: false,
             window_adaptive: true,
             acrylic_enabled: true,
+            theme_mode: "system".to_string(),
+            list_density: "standard".to_string(),
         }
     }
 }
@@ -133,6 +141,12 @@ pub fn validate_settings(settings: &Settings) -> Result<(), String> {
     if !["", "Ctrl", "Shift", "Alt"].contains(&settings.double_tap_key.as_str()) {
         return Err(format!("无效的双击键: {}", settings.double_tap_key));
     }
+    if !["system", "light", "dark"].contains(&settings.theme_mode.as_str()) {
+        return Err(format!("无效的主题: {}", settings.theme_mode));
+    }
+    if !["standard", "compact"].contains(&settings.list_density.as_str()) {
+        return Err(format!("无效的列表密度: {}", settings.list_density));
+    }
     Ok(())
 }
 
@@ -168,6 +182,12 @@ fn normalize_loaded_settings(mut settings: Settings) -> (Settings, bool) {
     }
     if !["", "Ctrl", "Shift", "Alt"].contains(&settings.double_tap_key.as_str()) {
         settings.double_tap_key = defaults.double_tap_key;
+    }
+    if !["system", "light", "dark"].contains(&settings.theme_mode.as_str()) {
+        settings.theme_mode = defaults.theme_mode;
+    }
+    if !["standard", "compact"].contains(&settings.list_density.as_str()) {
+        settings.list_density = defaults.list_density;
     }
     (settings, true)
 }
@@ -215,6 +235,8 @@ mod tests {
         assert!(!settings.window_positioned);
         assert!(settings.window_adaptive);
         assert!(settings.acrylic_enabled);
+        assert_eq!(settings.theme_mode, "system");
+        assert_eq!(settings.list_density, "standard");
     }
 
     #[test]
