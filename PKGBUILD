@@ -6,7 +6,7 @@
 # next to it (the polkit policy authorizes exactly that path).
 
 pkgname=my-cliphist
-pkgver=2.1.2
+pkgver=2.2.0
 pkgrel=1
 pkgdesc="Wayland clipboard history manager with per-item paste injection (Flutter + Rust core)"
 arch=('x86_64')
