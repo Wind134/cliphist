@@ -171,6 +171,8 @@ class AppColors extends ThemeExtension<AppColors> {
 
 extension AppColorsX on BuildContext {
   AppColors get c => Theme.of(this).extension<AppColors>()!;
+  double get textScale => MediaQuery.textScalerOf(this).scale(1);
+  double sp(double px) => px * textScale;
 }
 
 /// Back-compat aliases used by a few tests and older call sites.
