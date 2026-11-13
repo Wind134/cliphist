@@ -222,7 +222,7 @@ void main() {
     );
 
     await tester.tap(find.byKey(const ValueKey('history-item-tap-42')));
-    await tester.pump();
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('history-item-details-42')));
     await tester.pumpAndSettle();
 

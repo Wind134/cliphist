@@ -473,6 +473,7 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
                                 expanded: _expandedId == item.id,
                                 compact: compact,
                                 query: query,
+                                showDivider: i > 0,
                                 onTap: () => _selectIndex(idx),
                                 onDoubleTap: () =>
                                     _copyItem(item, hideAfter: true),
@@ -527,7 +528,7 @@ class _GroupHeaderDelegate extends SliverPersistentHeaderDelegate {
     return Container(
       color: Theme.of(context).scaffoldBackgroundColor,
       alignment: Alignment.centerLeft,
-      padding: const EdgeInsets.fromLTRB(9, 10, 9, 4),
+      padding: const EdgeInsets.fromLTRB(9, 12, 9, 6),
       child: Text(
         label,
         style: TextStyle(
