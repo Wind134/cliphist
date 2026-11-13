@@ -64,6 +64,12 @@ pub fn update_settings(patch: SettingsPatch) -> Result<Settings, String> {
     if let Some(v) = patch.acrylic_enabled {
         next.acrylic_enabled = v;
     }
+    if let Some(v) = patch.theme_mode {
+        next.theme_mode = v;
+    }
+    if let Some(v) = patch.list_density {
+        next.list_density = v;
+    }
 
     if let Some(v) = patch.hotkey {
         next.hotkey = v;

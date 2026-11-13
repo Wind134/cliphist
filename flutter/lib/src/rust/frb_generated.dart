@@ -830,8 +830,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Settings dco_decode_settings(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 16)
-      throw Exception('unexpected arr length: expect 16 but see ${arr.length}');
+    if (arr.length != 18)
+      throw Exception('unexpected arr length: expect 18 but see ${arr.length}');
     return Settings(
       closeToTray: dco_decode_bool(arr[0]),
       zoomLevel: dco_decode_f_32(arr[1]),
@@ -849,6 +849,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       windowPositioned: dco_decode_bool(arr[13]),
       windowAdaptive: dco_decode_bool(arr[14]),
       acrylicEnabled: dco_decode_bool(arr[15]),
+      themeMode: dco_decode_String(arr[16]),
+      listDensity: dco_decode_String(arr[17]),
     );
   }
 
@@ -856,8 +858,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   SettingsPatch dco_decode_settings_patch(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 16)
-      throw Exception('unexpected arr length: expect 16 but see ${arr.length}');
+    if (arr.length != 18)
+      throw Exception('unexpected arr length: expect 18 but see ${arr.length}');
     return SettingsPatch(
       closeToTray: dco_decode_opt_box_autoadd_bool(arr[0]),
       zoomLevel: dco_decode_opt_box_autoadd_f_32(arr[1]),
@@ -875,6 +877,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       windowPositioned: dco_decode_opt_box_autoadd_bool(arr[13]),
       windowAdaptive: dco_decode_opt_box_autoadd_bool(arr[14]),
       acrylicEnabled: dco_decode_opt_box_autoadd_bool(arr[15]),
+      themeMode: dco_decode_opt_String(arr[16]),
+      listDensity: dco_decode_opt_String(arr[17]),
     );
   }
 
@@ -1161,6 +1165,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_windowPositioned = sse_decode_bool(deserializer);
     var var_windowAdaptive = sse_decode_bool(deserializer);
     var var_acrylicEnabled = sse_decode_bool(deserializer);
+    var var_themeMode = sse_decode_String(deserializer);
+    var var_listDensity = sse_decode_String(deserializer);
     return Settings(
       closeToTray: var_closeToTray,
       zoomLevel: var_zoomLevel,
@@ -1178,6 +1184,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       windowPositioned: var_windowPositioned,
       windowAdaptive: var_windowAdaptive,
       acrylicEnabled: var_acrylicEnabled,
+      themeMode: var_themeMode,
+      listDensity: var_listDensity,
     );
   }
 
@@ -1200,6 +1208,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_windowPositioned = sse_decode_opt_box_autoadd_bool(deserializer);
     var var_windowAdaptive = sse_decode_opt_box_autoadd_bool(deserializer);
     var var_acrylicEnabled = sse_decode_opt_box_autoadd_bool(deserializer);
+    var var_themeMode = sse_decode_opt_String(deserializer);
+    var var_listDensity = sse_decode_opt_String(deserializer);
     return SettingsPatch(
       closeToTray: var_closeToTray,
       zoomLevel: var_zoomLevel,
@@ -1217,6 +1227,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       windowPositioned: var_windowPositioned,
       windowAdaptive: var_windowAdaptive,
       acrylicEnabled: var_acrylicEnabled,
+      themeMode: var_themeMode,
+      listDensity: var_listDensity,
     );
   }
 
@@ -1516,6 +1528,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.windowPositioned, serializer);
     sse_encode_bool(self.windowAdaptive, serializer);
     sse_encode_bool(self.acrylicEnabled, serializer);
+    sse_encode_String(self.themeMode, serializer);
+    sse_encode_String(self.listDensity, serializer);
   }
 
   @protected
@@ -1537,6 +1551,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_box_autoadd_bool(self.windowPositioned, serializer);
     sse_encode_opt_box_autoadd_bool(self.windowAdaptive, serializer);
     sse_encode_opt_box_autoadd_bool(self.acrylicEnabled, serializer);
+    sse_encode_opt_String(self.themeMode, serializer);
+    sse_encode_opt_String(self.listDensity, serializer);
   }
 
   @protected

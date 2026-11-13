@@ -24,6 +24,12 @@ class Settings {
   final bool windowAdaptive;
   final bool acrylicEnabled;
 
+  /// `system` | `light` | `dark`
+  final String themeMode;
+
+  /// `standard` | `compact`
+  final String listDensity;
+
   const Settings({
     required this.closeToTray,
     required this.zoomLevel,
@@ -41,6 +47,8 @@ class Settings {
     required this.windowPositioned,
     required this.windowAdaptive,
     required this.acrylicEnabled,
+    required this.themeMode,
+    required this.listDensity,
   });
 
   @override
@@ -60,7 +68,9 @@ class Settings {
       windowY.hashCode ^
       windowPositioned.hashCode ^
       windowAdaptive.hashCode ^
-      acrylicEnabled.hashCode;
+      acrylicEnabled.hashCode ^
+      themeMode.hashCode ^
+      listDensity.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -82,7 +92,9 @@ class Settings {
           windowY == other.windowY &&
           windowPositioned == other.windowPositioned &&
           windowAdaptive == other.windowAdaptive &&
-          acrylicEnabled == other.acrylicEnabled;
+          acrylicEnabled == other.acrylicEnabled &&
+          themeMode == other.themeMode &&
+          listDensity == other.listDensity;
 }
 
 /// A partial update to [`Settings`]. Every field is optional so the frontend
@@ -106,6 +118,8 @@ class SettingsPatch {
   final bool? windowPositioned;
   final bool? windowAdaptive;
   final bool? acrylicEnabled;
+  final String? themeMode;
+  final String? listDensity;
 
   const SettingsPatch({
     this.closeToTray,
@@ -124,6 +138,8 @@ class SettingsPatch {
     this.windowPositioned,
     this.windowAdaptive,
     this.acrylicEnabled,
+    this.themeMode,
+    this.listDensity,
   });
 
   @override
@@ -143,7 +159,9 @@ class SettingsPatch {
       windowY.hashCode ^
       windowPositioned.hashCode ^
       windowAdaptive.hashCode ^
-      acrylicEnabled.hashCode;
+      acrylicEnabled.hashCode ^
+      themeMode.hashCode ^
+      listDensity.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -165,5 +183,7 @@ class SettingsPatch {
           windowY == other.windowY &&
           windowPositioned == other.windowPositioned &&
           windowAdaptive == other.windowAdaptive &&
-          acrylicEnabled == other.acrylicEnabled;
+          acrylicEnabled == other.acrylicEnabled &&
+          themeMode == other.themeMode &&
+          listDensity == other.listDensity;
 }
