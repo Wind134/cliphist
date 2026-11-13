@@ -11,10 +11,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 List<ClipboardItem> getHistory() =>
     RustLib.instance.api.crateApiHistoryGetHistory();
 
-/// Move an existing history item to the front (most-recently-used first) and
-/// persist the new order. Triggered by the frontend's number-key quick-paste
-/// (1-9) so the just-used entry floats to the top. Other copy actions
-/// (double-click, copy button, Enter) intentionally do NOT reorder.
+/// Move an existing history item to the front (most-recently-used first),
+/// stamp it as now, and persist. Every paste/copy from history is LRU.
 Future<void> moveToTop({required BigInt id}) =>
     RustLib.instance.api.crateApiHistoryMoveToTop(id: id);
 
