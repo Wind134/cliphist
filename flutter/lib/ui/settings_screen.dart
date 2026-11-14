@@ -362,7 +362,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   SettingRow(
                     title: '主题',
                     subtitle: '跟随系统或手动指定',
-                    tag: '新增',
                     trailing: Segmented(
                       value: s.themeMode,
                       items: const [
@@ -407,7 +406,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   SettingRow(
                     title: '列表密度',
                     subtitle: '标准 46px / 紧凑 34px',
-                    tag: '新增',
                     trailing: Segmented(
                       value: s.listDensity,
                       items: const [('standard', '标准'), ('compact', '紧凑')],
