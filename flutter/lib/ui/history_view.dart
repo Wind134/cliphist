@@ -19,12 +19,15 @@ import 'category_tabs.dart';
 import 'chrome.dart';
 import 'history_item.dart';
 import 'kbd.dart';
+import 'preview_overlay.dart';
 import 'status_bar.dart';
 import 'theme.dart';
 
 /// Full history screen. Keyboard:
 ///  - Search focused: ↑/↓ select, Enter copies, Esc clears then blurs.
-///  - List focused: 1–9 quick-paste, Space expands, Del deletes.
+///  - List focused: 1–9 quick-paste, Space previews, Del deletes.
+///  - Preview open: Esc / Space close, ←/→ switch items, Enter copies; list
+///    shortcuts (Del, 1–9, /) are swallowed so they never act behind it.
 class HistoryView extends ConsumerStatefulWidget {
   const HistoryView({super.key, this.onQuickPaste});
 
@@ -41,7 +44,7 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
   final FocusNode _searchFocus = FocusNode(debugLabel: 'history-search');
   bool _quickPastePending = false;
   bool _searchFocused = false;
-  BigInt? _expandedId;
+  BigInt? _previewId;
 
   @override
   void initState() {
@@ -74,18 +77,18 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
   void _onSearchQueryChanged(String q) {
     ref.read(searchQueryProvider.notifier).state = q;
     ref.read(selectedIndexProvider.notifier).state = -1;
-    setState(() => _expandedId = null);
   }
 
   void _onCategoryChanged(String cat) {
     ref.read(currentCategoryProvider.notifier).state = cat;
     ref.read(selectedIndexProvider.notifier).state = -1;
-    setState(() => _expandedId = null);
+    _closePreview();
     _viewFocus.requestFocus();
   }
 
   KeyEventResult _onSearchKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (_previewId != null) return KeyEventResult.ignored;
     final key = event.logicalKey;
     if (key == LogicalKeyboardKey.arrowUp) {
       _moveSelection(-1);
@@ -118,6 +121,7 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
         mods.contains(LogicalKeyboardKey.metaLeft) ||
         mods.contains(LogicalKeyboardKey.metaRight);
 
+    if (_previewId != null) return _onPreviewKey(key, ctrl);
     if (ctrl && key == LogicalKeyboardKey.keyF) {
       _searchFocus.requestFocus();
       _searchCtrl.selection = TextSelection(
@@ -148,7 +152,7 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.space) {
-      _toggleExpandSelected();
+      _previewSelected();
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.delete ||
@@ -234,12 +238,82 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
     unawaited(_copyItem(items[idx], hideAfter: true));
   }
 
-  void _toggleExpandSelected() {
+  /// Keys while the preview layer is open. Ctrl/⌘ chords pass through so
+  /// Ctrl+C / Ctrl+A keep working on a text selection inside the preview.
+  KeyEventResult _onPreviewKey(LogicalKeyboardKey key, bool ctrl) {
+    if (ctrl) return KeyEventResult.ignored;
+    if (key == LogicalKeyboardKey.escape || key == LogicalKeyboardKey.space) {
+      _closePreview();
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowLeft) {
+      _stepPreview(-1);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowRight) {
+      _stepPreview(1);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter) {
+      _copyPreviewed();
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.delete ||
+        key == LogicalKeyboardKey.backspace ||
+        key == LogicalKeyboardKey.slash ||
+        key == LogicalKeyboardKey.tab ||
+        quickPasteIndexForKey(key) != null) {
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  void _previewSelected() {
     final items = _filtered;
     final idx = ref.read(selectedIndexProvider);
     if (idx < 0 || idx >= items.length) return;
-    final id = items[idx].id;
-    setState(() => _expandedId = _expandedId == id ? null : id);
+    _openPreview(items[idx]);
+  }
+
+  void _openPreview(ClipboardItem item) {
+    final idx = _filtered.indexWhere((i) => i.id == item.id);
+    if (idx >= 0) _selectIndex(idx);
+    _viewFocus.requestFocus();
+    setState(() => _previewId = item.id);
+  }
+
+  void _closePreview() {
+    if (_previewId == null) return;
+    setState(() => _previewId = null);
+    if (mounted && !_viewFocus.hasFocus) _viewFocus.requestFocus();
+  }
+
+  void _stepPreview(int delta) {
+    final items = _filtered;
+    final cur = items.indexWhere((i) => i.id == _previewId);
+    if (cur < 0) return;
+    final next = cur + delta;
+    if (next < 0 || next >= items.length) return;
+    _selectIndex(next);
+    setState(() => _previewId = items[next].id);
+  }
+
+  void _copyPreviewed() {
+    final item = _filtered.where((i) => i.id == _previewId).firstOrNull;
+    if (item == null) return;
+    _closePreview();
+    unawaited(_copyItem(item, hideAfter: true));
+  }
+
+  Future<void> _copySelection(String text) async {
+    if (text.isEmpty) return;
+    try {
+      await Clipboard.setData(ClipboardData(text: text));
+      showToast(_container, '已复制所选');
+    } catch (e) {
+      showToast(_container, '复制失败: $e');
+    }
   }
 
   void _deleteSelected() {
@@ -270,7 +344,7 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
     try {
       await api_history.deleteItem(id: item.id);
       evictImage(item.id);
-      if (_expandedId == item.id) setState(() => _expandedId = null);
+      if (_previewId == item.id) _closePreview();
       ref.read(selectedIndexProvider.notifier).state = -1;
       showToast(_container, '已删除');
     } catch (e) {
@@ -369,7 +443,9 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
   Widget build(BuildContext context) {
     ref.listen<int>(windowWakeGenerationProvider, (_, _) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || ref.read(settingsOpenProvider)) return;
+        if (!mounted) return;
+        _closePreview();
+        if (ref.read(settingsOpenProvider)) return;
         _viewFocus.requestFocus();
       });
     });
@@ -385,126 +461,148 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
     final groups = _groups(filtered);
     final counts = _countsFor(history, query);
     final c = context.c;
+    final previewIdx = _previewId == null
+        ? -1
+        : filtered.indexWhere((i) => i.id == _previewId);
+    if (_previewId != null && previewIdx < 0) {
+      // The previewed item vanished (deleted, filtered out, history replaced).
+      WidgetsBinding.instance.addPostFrameCallback((_) => _closePreview());
+    }
 
     return Focus(
       focusNode: _viewFocus,
       autofocus: true,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Stack(
         children: [
-          AppTitleBar(
-            leading: Row(
-              children: [
-                Flexible(
-                  child: Text(
-                    '剪贴板历史',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 13,
-                      height: 18 / 13,
-                      fontWeight: FontWeight.w600,
-                      color: c.text,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                CountPill(history.length),
-              ],
-            ),
-            actions: [
-              IconBtn(
-                icon: LucideIcons.trash2,
-                tooltip: '清空全部记录',
-                danger: true,
-                onTap: _clearAll,
-              ),
-              IconBtn(
-                key: const ValueKey('open-settings'),
-                icon: LucideIcons.settings,
-                tooltip: isMac ? '设置 (⌘,)' : '设置 (Ctrl+,)',
-                onTap: () =>
-                    ref.read(settingsOpenProvider.notifier).state = true,
-              ),
-            ],
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+          Positioned.fill(
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _SearchField(
-                  controller: _searchCtrl,
-                  focusNode: _searchFocus,
-                  focused: _searchFocused,
-                  value: query,
-                  onChanged: _onSearchQueryChanged,
-                  onClear: () {
-                    _searchCtrl.clear();
-                    _onSearchQueryChanged('');
-                  },
+                AppTitleBar(
+                  leading: Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          '剪贴板历史',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13,
+                            height: 18 / 13,
+                            fontWeight: FontWeight.w600,
+                            color: c.text,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      CountPill(history.length),
+                    ],
+                  ),
+                  actions: [
+                    IconBtn(
+                      icon: LucideIcons.trash2,
+                      tooltip: '清空全部记录',
+                      danger: true,
+                      onTap: _clearAll,
+                    ),
+                    IconBtn(
+                      key: const ValueKey('open-settings'),
+                      icon: LucideIcons.settings,
+                      tooltip: isMac ? '设置 (⌘,)' : '设置 (Ctrl+,)',
+                      onTap: () =>
+                          ref.read(settingsOpenProvider.notifier).state = true,
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 8),
-                CategoryTabs(
-                  current: category,
-                  onChanged: _onCategoryChanged,
-                  counts: counts,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                  child: Column(
+                    children: [
+                      _SearchField(
+                        controller: _searchCtrl,
+                        focusNode: _searchFocus,
+                        focused: _searchFocused,
+                        value: query,
+                        onChanged: _onSearchQueryChanged,
+                        onClear: () {
+                          _searchCtrl.clear();
+                          _onSearchQueryChanged('');
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      CategoryTabs(
+                        current: category,
+                        onChanged: _onCategoryChanged,
+                        counts: counts,
+                      ),
+                    ],
+                  ),
+                ),
+                if (update.hasUpdate) _UpdateBanner(update: update),
+                Expanded(
+                  child: filtered.isEmpty
+                      ? _EmptyState(query: query, category: category)
+                      : Padding(
+                          padding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
+                          child: CustomScrollView(
+                            controller: _scrollCtrl,
+                            slivers: [
+                              for (final g in groups) ...[
+                                SliverPersistentHeader(
+                                  pinned: true,
+                                  delegate: _GroupHeaderDelegate(
+                                    g.label,
+                                    MediaQuery.textScalerOf(context).scale(1),
+                                  ),
+                                ),
+                                SliverList.builder(
+                                  itemCount: g.items.length,
+                                  itemBuilder: (ctx, i) {
+                                    final (idx, item) = g.items[i];
+                                    return HistoryItem(
+                                      key: ValueKey(item.id),
+                                      item: item,
+                                      index: idx + 1,
+                                      selected: idx == selected,
+                                      compact: compact,
+                                      query: query,
+                                      showDivider: i > 0,
+                                      onTap: () => _selectIndex(idx),
+                                      onDoubleTap: () =>
+                                          _copyItem(item, hideAfter: true),
+                                      onPreview: () => _openPreview(item),
+                                      onCopy: () => _copyItem(item),
+                                      onDelete: () => _deleteItem(item),
+                                    );
+                                  },
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                ),
+                StatusBar(
+                  helperConnected: helper,
+                  gameMode: settings.gameMode,
+                  doubleTapKey: settings.doubleTapKey,
                 ),
               ],
             ),
           ),
-          if (update.hasUpdate) _UpdateBanner(update: update),
-          Expanded(
-            child: filtered.isEmpty
-                ? _EmptyState(query: query, category: category)
-                : Padding(
-                    padding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
-                    child: CustomScrollView(
-                      controller: _scrollCtrl,
-                      slivers: [
-                        for (final g in groups) ...[
-                          SliverPersistentHeader(
-                            pinned: true,
-                            delegate: _GroupHeaderDelegate(
-                              g.label,
-                              MediaQuery.textScalerOf(context).scale(1),
-                            ),
-                          ),
-                          SliverList.builder(
-                            itemCount: g.items.length,
-                            itemBuilder: (ctx, i) {
-                              final (idx, item) = g.items[i];
-                              return HistoryItem(
-                                key: ValueKey(item.id),
-                                item: item,
-                                index: idx + 1,
-                                selected: idx == selected,
-                                expanded: _expandedId == item.id,
-                                compact: compact,
-                                query: query,
-                                showDivider: i > 0,
-                                onTap: () => _selectIndex(idx),
-                                onDoubleTap: () =>
-                                    _copyItem(item, hideAfter: true),
-                                onShowDetails: () => setState(
-                                  () => _expandedId = _expandedId == item.id
-                                      ? null
-                                      : item.id,
-                                ),
-                                onCopy: () => _copyItem(item),
-                                onDelete: () => _deleteItem(item),
-                              );
-                            },
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-          ),
-          StatusBar(
-            helperConnected: helper,
-            gameMode: settings.gameMode,
-            doubleTapKey: settings.doubleTapKey,
-          ),
+          if (previewIdx >= 0)
+            Positioned.fill(
+              child: PreviewOverlay(
+                item: filtered[previewIdx],
+                query: query,
+                onClose: _closePreview,
+                onCopy: _copyPreviewed,
+                onCopySelection: (t) => unawaited(_copySelection(t)),
+                onPrev: previewIdx > 0 ? () => _stepPreview(-1) : null,
+                onNext: previewIdx < filtered.length - 1
+                    ? () => _stepPreview(1)
+                    : null,
+              ),
+            ),
         ],
       ),
     );

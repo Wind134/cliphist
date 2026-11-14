@@ -59,6 +59,10 @@ class StatusBar extends StatelessWidget {
           if (MediaQuery.sizeOf(context).width > 360) ...[
             _Hint(keys: const [Kbd('↵')], label: '复制'),
             const SizedBox(width: 14),
+            if (MediaQuery.sizeOf(context).width > 420) ...[
+              _Hint(keys: const [Kbd('Space')], label: '预览'),
+              const SizedBox(width: 14),
+            ],
             _Hint(
               keys: [
                 const Kbd('1'),

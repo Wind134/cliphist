@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:cliphist/app.dart';
 import 'package:cliphist/src/rust/core/clipboard_engine.dart';
 import 'package:cliphist/src/rust/core/settings_store.dart';
@@ -6,6 +8,7 @@ import 'package:cliphist/state/providers.dart';
 import 'package:cliphist/ui/history_view.dart';
 import 'package:cliphist/ui/settings_screen.dart';
 import 'package:cliphist/ui/theme.dart';
+import 'package:cliphist/util/image_cache.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -240,7 +243,7 @@ void main() {
     expect(find.text('剪贴板历史'), findsOneWidget);
   });
 
-  testWidgets('truncated rows expose the complete selectable content', (
+  testWidgets('truncated rows open the complete content in the preview', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -259,13 +262,194 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('history-item-tap-42')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('history-item-details-42')));
+    // Row taps wait out the double-tap (copy) window before firing.
+    await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpAndSettle();
 
+    expect(find.byKey(const ValueKey('preview-overlay')), findsOneWidget);
     expect(
       find.byKey(const ValueKey('history-item-full-content-42')),
       findsOneWidget,
     );
-    expect(find.byType(SelectionArea), findsOneWidget);
+    expect(find.byType(SelectionArea), findsWidgets);
+  });
+
+  testWidgets('space toggles the preview and blocks list shortcuts', (
+    tester,
+  ) async {
+    final container = ProviderContainer(
+      overrides: [
+        settingsProvider.overrideWith((ref) => testSettings),
+        historyProvider.overrideWith((ref) => testHistory),
+      ],
+    );
+    addTearDown(container.dispose);
+    BigInt? pastedId;
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: cliphistTheme(),
+          home: Scaffold(
+            body: HistoryView(onQuickPaste: (id) => pastedId = id),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey('history-item-tap-1')));
+    await tester.pump();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('preview-overlay')), findsOneWidget);
+    expect(find.text('富文本'), findsWidgets);
+
+    // Quick-paste and delete must not act behind the overlay.
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit2);
+    await tester.pump(const Duration(milliseconds: 130));
+    expect(pastedId, isNull);
+
+    // → moves to the next item and keeps the list selection in sync.
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    expect(container.read(selectedIndexProvider), 1);
+    expect(find.text('在浏览器打开'), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pumpAndSettle();
+    expect(container.read(selectedIndexProvider), 0);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('preview-overlay')), findsNothing);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('preview-overlay')), findsNothing);
+
+    // Quick-paste works again once the overlay is gone.
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit2);
+    await tester.pump(const Duration(milliseconds: 130));
+    expect(pastedId, BigInt.two);
+  });
+
+  testWidgets('space in the search field types instead of previewing', (
+    tester,
+  ) async {
+    final container = ProviderContainer(
+      overrides: [
+        settingsProvider.overrideWith((ref) => testSettings),
+        historyProvider.overrideWith((ref) => testHistory),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: cliphistTheme(),
+          home: const Scaffold(body: HistoryView()),
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey('history-item-tap-1')));
+    await tester.pump();
+    expect(container.read(selectedIndexProvider), 0);
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('preview-overlay')), findsNothing);
+  });
+
+  testWidgets('text preview toggles wrap and closes from the backdrop', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(400, 600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          settingsProvider.overrideWith((ref) => testSettings),
+          historyProvider.overrideWith((ref) => longHistory),
+        ],
+        child: MaterialApp(
+          theme: cliphistTheme(),
+          home: const Scaffold(body: HistoryView()),
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey('history-item-tap-42')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('history-item-preview-42')));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+    expect(find.text('400 字 · 40 行'), findsOneWidget);
+    expect(find.text('40'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('preview-seg-自动换行')));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+
+    await tester.tapAt(const Offset(5, 590));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('preview-overlay')), findsNothing);
+  });
+
+  testWidgets('image rows use the content block and open the preview', (
+    tester,
+  ) async {
+    seedImageCache(
+      BigInt.from(7),
+      base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYPj/HwADAgH/'
+        'p+Fm6gAAAABJRU5ErkJggg==',
+      ),
+    );
+    addTearDown(clearImageCache);
+    final images = <ClipboardItem>[
+      ClipboardItem(
+        id: BigInt.from(7),
+        content: '',
+        contentType: 'image',
+        timestamp: '2026-08-23 16:00:00',
+        preview: '图片 865x1472',
+        charCount: BigInt.zero,
+        imageWidth: 865,
+        imageHeight: 1472,
+      ),
+    ];
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          settingsProvider.overrideWith((ref) => testSettings),
+          historyProvider.overrideWith((ref) => images),
+        ],
+        child: MaterialApp(
+          theme: cliphistTheme(),
+          home: const Scaffold(body: HistoryView()),
+        ),
+      ),
+    );
+    expect(find.text('865 × 1472 px'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('history-item-thumb-7')));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('preview-overlay')), findsOneWidget);
+    expect(find.text('用系统看图打开'), findsOneWidget);
+    expect(find.byKey(const ValueKey('preview-zoom-fit')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('preview-close')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('preview-overlay')), findsNothing);
   });
 
   testWidgets('settings cards stay usable at minimum width and 200% zoom', (

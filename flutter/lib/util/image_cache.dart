@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import '../src/rust/api/history.dart' as api_history;
 
 /// Tiny LRU image cache. The Rust core stores images as external PNGs and only
@@ -31,3 +33,7 @@ void evictImage(BigInt id) => _cache.remove(id);
 
 /// Drop everything (used after history replace / clear).
 void clearImageCache() => _cache.clear();
+
+/// Pre-fill an entry without crossing FFI (widget tests have no Rust core).
+@visibleForTesting
+void seedImageCache(BigInt id, Uint8List bytes) => _cache[id] = bytes;

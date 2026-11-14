@@ -30,18 +30,28 @@ bool looksLikeCode(ClipboardItem item) {
       s.contains('class ');
 }
 
-String _displayText(ClipboardItem item) {
+String displayTextOf(ClipboardItem item) {
   if (item.contentType == 'files') {
-    return item.filePaths?.join('\n') ?? item.content;
+    return filePathsOf(item).join('\n');
   }
   return item.content.isNotEmpty ? item.content : item.preview;
 }
 
+/// File paths of a `files` item, falling back to newline-separated content.
+List<String> filePathsOf(ClipboardItem item) {
+  final paths = item.filePaths;
+  if (paths != null && paths.isNotEmpty) return paths;
+  return item.content
+      .split(RegExp(r'\r?\n'))
+      .where((s) => s.trim().isNotEmpty)
+      .toList();
+}
+
+String typeLabelOf(ClipboardItem item) =>
+    looksLikeCode(item) ? '代码' : (ClipType.of(item.contentType)?.label ?? '文本');
+
 String _metaLine(ClipboardItem item) {
-  final type = looksLikeCode(item)
-      ? '代码'
-      : (ClipType.of(item.contentType)?.label ?? '文本');
-  final parts = <String>[type];
+  final parts = <String>[typeLabelOf(item)];
   if (item.contentType == 'image') {
     // source app is not available; keep type only
   } else if (item.contentType == 'files') {
@@ -60,18 +70,16 @@ String _metaLine(ClipboardItem item) {
   return parts.join(' · ');
 }
 
-String _imageCaption(ClipboardItem item) {
-  var name = item.preview.trim();
-  if (name.isEmpty || name == '图片') {
-    final path = item.imagePath;
-    name = (path == null || path.isEmpty)
-        ? '图片'
-        : path.split(RegExp(r'[/\\]')).last;
-  }
+String _imageName(ClipboardItem item) {
+  // Rust stores a generated "图片 WxH" preview; the size has its own line.
+  final name = item.preview.trim();
+  return (name.isEmpty || name.startsWith('图片')) ? '图片' : name;
+}
+
+String? _imageSize(ClipboardItem item) {
   final w = item.imageWidth ?? 0;
   final h = item.imageHeight ?? 0;
-  if (w > 0 && h > 0) return '$name · $w × $h px';
-  return name;
+  return (w > 0 && h > 0) ? '$w × $h px' : null;
 }
 
 class HistoryItem extends StatefulWidget {
@@ -82,10 +90,9 @@ class HistoryItem extends StatefulWidget {
     required this.selected,
     required this.onTap,
     required this.onDoubleTap,
-    required this.onShowDetails,
+    required this.onPreview,
     required this.onCopy,
     required this.onDelete,
-    this.expanded = false,
     this.compact = false,
     this.query = '',
     this.showDivider = false,
@@ -94,13 +101,12 @@ class HistoryItem extends StatefulWidget {
   final ClipboardItem item;
   final int index;
   final bool selected;
-  final bool expanded;
   final bool compact;
   final String query;
   final bool showDivider;
   final VoidCallback onTap;
   final VoidCallback onDoubleTap;
-  final VoidCallback onShowDetails;
+  final VoidCallback onPreview;
   final VoidCallback onCopy;
   final VoidCallback onDelete;
 
@@ -110,7 +116,6 @@ class HistoryItem extends StatefulWidget {
 
 class _HistoryItemState extends State<HistoryItem> {
   bool _hovered = false;
-  bool _overflows = false;
 
   bool get _active => _hovered || widget.selected;
   bool get _isImage => widget.item.contentType == 'image';
@@ -215,36 +220,31 @@ class _HistoryItemState extends State<HistoryItem> {
                             ),
                           ),
                           SizedBox(height: compact ? 6 : 8),
-                          if (_isImage)
-                            _InlineImage(
-                              item: item,
-                              height: compact ? 56 : 80,
-                            )
-                          else
-                            DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: c.surface,
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 6,
-                                ),
-                                child: _ClipContent(
-                                  item: item,
-                                  query: widget.query,
-                                  maxLines: maxLines,
-                                  expanded: widget.expanded,
-                                  onToggle: widget.onShowDetails,
-                                  onOverflowChanged: (o) {
-                                    if (o != _overflows) {
-                                      setState(() => _overflows = o);
-                                    }
-                                  },
-                                ),
-                              ),
+                          DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: c.surface,
+                              borderRadius: BorderRadius.circular(6),
                             ),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 6,
+                              ),
+                              child: _isImage
+                                  ? _InlineImage(
+                                      item: item,
+                                      height: compact ? 48 : 64,
+                                      active: _active,
+                                      onPreview: widget.onPreview,
+                                    )
+                                  : _ClipContent(
+                                      item: item,
+                                      query: widget.query,
+                                      maxLines: maxLines,
+                                      onPreview: widget.onPreview,
+                                    ),
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -254,9 +254,7 @@ class _HistoryItemState extends State<HistoryItem> {
                         right: 8,
                         child: _ItemActions(
                           id: item.id,
-                          expanded: widget.expanded,
-                          showExpand: _overflows,
-                          onExpand: widget.onShowDetails,
+                          onPreview: widget.onPreview,
                           onCopy: widget.onCopy,
                           onDelete: widget.onDelete,
                         ),
@@ -368,17 +366,13 @@ class _ClipContent extends StatelessWidget {
     required this.item,
     required this.query,
     required this.maxLines,
-    required this.expanded,
-    required this.onToggle,
-    required this.onOverflowChanged,
+    required this.onPreview,
   });
 
   final ClipboardItem item;
   final String query;
   final int maxLines;
-  final bool expanded;
-  final VoidCallback onToggle;
-  final ValueChanged<bool> onOverflowChanged;
+  final VoidCallback onPreview;
 
   @override
   Widget build(BuildContext context) {
@@ -396,7 +390,7 @@ class _ClipContent extends StatelessWidget {
         FontFeature.tabularFigures(),
       ],
     );
-    final text = _displayText(item);
+    final text = displayTextOf(item);
 
     return LayoutBuilder(
       builder: (context, box) {
@@ -408,9 +402,7 @@ class _ClipContent extends StatelessWidget {
         final totalLines = tp.computeLineMetrics().length;
         final overflows = totalLines > maxLines;
         final hidden = totalLines - maxLines;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          onOverflowChanged(overflows);
-        });
+        tp.dispose();
 
         final body = ExcludeSemantics(
           child: SelectionArea(
@@ -421,8 +413,8 @@ class _ClipContent extends StatelessWidget {
                 style,
                 c.warn.withValues(alpha: 0.35),
               ),
-              key: ValueKey('history-item-full-content-${item.id}'),
-              maxLines: (overflows && !expanded) ? maxLines : null,
+              key: ValueKey('history-item-content-${item.id}'),
+              maxLines: overflows ? maxLines : null,
               style: style,
             ),
           ),
@@ -431,7 +423,7 @@ class _ClipContent extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (overflows && !expanded)
+            if (overflows)
               ShaderMask(
                 blendMode: BlendMode.dstIn,
                 shaderCallback: (rect) {
@@ -453,15 +445,18 @@ class _ClipContent extends StatelessWidget {
               body,
             if (overflows) ...[
               const SizedBox(height: 4),
-              GestureDetector(
-                key: ValueKey('history-item-details-${item.id}'),
-                onTap: onToggle,
-                child: Text(
-                  expanded ? '收起' : '还有 $hidden 行 · 展开',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    height: 16 / 11.5,
-                    color: c.text3,
+              MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: GestureDetector(
+                  key: ValueKey('history-item-details-${item.id}'),
+                  onTap: onPreview,
+                  child: Text(
+                    '还有 $hidden 行 · Space 预览全文',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      height: 16 / 11.5,
+                      color: c.text3,
+                    ),
                   ),
                 ),
               ),
@@ -473,12 +468,21 @@ class _ClipContent extends StatelessWidget {
   }
 }
 
+/// Plan A image row: a thumbnail inside the same grey content block as text
+/// rows, with name and pixel size beside it. Clicking the thumbnail previews.
 class _InlineImage extends StatelessWidget {
-  const _InlineImage({required this.item, required this.height});
+  const _InlineImage({
+    required this.item,
+    required this.height,
+    required this.active,
+    required this.onPreview,
+  });
   final ClipboardItem item;
   final double height;
+  final bool active;
+  final VoidCallback onPreview;
 
-  static const maxWidth = 240.0;
+  static const maxWidth = 160.0;
 
   @override
   Widget build(BuildContext context) {
@@ -486,34 +490,35 @@ class _InlineImage extends StatelessWidget {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final iw = item.imageWidth ?? 0;
     final ih = item.imageHeight ?? 0;
-    final aspect = (iw > 0 && ih > 0) ? iw / ih : 16 / 9;
-    var width = height * aspect;
-    var fit = BoxFit.fitHeight;
-    if (width > maxWidth) {
-      width = maxWidth;
-      fit = BoxFit.cover;
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        DecoratedBox(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: c.imgHairline),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: SizedBox(
-              width: width,
-              height: height,
-              child: FutureBuilder<Uint8List?>(
+    final aspect = (iw > 0 && ih > 0) ? iw / ih : 4 / 3;
+    final rawWidth = height * aspect;
+    final width = rawWidth.clamp(height * 0.5, maxWidth).toDouble();
+    final fit = rawWidth == width ? BoxFit.fill : BoxFit.cover;
+    final size = _imageSize(item);
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+
+    final thumb = DecoratedBox(
+      position: DecorationPosition.foreground,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(5),
+        border: Border.all(color: c.imgHairline),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(5),
+        child: SizedBox(
+          width: width,
+          height: height,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              FutureBuilder<Uint8List?>(
                 future: getImageData(item.id),
                 builder: (context, snap) {
                   final bytes = snap.data;
                   if (bytes == null) {
                     return ColoredBox(
                       color: c.leadBg,
-                      child: Icon(LucideIcons.image, size: 20, color: c.text3),
+                      child: Icon(LucideIcons.image, size: 18, color: c.text3),
                     );
                   }
                   Widget img = Image.memory(
@@ -521,7 +526,8 @@ class _InlineImage extends StatelessWidget {
                     fit: fit,
                     width: width,
                     height: height,
-                    cacheWidth: (width * 2).round(),
+                    cacheWidth: (width * dpr * 1.5).round(),
+                    filterQuality: FilterQuality.medium,
                     gaplessPlayback: true,
                   );
                   if (dark) {
@@ -533,18 +539,84 @@ class _InlineImage extends StatelessWidget {
                       child: img,
                     );
                   }
-                  return img;
+                  return ColoredBox(color: c.bg, child: img);
                 },
               ),
+              AnimatedOpacity(
+                opacity: active ? 1 : 0,
+                duration: const Duration(milliseconds: 120),
+                child: ColoredBox(
+                  color: const Color(0x52000000),
+                  child: Center(
+                    child: Icon(
+                      LucideIcons.maximize2,
+                      size: height < 56 ? 14 : 16,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Tooltip(
+          message: '预览 (Space)',
+          child: MouseRegion(
+            cursor: SystemMouseCursors.zoomIn,
+            child: GestureDetector(
+              key: ValueKey('history-item-thumb-${item.id}'),
+              onTap: onPreview,
+              child: thumb,
             ),
           ),
         ),
-        const SizedBox(height: 4),
-        Text(
-          _imageCaption(item),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(fontSize: 11, height: 15 / 11, color: c.text3),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _imageName(item),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 17 / 12,
+                  fontWeight: FontWeight.w600,
+                  color: c.text,
+                ),
+              ),
+              if (size != null)
+                Text(
+                  size,
+                  maxLines: 1,
+                  style: TextStyle(
+                    fontSize: 11,
+                    height: 16 / 11,
+                    color: c.text2,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              if (active && height >= 56)
+                Text(
+                  '点缩略图或按 Space 预览',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    height: 16 / 11,
+                    color: c.accent,
+                  ),
+                ),
+            ],
+          ),
         ),
       ],
     );
@@ -554,16 +626,12 @@ class _InlineImage extends StatelessWidget {
 class _ItemActions extends StatelessWidget {
   const _ItemActions({
     required this.id,
-    required this.expanded,
-    required this.showExpand,
-    required this.onExpand,
+    required this.onPreview,
     required this.onCopy,
     required this.onDelete,
   });
   final BigInt id;
-  final bool expanded;
-  final bool showExpand;
-  final VoidCallback onExpand;
+  final VoidCallback onPreview;
   final VoidCallback onCopy;
   final VoidCallback onDelete;
 
@@ -571,12 +639,12 @@ class _ItemActions extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.c;
     final buttons = <Widget>[
-      if (showExpand)
-        _ActionBtn(
-          icon: expanded ? LucideIcons.chevronUp : LucideIcons.chevronDown,
-          tooltip: expanded ? '收起 (Space)' : '展开 (Space)',
-          onTap: onExpand,
-        ),
+      _ActionBtn(
+        key: ValueKey('history-item-preview-$id'),
+        icon: LucideIcons.eye,
+        tooltip: '预览 (Space)',
+        onTap: onPreview,
+      ),
       _ActionBtn(icon: LucideIcons.copy, tooltip: '复制 (Enter)', onTap: onCopy),
       _ActionBtn(
         icon: LucideIcons.trash2,
@@ -605,6 +673,7 @@ class _ItemActions extends StatelessWidget {
 
 class _ActionBtn extends StatefulWidget {
   const _ActionBtn({
+    super.key,
     required this.icon,
     required this.tooltip,
     required this.onTap,
