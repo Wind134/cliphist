@@ -74,14 +74,6 @@ String _imageCaption(ClipboardItem item) {
   return name;
 }
 
-String _softBreak(String text) {
-  return text.splitMapJoin(
-    RegExp(r'[/?&=._-]'),
-    onMatch: (m) => '${m[0]}\u200B',
-    onNonMatch: (n) => n,
-  );
-}
-
 class HistoryItem extends StatefulWidget {
   const HistoryItem({
     super.key,
@@ -127,10 +119,16 @@ class _HistoryItemState extends State<HistoryItem> {
   Widget build(BuildContext context) {
     final c = context.c;
     final compact = widget.compact;
-    final gap = compact ? 8.0 : 10.0;
+    final gap = compact ? 6.0 : 8.0;
     final padY = compact ? 8.0 : 10.0;
+    final lead = compact ? Sizes.leadCompactH : Sizes.leadH;
     final item = widget.item;
     final maxLines = compact ? 4 : 8;
+    const metaStyle = TextStyle(
+      fontSize: 11,
+      height: 1.2,
+      fontFeatures: [FontFeature.tabularFigures()],
+    );
 
     return Column(
       children: [
@@ -167,91 +165,86 @@ class _HistoryItemState extends State<HistoryItem> {
                         horizontal: 8,
                         vertical: padY,
                       ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           SizedBox(
-                            width: context.sp(18),
-                            height: context.sp(18),
-                            child: Center(
-                              child: _IndexBadge(
-                                index: widget.index,
-                                selected: widget.selected,
-                              ),
-                            ),
-                          ),
-                          SizedBox(width: gap),
-                          _Lead(item: item, compact: compact, active: _active),
-                          SizedBox(width: gap),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            height: context.sp(lead),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        _metaLine(item),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          height: 18 / 11,
-                                          color: c.text3,
-                                          fontFeatures: const [
-                                            FontFeature.tabularFigures(),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    SizedBox(
-                                      width: context.sp(Sizes.timeCol),
-                                      child: Visibility(
-                                        visible: !_active,
-                                        maintainSize: true,
-                                        maintainAnimation: true,
-                                        maintainState: true,
-                                        child: Text(
-                                          relativeTime(item.timestamp),
-                                          textAlign: TextAlign.right,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            height: 18 / 11,
-                                            color: c.text3,
-                                            fontFeatures: const [
-                                              FontFeature.tabularFigures(),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
+                                _IndexBadge(
+                                  index: widget.index,
+                                  selected: widget.selected,
+                                  width: Sizes.index,
+                                  height: lead,
                                 ),
-                                SizedBox(height: compact ? 2 : 4),
-                                if (_isImage)
-                                  _InlineImage(
-                                    item: item,
-                                    height: compact ? 56 : 80,
-                                  )
-                                else
-                                  _ClipContent(
-                                    item: item,
-                                    query: widget.query,
-                                    maxLines: maxLines,
-                                    expanded: widget.expanded,
-                                    onToggle: widget.onShowDetails,
-                                    onOverflowChanged: (o) {
-                                      if (o != _overflows) {
-                                        setState(() => _overflows = o);
-                                      }
-                                    },
+                                SizedBox(width: gap),
+                                _Lead(
+                                  item: item,
+                                  compact: compact,
+                                  active: _active,
+                                ),
+                                SizedBox(width: gap),
+                                Expanded(
+                                  child: Text(
+                                    _metaLine(item),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: metaStyle.copyWith(color: c.text3),
                                   ),
+                                ),
+                                const SizedBox(width: 8),
+                                SizedBox(
+                                  width: context.sp(Sizes.timeCol),
+                                  child: Visibility(
+                                    visible: !_active,
+                                    maintainSize: true,
+                                    maintainAnimation: true,
+                                    maintainState: true,
+                                    child: Text(
+                                      relativeTime(item.timestamp),
+                                      textAlign: TextAlign.right,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: metaStyle.copyWith(color: c.text3),
+                                    ),
+                                  ),
+                                ),
                               ],
                             ),
                           ),
+                          SizedBox(height: compact ? 6 : 8),
+                          if (_isImage)
+                            _InlineImage(
+                              item: item,
+                              height: compact ? 56 : 80,
+                            )
+                          else
+                            DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: c.surface,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 6,
+                                ),
+                                child: _ClipContent(
+                                  item: item,
+                                  query: widget.query,
+                                  maxLines: maxLines,
+                                  expanded: widget.expanded,
+                                  onToggle: widget.onShowDetails,
+                                  onOverflowChanged: (o) {
+                                    if (o != _overflows) {
+                                      setState(() => _overflows = o);
+                                    }
+                                  },
+                                ),
+                              ),
+                            ),
                         ],
                       ),
                     ),
@@ -280,25 +273,39 @@ class _HistoryItemState extends State<HistoryItem> {
 }
 
 class _IndexBadge extends StatelessWidget {
-  const _IndexBadge({required this.index, required this.selected});
+  const _IndexBadge({
+    required this.index,
+    required this.selected,
+    required this.width,
+    required this.height,
+  });
   final int index;
   final bool selected;
+  final double width;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
     final c = context.c;
-    if (index < 1) return const SizedBox.shrink();
+    final w = context.sp(width);
+    final h = context.sp(height);
+    if (index < 1) return SizedBox(width: w, height: h);
     if (index > 9) {
-      return Container(
-        width: 4,
-        height: 4,
-        decoration: BoxDecoration(color: c.text4, shape: BoxShape.circle),
+      return SizedBox(
+        width: w,
+        height: h,
+        child: Center(
+          child: Container(
+            width: 4,
+            height: 4,
+            decoration: BoxDecoration(color: c.text4, shape: BoxShape.circle),
+          ),
+        ),
       );
     }
-    final box = context.sp(18);
     return Container(
-      width: box,
-      height: box,
+      width: w,
+      height: h,
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: Colors.transparent,
@@ -308,8 +315,8 @@ class _IndexBadge extends StatelessWidget {
       child: Text(
         '$index',
         style: TextStyle(
-          fontSize: 10.5,
-          height: 1.1,
+          fontSize: 11,
+          height: 1,
           fontWeight: FontWeight.w500,
           color: selected ? c.text2 : c.text3,
           fontFeatures: const [FontFeature.tabularFigures()],
@@ -340,7 +347,7 @@ class _Lead extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: c.leadBg,
-          borderRadius: BorderRadius.circular(compact ? 4 : 6),
+          borderRadius: BorderRadius.circular(4),
           border: Border.all(color: c.leadBorder),
         ),
         child: Center(
@@ -376,26 +383,20 @@ class _ClipContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.c;
-    final mono =
-        item.contentType == 'link' ||
-        item.contentType == 'files' ||
-        looksLikeCode(item);
     final style = TextStyle(
-      fontSize: mono ? 12 : 13,
-      height: 20 / (mono ? 12 : 13),
+      fontSize: 12,
+      height: 18 / 12,
+      letterSpacing: 0,
       color: c.text,
-      fontFamily: mono ? monoFamily : null,
-      fontFamilyFallback: mono ? monoFallback : null,
-      fontFeatures: mono
-          ? const [
-              FontFeature.disable('liga'),
-              FontFeature.disable('calt'),
-              FontFeature.tabularFigures(),
-            ]
-          : const [FontFeature.tabularFigures()],
+      fontFamily: monoFamily,
+      fontFamilyFallback: monoFallback,
+      fontFeatures: const [
+        FontFeature.disable('liga'),
+        FontFeature.disable('calt'),
+        FontFeature.tabularFigures(),
+      ],
     );
-    var text = _displayText(item);
-    if (mono) text = _softBreak(text);
+    final text = _displayText(item);
 
     return LayoutBuilder(
       builder: (context, box) {

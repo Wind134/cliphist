@@ -221,11 +221,11 @@ abstract class Sizes {
   static const control = 28.0;
   static const iconBtn = 28.0;
   static const rowAction = 26.0;
-  static const leadW = 48.0;
-  static const leadH = 32.0;
-  static const leadCompactW = 32.0;
-  static const leadCompactH = 22.0;
-  static const index = 18.0;
+  static const leadW = 34.0;
+  static const leadH = 34.0;
+  static const leadCompactW = 26.0;
+  static const leadCompactH = 26.0;
+  static const index = 20.0;
   static const timeCol = 64.0;
 }
 
@@ -270,12 +270,16 @@ const _fontFallback = <String>[
   'Noto Sans SC',
 ];
 
-const monoFamily = 'JetBrains Mono';
+const monoFamily = 'Cascadia Mono';
 const monoFallback = <String>[
-  'Cascadia Code',
   'Consolas',
+  'Cascadia Code',
+  'JetBrains Mono',
   'SF Mono',
+  'Microsoft YaHei UI',
+  'Noto Sans CJK SC',
   'Noto Sans Mono CJK SC',
+  'PingFang SC',
   'monospace',
 ];
 
