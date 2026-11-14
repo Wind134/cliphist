@@ -126,6 +126,8 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
       );
       return KeyEventResult.handled;
     }
+    // Search owns typing. List shortcuts must not steal Backspace/Delete/Space/1–9.
+    if (_searchFocus.hasFocus) return KeyEventResult.ignored;
     if (key == LogicalKeyboardKey.slash && !ctrl) {
       _searchFocus.requestFocus();
       return KeyEventResult.handled;

@@ -99,6 +99,41 @@ void main() {
     expect(quickPasteIndexForKey(LogicalKeyboardKey.digit0), isNull);
   });
 
+  testWidgets('search field keeps backspace while focused', (tester) async {
+    final container = ProviderContainer(
+      overrides: [
+        settingsProvider.overrideWith((ref) => testSettings),
+        historyProvider.overrideWith((ref) => testHistory),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: cliphistTheme(),
+          home: const Scaffold(body: HistoryView()),
+        ),
+      ),
+    );
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+    await tester.enterText(find.byType(TextField), 'abc');
+    await tester.pump();
+    expect(container.read(searchQueryProvider), 'abc');
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.backspace);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.backspace);
+    await tester.pump();
+
+    expect(container.read(searchQueryProvider), 'ab');
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller?.text,
+      'ab',
+    );
+  });
+
   testWidgets('window wake returns focus to numeric quick-paste', (
     tester,
   ) async {
