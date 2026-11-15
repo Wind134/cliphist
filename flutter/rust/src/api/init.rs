@@ -90,9 +90,11 @@ pub fn init_app_state() -> Result<(), String> {
 
     crate::core::background::spawn_all(history, counter);
 
-    // Game mode suppresses double-tap wake notifications without discarding
+    // 全屏模式 suppresses double-tap wake notifications without discarding
     // the configured modifier or tearing down the platform listener.
-    crate::core::shortcut_engine::set_game_mode(startup_settings.game_mode);
+    crate::core::shortcut_engine::set_manual_fullscreen_mode(startup_settings.game_mode);
+    // Automatic 全屏模式: watches the foreground window (Windows only).
+    crate::core::fullscreen_detect::spawn();
 
     // Global-hotkey registration lives in Dart's native `hotkey_manager`
     // plugin. That plugin executes on each platform's UI/event-loop thread;

@@ -20,6 +20,7 @@ pub fn update_settings(patch: SettingsPatch) -> Result<Settings, String> {
     let mut next = current.clone();
     let double_tap_change = patch.double_tap_key.clone();
     let game_mode_change = patch.game_mode;
+    let auto_fullscreen_change = patch.auto_fullscreen_mode;
 
     if let Some(v) = patch.close_to_tray {
         next.close_to_tray = v;
@@ -32,6 +33,9 @@ pub fn update_settings(patch: SettingsPatch) -> Result<Settings, String> {
     }
     if let Some(v) = patch.game_mode {
         next.game_mode = v;
+    }
+    if let Some(v) = patch.auto_fullscreen_mode {
+        next.auto_fullscreen_mode = v;
     }
     if let Some(v) = patch.window_user_resized {
         next.window_user_resized = v;
@@ -92,10 +96,23 @@ pub fn update_settings(patch: SettingsPatch) -> Result<Settings, String> {
         }
     }
     if let Some(v) = game_mode_change {
-        crate::core::shortcut_engine::set_game_mode(v);
+        crate::core::shortcut_engine::set_manual_fullscreen_mode(v);
+    }
+    if auto_fullscreen_change == Some(false) {
+        // Leave auto 全屏模式 right away instead of waiting for the next
+        // detector tick. Turning it on is picked up by the detector loop.
+        crate::core::shortcut_engine::set_auto_fullscreen_active(false);
     }
 
     Ok(next)
+}
+
+/// Whether 全屏模式 is currently on because a fullscreen app is in the
+/// foreground (automatic detection, Windows only). Synchronous and cheap — an
+/// atomic load — so the UI can poll it.
+#[flutter_rust_bridge::frb(sync)]
+pub fn auto_fullscreen_active() -> bool {
+    crate::core::shortcut_engine::auto_fullscreen_active()
 }
 
 /// Is `hotkey` a syntactically valid global shortcut? Synchronous.

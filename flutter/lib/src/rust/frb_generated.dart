@@ -72,7 +72,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 742015412;
+  int get rustContentHash => 1397174423;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -84,6 +84,8 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
 }
 
 abstract class RustLibApi extends BaseApi {
+  bool crateApiSettingsAutoFullscreenActive();
+
   Future<SingleInstanceResult> crateApiInitCheckSingleInstance();
 
   Future<void> crateApiHistoryClearHistory();
@@ -134,6 +136,28 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   });
 
   @override
+  bool crateApiSettingsAutoFullscreenActive() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 1)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiSettingsAutoFullscreenActiveConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSettingsAutoFullscreenActiveConstMeta =>
+      const TaskConstMeta(debugName: "auto_fullscreen_active", argNames: []);
+
+  @override
   Future<SingleInstanceResult> crateApiInitCheckSingleInstance() {
     return handler.executeNormal(
       NormalTask(
@@ -142,7 +166,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 1,
+            funcId: 2,
             port: port_,
           );
         },
@@ -169,7 +193,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 2,
+            funcId: 3,
             port: port_,
           );
         },
@@ -197,7 +221,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 3,
+            funcId: 4,
             port: port_,
           );
         },
@@ -225,7 +249,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 4,
+            funcId: 5,
             port: port_,
           );
         },
@@ -250,7 +274,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(message, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 5)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 6)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -272,7 +296,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 6)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 7)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_clipboard_item,
@@ -298,7 +322,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 7,
+            funcId: 8,
             port: port_,
           );
         },
@@ -322,7 +346,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 8)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 9)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_settings,
@@ -347,7 +371,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 9,
+            funcId: 10,
             port: port_,
           );
         },
@@ -374,7 +398,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 10,
+            funcId: 11,
             port: port_,
           );
         },
@@ -402,7 +426,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 11,
+            funcId: 12,
             port: port_,
           );
         },
@@ -429,7 +453,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 12,
+            funcId: 13,
             port: port_,
           );
         },
@@ -459,7 +483,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 13,
+              funcId: 14,
               port: port_,
             );
           },
@@ -494,7 +518,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 14,
+              funcId: 15,
               port: port_,
             );
           },
@@ -529,7 +553,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 15,
+              funcId: 16,
               port: port_,
             );
           },
@@ -564,7 +588,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 16,
+              funcId: 17,
               port: port_,
             );
           },
@@ -593,7 +617,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 17)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 18)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bool,
@@ -624,7 +648,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 18,
+            funcId: 19,
             port: port_,
           );
         },
@@ -649,7 +673,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(hotkey, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 19)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 20)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bool,
@@ -830,8 +854,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Settings dco_decode_settings(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 18)
-      throw Exception('unexpected arr length: expect 18 but see ${arr.length}');
+    if (arr.length != 19)
+      throw Exception('unexpected arr length: expect 19 but see ${arr.length}');
     return Settings(
       closeToTray: dco_decode_bool(arr[0]),
       zoomLevel: dco_decode_f_32(arr[1]),
@@ -840,17 +864,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       silentStart: dco_decode_bool(arr[4]),
       doubleTapKey: dco_decode_String(arr[5]),
       gameMode: dco_decode_bool(arr[6]),
-      retentionDays: dco_decode_u_32(arr[7]),
-      windowWidth: dco_decode_u_32(arr[8]),
-      windowHeight: dco_decode_u_32(arr[9]),
-      windowUserResized: dco_decode_bool(arr[10]),
-      windowX: dco_decode_i_32(arr[11]),
-      windowY: dco_decode_i_32(arr[12]),
-      windowPositioned: dco_decode_bool(arr[13]),
-      windowAdaptive: dco_decode_bool(arr[14]),
-      acrylicEnabled: dco_decode_bool(arr[15]),
-      themeMode: dco_decode_String(arr[16]),
-      listDensity: dco_decode_String(arr[17]),
+      autoFullscreenMode: dco_decode_bool(arr[7]),
+      retentionDays: dco_decode_u_32(arr[8]),
+      windowWidth: dco_decode_u_32(arr[9]),
+      windowHeight: dco_decode_u_32(arr[10]),
+      windowUserResized: dco_decode_bool(arr[11]),
+      windowX: dco_decode_i_32(arr[12]),
+      windowY: dco_decode_i_32(arr[13]),
+      windowPositioned: dco_decode_bool(arr[14]),
+      windowAdaptive: dco_decode_bool(arr[15]),
+      acrylicEnabled: dco_decode_bool(arr[16]),
+      themeMode: dco_decode_String(arr[17]),
+      listDensity: dco_decode_String(arr[18]),
     );
   }
 
@@ -858,8 +883,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   SettingsPatch dco_decode_settings_patch(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 18)
-      throw Exception('unexpected arr length: expect 18 but see ${arr.length}');
+    if (arr.length != 19)
+      throw Exception('unexpected arr length: expect 19 but see ${arr.length}');
     return SettingsPatch(
       closeToTray: dco_decode_opt_box_autoadd_bool(arr[0]),
       zoomLevel: dco_decode_opt_box_autoadd_f_32(arr[1]),
@@ -868,17 +893,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       silentStart: dco_decode_opt_box_autoadd_bool(arr[4]),
       doubleTapKey: dco_decode_opt_String(arr[5]),
       gameMode: dco_decode_opt_box_autoadd_bool(arr[6]),
-      retentionDays: dco_decode_opt_box_autoadd_u_32(arr[7]),
-      windowWidth: dco_decode_opt_box_autoadd_u_32(arr[8]),
-      windowHeight: dco_decode_opt_box_autoadd_u_32(arr[9]),
-      windowUserResized: dco_decode_opt_box_autoadd_bool(arr[10]),
-      windowX: dco_decode_opt_box_autoadd_i_32(arr[11]),
-      windowY: dco_decode_opt_box_autoadd_i_32(arr[12]),
-      windowPositioned: dco_decode_opt_box_autoadd_bool(arr[13]),
-      windowAdaptive: dco_decode_opt_box_autoadd_bool(arr[14]),
-      acrylicEnabled: dco_decode_opt_box_autoadd_bool(arr[15]),
-      themeMode: dco_decode_opt_String(arr[16]),
-      listDensity: dco_decode_opt_String(arr[17]),
+      autoFullscreenMode: dco_decode_opt_box_autoadd_bool(arr[7]),
+      retentionDays: dco_decode_opt_box_autoadd_u_32(arr[8]),
+      windowWidth: dco_decode_opt_box_autoadd_u_32(arr[9]),
+      windowHeight: dco_decode_opt_box_autoadd_u_32(arr[10]),
+      windowUserResized: dco_decode_opt_box_autoadd_bool(arr[11]),
+      windowX: dco_decode_opt_box_autoadd_i_32(arr[12]),
+      windowY: dco_decode_opt_box_autoadd_i_32(arr[13]),
+      windowPositioned: dco_decode_opt_box_autoadd_bool(arr[14]),
+      windowAdaptive: dco_decode_opt_box_autoadd_bool(arr[15]),
+      acrylicEnabled: dco_decode_opt_box_autoadd_bool(arr[16]),
+      themeMode: dco_decode_opt_String(arr[17]),
+      listDensity: dco_decode_opt_String(arr[18]),
     );
   }
 
@@ -1156,6 +1182,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_silentStart = sse_decode_bool(deserializer);
     var var_doubleTapKey = sse_decode_String(deserializer);
     var var_gameMode = sse_decode_bool(deserializer);
+    var var_autoFullscreenMode = sse_decode_bool(deserializer);
     var var_retentionDays = sse_decode_u_32(deserializer);
     var var_windowWidth = sse_decode_u_32(deserializer);
     var var_windowHeight = sse_decode_u_32(deserializer);
@@ -1175,6 +1202,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       silentStart: var_silentStart,
       doubleTapKey: var_doubleTapKey,
       gameMode: var_gameMode,
+      autoFullscreenMode: var_autoFullscreenMode,
       retentionDays: var_retentionDays,
       windowWidth: var_windowWidth,
       windowHeight: var_windowHeight,
@@ -1199,6 +1227,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_silentStart = sse_decode_opt_box_autoadd_bool(deserializer);
     var var_doubleTapKey = sse_decode_opt_String(deserializer);
     var var_gameMode = sse_decode_opt_box_autoadd_bool(deserializer);
+    var var_autoFullscreenMode = sse_decode_opt_box_autoadd_bool(deserializer);
     var var_retentionDays = sse_decode_opt_box_autoadd_u_32(deserializer);
     var var_windowWidth = sse_decode_opt_box_autoadd_u_32(deserializer);
     var var_windowHeight = sse_decode_opt_box_autoadd_u_32(deserializer);
@@ -1218,6 +1247,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       silentStart: var_silentStart,
       doubleTapKey: var_doubleTapKey,
       gameMode: var_gameMode,
+      autoFullscreenMode: var_autoFullscreenMode,
       retentionDays: var_retentionDays,
       windowWidth: var_windowWidth,
       windowHeight: var_windowHeight,
@@ -1519,6 +1549,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.silentStart, serializer);
     sse_encode_String(self.doubleTapKey, serializer);
     sse_encode_bool(self.gameMode, serializer);
+    sse_encode_bool(self.autoFullscreenMode, serializer);
     sse_encode_u_32(self.retentionDays, serializer);
     sse_encode_u_32(self.windowWidth, serializer);
     sse_encode_u_32(self.windowHeight, serializer);
@@ -1542,6 +1573,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_box_autoadd_bool(self.silentStart, serializer);
     sse_encode_opt_String(self.doubleTapKey, serializer);
     sse_encode_opt_box_autoadd_bool(self.gameMode, serializer);
+    sse_encode_opt_box_autoadd_bool(self.autoFullscreenMode, serializer);
     sse_encode_opt_box_autoadd_u_32(self.retentionDays, serializer);
     sse_encode_opt_box_autoadd_u_32(self.windowWidth, serializer);
     sse_encode_opt_box_autoadd_u_32(self.windowHeight, serializer);

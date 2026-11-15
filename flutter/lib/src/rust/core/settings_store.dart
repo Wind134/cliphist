@@ -13,7 +13,14 @@ class Settings {
   final bool autoStart;
   final bool silentStart;
   final String doubleTapKey;
+
+  /// Manual 全屏模式 switch. The persisted key keeps its historical
+  /// `game_mode` name so existing settings files stay compatible.
   final bool gameMode;
+
+  /// Automatically enter 全屏模式 while a fullscreen app is in the
+  /// foreground (Windows only). Missing in old files → defaults to `true`.
+  final bool autoFullscreenMode;
   final int retentionDays;
   final int windowWidth;
   final int windowHeight;
@@ -38,6 +45,7 @@ class Settings {
     required this.silentStart,
     required this.doubleTapKey,
     required this.gameMode,
+    required this.autoFullscreenMode,
     required this.retentionDays,
     required this.windowWidth,
     required this.windowHeight,
@@ -60,6 +68,7 @@ class Settings {
       silentStart.hashCode ^
       doubleTapKey.hashCode ^
       gameMode.hashCode ^
+      autoFullscreenMode.hashCode ^
       retentionDays.hashCode ^
       windowWidth.hashCode ^
       windowHeight.hashCode ^
@@ -84,6 +93,7 @@ class Settings {
           silentStart == other.silentStart &&
           doubleTapKey == other.doubleTapKey &&
           gameMode == other.gameMode &&
+          autoFullscreenMode == other.autoFullscreenMode &&
           retentionDays == other.retentionDays &&
           windowWidth == other.windowWidth &&
           windowHeight == other.windowHeight &&
@@ -109,6 +119,7 @@ class SettingsPatch {
   final bool? silentStart;
   final String? doubleTapKey;
   final bool? gameMode;
+  final bool? autoFullscreenMode;
   final int? retentionDays;
   final int? windowWidth;
   final int? windowHeight;
@@ -129,6 +140,7 @@ class SettingsPatch {
     this.silentStart,
     this.doubleTapKey,
     this.gameMode,
+    this.autoFullscreenMode,
     this.retentionDays,
     this.windowWidth,
     this.windowHeight,
@@ -151,6 +163,7 @@ class SettingsPatch {
       silentStart.hashCode ^
       doubleTapKey.hashCode ^
       gameMode.hashCode ^
+      autoFullscreenMode.hashCode ^
       retentionDays.hashCode ^
       windowWidth.hashCode ^
       windowHeight.hashCode ^
@@ -175,6 +188,7 @@ class SettingsPatch {
           silentStart == other.silentStart &&
           doubleTapKey == other.doubleTapKey &&
           gameMode == other.gameMode &&
+          autoFullscreenMode == other.autoFullscreenMode &&
           retentionDays == other.retentionDays &&
           windowWidth == other.windowWidth &&
           windowHeight == other.windowHeight &&

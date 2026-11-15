@@ -7,18 +7,24 @@ class StatusBar extends StatelessWidget {
   const StatusBar({
     super.key,
     required this.helperConnected,
-    this.gameMode = false,
+    this.fullscreenMode = false,
+    this.autoFullscreen = false,
     this.doubleTapKey = '',
   });
 
   final bool helperConnected;
-  final bool gameMode;
+
+  /// Manual 全屏模式 switch.
+  final bool fullscreenMode;
+
+  /// 全屏模式 entered automatically because a fullscreen app is in front.
+  final bool autoFullscreen;
   final String doubleTapKey;
 
   @override
   Widget build(BuildContext context) {
     final c = context.c;
-    final paused = gameMode;
+    final paused = fullscreenMode || autoFullscreen;
     final ready = helperConnected && !paused;
     final keyLabel = doubleTapKey.isEmpty
         ? (isMac ? '⌘' : 'Ctrl')
@@ -27,7 +33,7 @@ class StatusBar extends StatelessWidget {
                     doubleTapKey
               : doubleTapKey);
     final label = paused
-        ? '游戏模式 · 双击已暂停'
+        ? (fullscreenMode ? '全屏模式 · 双击快捷键已暂停' : '全屏模式（自动）· 双击已暂停')
         : ready
         ? '双击 $keyLabel 已就绪'
         : '双击键未启用';

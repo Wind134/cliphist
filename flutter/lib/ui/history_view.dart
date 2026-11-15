@@ -456,6 +456,7 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
     final helper = ref.watch(helperConnectedProvider);
     final history = ref.watch(historyProvider);
     final settings = ref.watch(settingsProvider);
+    final autoFullscreen = ref.watch(autoFullscreenActiveProvider);
     final update = ref.watch(updateStateProvider);
     final compact = settings.listDensity == 'compact';
     final groups = _groups(filtered);
@@ -583,7 +584,8 @@ class _HistoryViewState extends ConsumerState<HistoryView> {
                 ),
                 StatusBar(
                   helperConnected: helper,
-                  gameMode: settings.gameMode,
+                  fullscreenMode: settings.gameMode,
+                  autoFullscreen: autoFullscreen,
                   doubleTapKey: settings.doubleTapKey,
                 ),
               ],

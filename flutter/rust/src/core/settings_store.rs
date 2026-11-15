@@ -13,7 +13,12 @@ pub struct Settings {
     pub auto_start: bool,
     pub silent_start: bool,
     pub double_tap_key: String,
+    /// Manual 全屏模式 switch. The persisted key keeps its historical
+    /// `game_mode` name so existing settings files stay compatible.
     pub game_mode: bool,
+    /// Automatically enter 全屏模式 while a fullscreen app is in the
+    /// foreground (Windows only). Missing in old files → defaults to `true`.
+    pub auto_fullscreen_mode: bool,
     pub retention_days: u32,
     pub window_width: u32,
     pub window_height: u32,
@@ -42,6 +47,7 @@ pub struct SettingsPatch {
     pub silent_start: Option<bool>,
     pub double_tap_key: Option<String>,
     pub game_mode: Option<bool>,
+    pub auto_fullscreen_mode: Option<bool>,
     pub retention_days: Option<u32>,
     pub window_width: Option<u32>,
     pub window_height: Option<u32>,
@@ -65,6 +71,7 @@ impl Default for Settings {
             silent_start: true,
             double_tap_key: String::new(),
             game_mode: false,
+            auto_fullscreen_mode: true,
             retention_days: 3,
             window_width: 400,
             window_height: 600,
@@ -231,12 +238,37 @@ mod tests {
         assert!(!settings.close_to_tray);
         assert_eq!(settings.hotkey, Settings::default().hotkey);
         assert!(!settings.game_mode);
+        assert!(settings.auto_fullscreen_mode);
         assert_eq!(settings.window_width, Settings::default().window_width);
         assert!(!settings.window_positioned);
         assert!(settings.window_adaptive);
         assert!(settings.acrylic_enabled);
         assert_eq!(settings.theme_mode, "system");
         assert_eq!(settings.list_density, "standard");
+    }
+
+    #[test]
+    fn auto_fullscreen_mode_defaults_on_and_stays_backward_compatible() {
+        assert!(Settings::default().auto_fullscreen_mode);
+
+        // A v2.3.0 settings file has `game_mode` but no `auto_fullscreen_mode`.
+        let legacy: Settings =
+            serde_json::from_str(r#"{"game_mode":true,"hotkey":"Ctrl+Shift+V"}"#).unwrap();
+        assert!(legacy.game_mode);
+        assert!(legacy.auto_fullscreen_mode);
+
+        let disabled: Settings = serde_json::from_str(r#"{"auto_fullscreen_mode":false}"#).unwrap();
+        assert!(!disabled.auto_fullscreen_mode);
+        assert!(!disabled.game_mode);
+
+        let json = serde_json::to_string(&disabled).unwrap();
+        let back: Settings = serde_json::from_str(&json).unwrap();
+        assert!(!back.auto_fullscreen_mode);
+
+        let patch: SettingsPatch =
+            serde_json::from_str(r#"{"auto_fullscreen_mode":false}"#).unwrap();
+        assert_eq!(patch.auto_fullscreen_mode, Some(false));
+        assert_eq!(patch.game_mode, None);
     }
 
     #[test]

@@ -17,6 +17,12 @@ Settings getSettings() => RustLib.instance.api.crateApiSettingsGetSettings();
 Future<Settings> updateSettings({required SettingsPatch patch}) =>
     RustLib.instance.api.crateApiSettingsUpdateSettings(patch: patch);
 
+/// Whether 全屏模式 is currently on because a fullscreen app is in the
+/// foreground (automatic detection, Windows only). Synchronous and cheap — an
+/// atomic load — so the UI can poll it.
+bool autoFullscreenActive() =>
+    RustLib.instance.api.crateApiSettingsAutoFullscreenActive();
+
 /// Is `hotkey` a syntactically valid global shortcut? Synchronous.
 bool validateHotkey({required String hotkey}) =>
     RustLib.instance.api.crateApiSettingsValidateHotkey(hotkey: hotkey);

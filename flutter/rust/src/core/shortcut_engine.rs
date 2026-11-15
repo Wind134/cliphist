@@ -21,23 +21,53 @@ use crate::core::state;
 
 static LISTENER_RUNNING: AtomicBool = AtomicBool::new(false);
 static HELPER_CONNECTED: AtomicBool = AtomicBool::new(false);
-static GAME_MODE: AtomicBool = AtomicBool::new(false);
+/// Manual 全屏模式 switch (persisted as `Settings::game_mode`).
+static MANUAL_FULLSCREEN_MODE: AtomicBool = AtomicBool::new(false);
+/// Runtime flag set by the fullscreen detector while a fullscreen app is in
+/// the foreground. Never persisted and never touches the manual switch.
+static AUTO_FULLSCREEN_ACTIVE: AtomicBool = AtomicBool::new(false);
 
-/// Suspend only double-tap wake detection. Clipboard capture, the regular
-/// global hotkey and simulated paste remain available while game mode is on.
-pub fn set_game_mode(enabled: bool) {
-    let previous = GAME_MODE.swap(enabled, Ordering::SeqCst);
+/// 全屏模式 suspends only double-tap wake detection. Clipboard capture, the
+/// regular global hotkey and simulated paste remain available.
+pub fn set_manual_fullscreen_mode(enabled: bool) {
+    let previous = MANUAL_FULLSCREEN_MODE.swap(enabled, Ordering::SeqCst);
     if previous != enabled {
         log::write_log(if enabled {
-            "Game mode enabled: double-tap wake suspended"
+            "Fullscreen mode (manual) enabled: double-tap wake suspended"
         } else {
-            "Game mode disabled: double-tap wake resumed"
+            "Fullscreen mode (manual) disabled"
         });
     }
 }
 
+/// Set by the fullscreen detector. Returns `true` when the value changed.
+pub fn set_auto_fullscreen_active(active: bool) -> bool {
+    let previous = AUTO_FULLSCREEN_ACTIVE.swap(active, Ordering::SeqCst);
+    if previous != active {
+        log::write_log(if active {
+            "Fullscreen mode (auto) entered: fullscreen app in foreground"
+        } else {
+            "Fullscreen mode (auto) left"
+        });
+    }
+    previous != active
+}
+
+pub fn auto_fullscreen_active() -> bool {
+    AUTO_FULLSCREEN_ACTIVE.load(Ordering::SeqCst)
+}
+
+/// Double-tap wake is suppressed while either the manual switch or the
+/// automatic fullscreen detection has 全屏模式 on.
+fn wake_allowed(manual: bool, auto_active: bool) -> bool {
+    !(manual || auto_active)
+}
+
 fn double_tap_wake_allowed() -> bool {
-    !GAME_MODE.load(Ordering::SeqCst)
+    wake_allowed(
+        MANUAL_FULLSCREEN_MODE.load(Ordering::SeqCst),
+        AUTO_FULLSCREEN_ACTIVE.load(Ordering::SeqCst),
+    )
 }
 
 pub fn helper_connected() -> bool {
@@ -628,10 +658,41 @@ mod tests {
     use super::*;
 
     #[test]
-    fn game_mode_suppresses_double_tap_wake() {
-        set_game_mode(true);
+    fn suppression_rule_covers_manual_auto_both_neither() {
+        assert!(wake_allowed(false, false));
+        assert!(!wake_allowed(true, false));
+        assert!(!wake_allowed(false, true));
+        assert!(!wake_allowed(true, true));
+    }
+
+    // One test touches the global atomics so parallel tests cannot race.
+    #[test]
+    fn fullscreen_mode_suppresses_double_tap_wake() {
+        set_manual_fullscreen_mode(false);
+        set_auto_fullscreen_active(false);
+        assert!(double_tap_wake_allowed());
+
+        set_manual_fullscreen_mode(true);
         assert!(!double_tap_wake_allowed());
-        set_game_mode(false);
+
+        assert!(set_auto_fullscreen_active(true));
+        assert!(!set_auto_fullscreen_active(true));
+        assert!(!double_tap_wake_allowed());
+
+        // Leaving auto never clears the manual switch.
+        set_auto_fullscreen_active(false);
+        assert!(!double_tap_wake_allowed());
+
+        set_manual_fullscreen_mode(false);
+        assert!(double_tap_wake_allowed());
+
+        // Auto alone suppresses, and the manual flag stays off.
+        set_auto_fullscreen_active(true);
+        assert!(auto_fullscreen_active());
+        assert!(!MANUAL_FULLSCREEN_MODE.load(Ordering::SeqCst));
+        assert!(!double_tap_wake_allowed());
+
+        set_auto_fullscreen_active(false);
         assert!(double_tap_wake_allowed());
     }
 }

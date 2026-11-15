@@ -70,12 +70,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
-  Future<void> _onGameModeChanged(bool enabled) async {
+  Future<void> _onFullscreenModeChanged(bool enabled) async {
     try {
-      await ClipHistController.instance.setGameMode(enabled);
-      showToast(_container, enabled ? '游戏模式已开启' : '游戏模式已关闭');
+      await ClipHistController.instance.setFullscreenMode(enabled);
+      showToast(_container, enabled ? '全屏模式已开启' : '全屏模式已关闭');
     } catch (e) {
-      showToast(_container, '游戏模式设置失败: $e');
+      showToast(_container, '全屏模式设置失败: $e');
     }
   }
 
@@ -455,13 +455,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ),
                   ),
                   SettingRow(
-                    title: '游戏模式',
-                    subtitle: '暂停双击唤醒，其它功能仍可用',
+                    title: '全屏模式',
+                    subtitle: Platform.isWindows && s.autoFullscreenMode
+                        ? '全屏时自动开启，双击快捷键不生效；也可手动开启'
+                        : '开启后双击快捷键不生效，其它功能仍可用',
                     trailing: AppSwitch(
                       value: s.gameMode,
-                      onChanged: _onGameModeChanged,
+                      onChanged: _onFullscreenModeChanged,
                     ),
                   ),
+                  if (Platform.isWindows)
+                    SettingRow(
+                      title: '全屏时自动进入',
+                      subtitle: '检测到全屏应用（游戏、视频等）时自动开启全屏模式，退出全屏后恢复',
+                      trailing: AppSwitch(
+                        value: s.autoFullscreenMode,
+                        onChanged: (v) => _save(
+                          SettingsPatch(autoFullscreenMode: v),
+                          '设置已保存',
+                        ),
+                      ),
+                    ),
                 ],
               ),
               SettingSection(

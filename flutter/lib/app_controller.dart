@@ -39,6 +39,7 @@ class ClipHistController with WindowListener, TrayListener {
 
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   Timer? _windowActionPoller;
+  Timer? _autoFullscreenPoller;
   Timer? _resizeSaveTimer;
   HotKey? _registeredHotKey;
   bool _quitting = false;
@@ -134,6 +135,16 @@ class ClipHistController with WindowListener, TrayListener {
       const Duration(milliseconds: 80),
       _pollPendingWindowAction,
     );
+    // Automatic 全屏模式 (Windows only): the Rust detector flips an atomic
+    // flag; poll it cheaply so the status bar can explain why double-tap is
+    // paused. Same rationale as the window-action poller above.
+    if (Platform.isWindows) {
+      _autoFullscreenPoller?.cancel();
+      _autoFullscreenPoller = Timer.periodic(
+        const Duration(milliseconds: 500),
+        _pollAutoFullscreen,
+      );
+    }
     try {
       _subscriptions.add(
         api_stream.streamHelperStatus().listen((connected) {
@@ -158,6 +169,18 @@ class ClipHistController with WindowListener, TrayListener {
     // Never block startup on the network. A successful result is exposed as a
     // compact banner; failures stay quiet until the user checks manually.
     unawaited(checkForUpdates(silent: true));
+  }
+
+  void _pollAutoFullscreen(Timer _) {
+    if (_quitting) return;
+    try {
+      final active = api_settings.autoFullscreenActive();
+      final notifier = container.read(autoFullscreenActiveProvider.notifier);
+      if (notifier.state != active) notifier.state = active;
+    } catch (e) {
+      _autoFullscreenPoller?.cancel();
+      api_clipboard.feLog(message: 'auto fullscreen poll failed: $e');
+    }
   }
 
   /// Consume native wake requests on Flutter's UI isolate.
@@ -525,10 +548,11 @@ class ClipHistController with WindowListener, TrayListener {
     await Future<void>.delayed(const Duration(milliseconds: 200));
   }
 
-  /// Persist game mode and keep both the settings screen and tray checkbox in
+  /// Persist the manual 全屏模式 switch (stored as `gameMode` for backward
+  /// compatibility) and keep both the settings screen and tray checkbox in
   /// sync. Rust applies the double-tap suppression atomically after the
   /// settings file has been saved successfully.
-  Future<void> setGameMode(bool enabled) async {
+  Future<void> setFullscreenMode(bool enabled) async {
     final updated = await api_settings.updateSettings(
       patch: SettingsPatch(gameMode: enabled),
     );
@@ -538,7 +562,7 @@ class ClipHistController with WindowListener, TrayListener {
     } catch (e) {
       // The preference already succeeded; a cosmetic tray refresh must not
       // roll it back or make the setting appear to have failed.
-      api_clipboard.feLog(message: 'game mode tray refresh failed: $e');
+      api_clipboard.feLog(message: 'fullscreen mode tray refresh failed: $e');
     }
   }
 
@@ -575,7 +599,7 @@ class ClipHistController with WindowListener, TrayListener {
   }
 
   Future<void> _setTrayContextMenu() async {
-    final gameMode = container.read(settingsProvider).gameMode;
+    final fullscreenMode = container.read(settingsProvider).gameMode;
     await trayManager.setContextMenu(
       Menu(
         items: [
@@ -595,18 +619,18 @@ class ClipHistController with WindowListener, TrayListener {
             },
           ),
           MenuItem.checkbox(
-            key: 'game-mode',
-            label: '游戏模式（暂停双击唤醒）',
-            checked: gameMode,
+            key: 'fullscreen-mode',
+            label: '全屏模式（双击快捷键不生效）',
+            checked: fullscreenMode,
             onClick: (_) async {
               final enabled = !container.read(settingsProvider).gameMode;
               api_clipboard.feLog(
-                message: 'tray menu: game mode ${enabled ? "on" : "off"}',
+                message: 'tray menu: fullscreen mode ${enabled ? "on" : "off"}',
               );
               try {
-                await setGameMode(enabled);
+                await setFullscreenMode(enabled);
               } catch (e) {
-                api_clipboard.feLog(message: 'tray game mode failed: $e');
+                api_clipboard.feLog(message: 'tray fullscreen mode failed: $e');
               }
             },
           ),
@@ -801,6 +825,7 @@ class ClipHistController with WindowListener, TrayListener {
     if (_quitting) return;
     _quitting = true;
     _resizeSaveTimer?.cancel();
+    _autoFullscreenPoller?.cancel();
     unawaited(_exitAfterPersist());
   }
 

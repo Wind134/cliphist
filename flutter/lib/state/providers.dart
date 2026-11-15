@@ -24,6 +24,11 @@ final windowWakeGenerationProvider = StateProvider<int>((ref) => 0);
 /// Windows and macOS use their native listener and report readiness separately.
 final helperConnectedProvider = StateProvider<bool>((ref) => false);
 
+/// Whether 全屏模式 is currently on because a fullscreen app owns the
+/// foreground (automatic detection, Windows only). Polled from Rust by the
+/// controller; the manual switch lives in [Settings.gameMode].
+final autoFullscreenActiveProvider = StateProvider<bool>((ref) => false);
+
 /// Ephemeral toast message. Held as state so any part of the UI can surface
 /// feedback.
 final toastMessageProvider = StateProvider<String>((ref) => '');

@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 742015412;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1397174423;
 
 // Section: executor
 
@@ -46,6 +46,36 @@ flutter_rust_bridge::frb_generated_default_handler!();
 
 // Section: wire_funcs
 
+fn wire__crate__api__settings__auto_fullscreen_active_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "auto_fullscreen_active",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok =
+                    Result::<_, ()>::Ok(crate::api::settings::auto_fullscreen_active())?;
+                Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__api__init__check_single_instance_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -896,6 +926,7 @@ impl SseDecode for crate::core::settings_store::Settings {
         let mut var_silentStart = <bool>::sse_decode(deserializer);
         let mut var_doubleTapKey = <String>::sse_decode(deserializer);
         let mut var_gameMode = <bool>::sse_decode(deserializer);
+        let mut var_autoFullscreenMode = <bool>::sse_decode(deserializer);
         let mut var_retentionDays = <u32>::sse_decode(deserializer);
         let mut var_windowWidth = <u32>::sse_decode(deserializer);
         let mut var_windowHeight = <u32>::sse_decode(deserializer);
@@ -915,6 +946,7 @@ impl SseDecode for crate::core::settings_store::Settings {
             silent_start: var_silentStart,
             double_tap_key: var_doubleTapKey,
             game_mode: var_gameMode,
+            auto_fullscreen_mode: var_autoFullscreenMode,
             retention_days: var_retentionDays,
             window_width: var_windowWidth,
             window_height: var_windowHeight,
@@ -940,6 +972,7 @@ impl SseDecode for crate::core::settings_store::SettingsPatch {
         let mut var_silentStart = <Option<bool>>::sse_decode(deserializer);
         let mut var_doubleTapKey = <Option<String>>::sse_decode(deserializer);
         let mut var_gameMode = <Option<bool>>::sse_decode(deserializer);
+        let mut var_autoFullscreenMode = <Option<bool>>::sse_decode(deserializer);
         let mut var_retentionDays = <Option<u32>>::sse_decode(deserializer);
         let mut var_windowWidth = <Option<u32>>::sse_decode(deserializer);
         let mut var_windowHeight = <Option<u32>>::sse_decode(deserializer);
@@ -959,6 +992,7 @@ impl SseDecode for crate::core::settings_store::SettingsPatch {
             silent_start: var_silentStart,
             double_tap_key: var_doubleTapKey,
             game_mode: var_gameMode,
+            auto_fullscreen_mode: var_autoFullscreenMode,
             retention_days: var_retentionDays,
             window_width: var_windowWidth,
             window_height: var_windowHeight,
@@ -1021,36 +1055,36 @@ fn pde_ffi_dispatcher_primary_impl(
 ) {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        1 => wire__crate__api__init__check_single_instance_impl(port, ptr, rust_vec_len, data_len),
-        2 => wire__crate__api__history__clear_history_impl(port, ptr, rust_vec_len, data_len),
-        3 => wire__crate__api__clipboard__copy_to_clipboard_impl(port, ptr, rust_vec_len, data_len),
-        4 => wire__crate__api__history__delete_item_impl(port, ptr, rust_vec_len, data_len),
-        7 => wire__crate__api__history__get_image_data_impl(port, ptr, rust_vec_len, data_len),
-        9 => wire__crate__api__init__init_app_impl(port, ptr, rust_vec_len, data_len),
-        10 => wire__crate__api__init__init_app_state_impl(port, ptr, rust_vec_len, data_len),
-        11 => wire__crate__api__history__move_to_top_impl(port, ptr, rust_vec_len, data_len),
-        12 => {
+        2 => wire__crate__api__init__check_single_instance_impl(port, ptr, rust_vec_len, data_len),
+        3 => wire__crate__api__history__clear_history_impl(port, ptr, rust_vec_len, data_len),
+        4 => wire__crate__api__clipboard__copy_to_clipboard_impl(port, ptr, rust_vec_len, data_len),
+        5 => wire__crate__api__history__delete_item_impl(port, ptr, rust_vec_len, data_len),
+        8 => wire__crate__api__history__get_image_data_impl(port, ptr, rust_vec_len, data_len),
+        10 => wire__crate__api__init__init_app_impl(port, ptr, rust_vec_len, data_len),
+        11 => wire__crate__api__init__init_app_state_impl(port, ptr, rust_vec_len, data_len),
+        12 => wire__crate__api__history__move_to_top_impl(port, ptr, rust_vec_len, data_len),
+        13 => {
             wire__crate__api__clipboard__simulate_paste_cmd_impl(port, ptr, rust_vec_len, data_len)
         }
-        13 => wire__crate__api__stream__stream_clipboard_changed_impl(
+        14 => wire__crate__api__stream__stream_clipboard_changed_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        14 => {
+        15 => {
             wire__crate__api__stream__stream_helper_status_impl(port, ptr, rust_vec_len, data_len)
         }
-        15 => {
+        16 => {
             wire__crate__api__stream__stream_history_replace_impl(port, ptr, rust_vec_len, data_len)
         }
-        16 => wire__crate__api__stream__stream_item_moved_to_top_impl(
+        17 => wire__crate__api__stream__stream_item_moved_to_top_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        18 => wire__crate__api__settings__update_settings_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__settings__update_settings_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1063,13 +1097,14 @@ fn pde_ffi_dispatcher_sync_impl(
 ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        5 => wire__crate__api__clipboard__fe_log_impl(ptr, rust_vec_len, data_len),
-        6 => wire__crate__api__history__get_history_impl(ptr, rust_vec_len, data_len),
-        8 => wire__crate__api__settings__get_settings_impl(ptr, rust_vec_len, data_len),
-        17 => {
+        1 => wire__crate__api__settings__auto_fullscreen_active_impl(ptr, rust_vec_len, data_len),
+        6 => wire__crate__api__clipboard__fe_log_impl(ptr, rust_vec_len, data_len),
+        7 => wire__crate__api__history__get_history_impl(ptr, rust_vec_len, data_len),
+        9 => wire__crate__api__settings__get_settings_impl(ptr, rust_vec_len, data_len),
+        18 => {
             wire__crate__api__stream__take_pending_window_action_impl(ptr, rust_vec_len, data_len)
         }
-        19 => wire__crate__api__settings__validate_hotkey_impl(ptr, rust_vec_len, data_len),
+        20 => wire__crate__api__settings__validate_hotkey_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1118,6 +1153,7 @@ impl flutter_rust_bridge::IntoDart for crate::core::settings_store::Settings {
             self.silent_start.into_into_dart().into_dart(),
             self.double_tap_key.into_into_dart().into_dart(),
             self.game_mode.into_into_dart().into_dart(),
+            self.auto_fullscreen_mode.into_into_dart().into_dart(),
             self.retention_days.into_into_dart().into_dart(),
             self.window_width.into_into_dart().into_dart(),
             self.window_height.into_into_dart().into_dart(),
@@ -1155,6 +1191,7 @@ impl flutter_rust_bridge::IntoDart for crate::core::settings_store::SettingsPatc
             self.silent_start.into_into_dart().into_dart(),
             self.double_tap_key.into_into_dart().into_dart(),
             self.game_mode.into_into_dart().into_dart(),
+            self.auto_fullscreen_mode.into_into_dart().into_dart(),
             self.retention_days.into_into_dart().into_dart(),
             self.window_width.into_into_dart().into_dart(),
             self.window_height.into_into_dart().into_dart(),
@@ -1392,6 +1429,7 @@ impl SseEncode for crate::core::settings_store::Settings {
         <bool>::sse_encode(self.silent_start, serializer);
         <String>::sse_encode(self.double_tap_key, serializer);
         <bool>::sse_encode(self.game_mode, serializer);
+        <bool>::sse_encode(self.auto_fullscreen_mode, serializer);
         <u32>::sse_encode(self.retention_days, serializer);
         <u32>::sse_encode(self.window_width, serializer);
         <u32>::sse_encode(self.window_height, serializer);
@@ -1416,6 +1454,7 @@ impl SseEncode for crate::core::settings_store::SettingsPatch {
         <Option<bool>>::sse_encode(self.silent_start, serializer);
         <Option<String>>::sse_encode(self.double_tap_key, serializer);
         <Option<bool>>::sse_encode(self.game_mode, serializer);
+        <Option<bool>>::sse_encode(self.auto_fullscreen_mode, serializer);
         <Option<u32>>::sse_encode(self.retention_days, serializer);
         <Option<u32>>::sse_encode(self.window_width, serializer);
         <Option<u32>>::sse_encode(self.window_height, serializer);

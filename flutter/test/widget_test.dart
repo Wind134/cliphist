@@ -7,6 +7,7 @@ import 'package:cliphist/state/history_provider.dart';
 import 'package:cliphist/state/providers.dart';
 import 'package:cliphist/ui/history_view.dart';
 import 'package:cliphist/ui/settings_screen.dart';
+import 'package:cliphist/ui/status_bar.dart';
 import 'package:cliphist/ui/theme.dart';
 import 'package:cliphist/util/image_cache.dart';
 import 'package:flutter/material.dart';
@@ -22,6 +23,7 @@ const testSettings = Settings(
   silentStart: false,
   doubleTapKey: 'Ctrl',
   gameMode: false,
+  autoFullscreenMode: true,
   retentionDays: 3,
   windowWidth: 320,
   windowHeight: 400,
@@ -43,6 +45,7 @@ const layoutSettings = Settings(
   silentStart: true,
   doubleTapKey: 'Ctrl',
   gameMode: false,
+  autoFullscreenMode: true,
   retentionDays: 3,
   windowWidth: 400,
   windowHeight: 600,
@@ -483,16 +486,50 @@ void main() {
     );
     expect(find.text('窗口自适应'), findsOneWidget);
     await tester.scrollUntilVisible(
-      find.text('游戏模式'),
+      find.text('全屏模式'),
       200,
       scrollable: find.byType(Scrollable).first,
     );
-    expect(find.text('游戏模式'), findsOneWidget);
-    expect(find.text('暂停双击唤醒，其它功能仍可用'), findsOneWidget);
+    expect(find.text('全屏模式'), findsOneWidget);
+    expect(find.textContaining('双击快捷键不生效'), findsOneWidget);
+    expect(find.textContaining('游戏模式'), findsNothing);
     await tester.drag(find.byType(ListView), const Offset(0, -3000));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.text('My ClipHist'), findsOneWidget);
+  });
+
+  testWidgets('status bar explains manual and automatic fullscreen mode', (
+    tester,
+  ) async {
+    Future<void> pumpBar({required bool manual, required bool auto}) {
+      return tester.pumpWidget(
+        MaterialApp(
+          theme: cliphistTheme(),
+          home: Scaffold(
+            body: StatusBar(
+              helperConnected: true,
+              fullscreenMode: manual,
+              autoFullscreen: auto,
+              doubleTapKey: 'Ctrl',
+            ),
+          ),
+        ),
+      );
+    }
+
+    await pumpBar(manual: false, auto: false);
+    expect(find.text('双击 Ctrl 已就绪'), findsOneWidget);
+
+    await pumpBar(manual: false, auto: true);
+    expect(find.text('全屏模式（自动）· 双击已暂停'), findsOneWidget);
+
+    await pumpBar(manual: true, auto: false);
+    expect(find.text('全屏模式 · 双击快捷键已暂停'), findsOneWidget);
+
+    await pumpBar(manual: true, auto: true);
+    expect(find.text('全屏模式 · 双击快捷键已暂停'), findsOneWidget);
+    expect(find.textContaining('游戏模式'), findsNothing);
   });
 
   test('acrylic theme uses a translucent scaffold', () {
