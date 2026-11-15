@@ -519,7 +519,8 @@ void main() {
     }
 
     await pumpBar(manual: false, auto: false);
-    expect(find.text('双击 Ctrl 已就绪'), findsOneWidget);
+    // StatusBar shows the macOS modifier symbol (⌘) instead of Ctrl.
+    expect(find.text(isMac ? '双击 ⌘ 已就绪' : '双击 Ctrl 已就绪'), findsOneWidget);
 
     await pumpBar(manual: false, auto: true);
     expect(find.text('全屏模式（自动）· 双击已暂停'), findsOneWidget);
